@@ -497,7 +497,7 @@ namespace
 
     uint64_t stream_iterations(uint64_t size)
     {
-        // Aim for roughly 512 MiB per streaming test.
+        // Aim for roughly 4 GiB per streaming test.
         constexpr uint64_t target =
             4ULL* 1024ULL * 1024ULL * 1024ULL;
 

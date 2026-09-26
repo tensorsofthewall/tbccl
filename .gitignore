@@ -33,3 +33,7 @@ _deps/
 
 # macOS
 .DS_Store
+
+# Python
+__pycache__/
+*.pyc
