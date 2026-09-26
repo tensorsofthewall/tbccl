@@ -55,6 +55,25 @@ else()
     )
 endif()
 
+add_executable(tbccl_world_smoke
+    tools/tbccl_world_smoke.cpp
+)
+
+target_link_libraries(tbccl_world_smoke
+    PRIVATE
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_world_smoke PRIVATE /W4)
+else()
+    target_compile_options(tbccl_world_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
