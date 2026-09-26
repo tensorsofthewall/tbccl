@@ -58,6 +58,7 @@ namespace
         std::string output;
 
         uint16_t port = kDefaultPort;
+        int busy_poll_us = 0;
 
         std::vector<uint64_t> sizes = {
             64,
@@ -292,6 +293,54 @@ namespace
         set_tcp_nodelay(fd);
 
         return fd;
+    }
+
+    // Returns true if SO_BUSY_POLL was actually applied to the socket.
+    bool set_busy_poll(int fd, int microseconds)
+    {
+    #if defined(__linux__) && defined(SO_BUSY_POLL)
+        if (microseconds <= 0)
+        {
+            return false;
+        }
+
+        if (::setsockopt(
+                fd,
+                SOL_SOCKET,
+                SO_BUSY_POLL,
+                &microseconds,
+                sizeof(microseconds)) != 0)
+        {
+            throw std::runtime_error(
+                "setsockopt(SO_BUSY_POLL) failed: " +
+                std::string(std::strerror(errno)));
+        }
+
+        return true;
+    #else
+        (void)fd;
+        (void)microseconds;
+        return false;
+    #endif
+    }
+
+    void print_busy_poll_status(int microseconds, bool applied)
+    {
+        if (applied)
+        {
+            std::cout
+                << "SO_BUSY_POLL="
+                << microseconds
+                << " us\n";
+        }
+        else if (microseconds == 0)
+        {
+            std::cout << "SO_BUSY_POLL=off\n";
+        }
+        else
+        {
+            std::cout << "SO_BUSY_POLL=unsupported\n";
+        }
     }
 
     // -----------------------------------------------------------------------------
@@ -867,7 +916,8 @@ namespace
             << "  " << program
             << " server "
             << "[--bind IPv4] "
-            << "[--port PORT]\n\n"
+            << "[--port PORT] "
+            << "[--busy-poll MICROSECONDS]\n\n"
 
             << "Client:\n"
             << "  " << program
@@ -876,7 +926,13 @@ namespace
             << "[--port PORT] "
             << "[--mode all|pingpong|stream] "
             << "[--sizes LIST] "
-            << "[--output FILE]\n\n"
+            << "[--output FILE] "
+            << "[--busy-poll MICROSECONDS]\n\n"
+
+            << "Options:\n"
+            << "  --busy-poll MICROSECONDS\n"
+            << "      Linux SO_BUSY_POLL duration. "
+            << "0 disables it. Default: 0.\n\n"
 
             << "Examples:\n"
 
@@ -886,7 +942,17 @@ namespace
 
             << "  "
             << program
+            << " server --bind 192.168.3.2 "
+            << "--busy-poll 100\n"
+
+            << "  "
+            << program
             << " client --host 192.168.3.2\n"
+
+            << "  "
+            << program
+            << " client --host 192.168.3.2 "
+            << "--busy-poll 100\n"
 
             << "  "
             << program
@@ -984,6 +1050,40 @@ namespace
                 options.output =
                     require_value(argument);
             }
+            else if (argument == "--busy-poll")
+            {
+                const std::string value_text =
+                    require_value(argument);
+
+                long value = 0;
+                size_t consumed = 0;
+
+                try
+                {
+                    value = std::stol(value_text, &consumed);
+                }
+                catch (const std::exception &)
+                {
+                    throw std::runtime_error(
+                        "invalid --busy-poll value: " +
+                        value_text);
+                }
+
+                if (consumed != value_text.size() ||
+                    value < 0 ||
+                    value > 1000000)
+                {
+
+                    throw std::runtime_error(
+                        "invalid --busy-poll value: " +
+                        value_text +
+                        " (must be an integer between "
+                        "0 and 1000000)");
+                }
+
+                options.busy_poll_us =
+                    static_cast<int>(value);
+            }
             else if (argument == "--help" ||
                      argument == "-h")
             {
@@ -1035,56 +1135,74 @@ namespace
             << options.port
             << '\n';
 
-        sockaddr_in peer{};
-        socklen_t peer_length = sizeof(peer);
-
-        const int client =
-            ::accept(
-                listener,
-                reinterpret_cast<sockaddr *>(&peer),
-                &peer_length);
-
-        if (client < 0)
+        while (true)
         {
-            ::close(listener);
+            sockaddr_in peer{};
+            socklen_t peer_length = sizeof(peer);
 
-            throw std::runtime_error(
-                "accept failed: " +
-                std::string(std::strerror(errno)));
-        }
+            const int client =
+                ::accept(
+                    listener,
+                    reinterpret_cast<sockaddr *>(&peer),
+                    &peer_length);
 
-        ::close(listener);
+            if (client < 0)
+            {
+                if (errno == EINTR)
+                {
+                    continue;
+                }
 
-        set_tcp_nodelay(client);
+                ::close(listener);
 
-        char peer_address[INET_ADDRSTRLEN]{};
+                throw std::runtime_error(
+                    "accept failed: " +
+                    std::string(std::strerror(errno)));
+            }
 
-        ::inet_ntop(
-            AF_INET,
-            &peer.sin_addr,
-            peer_address,
-            sizeof(peer_address));
+            char peer_address[INET_ADDRSTRLEN]{};
 
-        std::cout
-            << "Connected: "
-            << peer_address
-            << ':'
-            << ntohs(peer.sin_port)
-            << '\n';
+            ::inet_ntop(
+                AF_INET,
+                &peer.sin_addr,
+                peer_address,
+                sizeof(peer_address));
 
-        try
-        {
-            server_loop(client);
-        }
-        catch (...)
-        {
+            std::cout
+                << "Connected: "
+                << peer_address
+                << ':'
+                << ntohs(peer.sin_port)
+                << '\n';
+
+            try
+            {
+                set_tcp_nodelay(client);
+
+                const bool busy_poll_applied =
+                    set_busy_poll(client, options.busy_poll_us);
+
+                std::cout << "TCP_NODELAY=on\n";
+                print_busy_poll_status(
+                    options.busy_poll_us,
+                    busy_poll_applied);
+
+                server_loop(client);
+            }
+            catch (const std::exception &error)
+            {
+                std::cerr
+                    << "Client disconnected/error: "
+                    << error.what()
+                    << '\n';
+            }
+
             ::close(client);
-            throw;
+
+            std::cout
+                << "Client disconnected. "
+                << "Waiting for next connection...\n";
         }
-
-        ::close(client);
-
-        return 0;
     }
 
     int run_client(const Options &options)
@@ -1101,8 +1219,14 @@ namespace
             << options.port
             << '\n';
 
-        std::cout
-            << "TCP_NODELAY=on\n\n";
+        const bool busy_poll_applied =
+            set_busy_poll(fd, options.busy_poll_us);
+
+        std::cout << "TCP_NODELAY=on\n";
+        print_busy_poll_status(
+            options.busy_poll_us,
+            busy_poll_applied);
+        std::cout << '\n';
 
         std::vector<Result> results;
 
