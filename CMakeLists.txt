@@ -39,6 +39,11 @@ add_executable(tb_pingpong
     benchmarks/tcp_pingpong.cpp
 )
 
+target_link_libraries(tb_pingpong
+    PRIVATE
+        tbccl
+)
+
 if(MSVC)
     target_compile_options(tb_pingpong PRIVATE /W4)
 else()
