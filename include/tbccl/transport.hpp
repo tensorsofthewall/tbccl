@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -43,6 +44,12 @@ public:
     // Blocks until a client connects; the listener remains usable for
     // further sequential accepts afterward.
     virtual std::unique_ptr<Connection> accept() = 0;
+
+    // Waits up to `timeout` for a client to connect. Returns nullptr
+    // if no connection arrives within `timeout`; throws on a genuine
+    // socket error. Never blocks longer than `timeout`.
+    virtual std::unique_ptr<Connection> accept_for(
+        std::chrono::milliseconds timeout) = 0;
 
 protected:
     Listener() = default;

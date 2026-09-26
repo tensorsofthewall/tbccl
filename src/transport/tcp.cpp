@@ -3,10 +3,12 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -217,21 +219,92 @@ namespace
                         std::string(std::strerror(errno)));
                 }
 
-                try
+                return finish_accept(client_fd);
+            }
+        }
+
+        std::unique_ptr<Connection> accept_for(
+            std::chrono::milliseconds timeout) override
+        {
+            const auto deadline =
+                std::chrono::steady_clock::now() + timeout;
+
+            while (true)
+            {
+                const auto remaining =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        deadline - std::chrono::steady_clock::now());
+
+                if (remaining.count() <= 0)
                 {
-                    apply_options(client_fd, options_);
-                }
-                catch (...)
-                {
-                    ::close(client_fd);
-                    throw;
+                    return nullptr;
                 }
 
-                return std::make_unique<TcpConnection>(client_fd);
+                pollfd poll_fd{};
+                poll_fd.fd = fd_;
+                poll_fd.events = POLLIN;
+
+                const int poll_result =
+                    ::poll(&poll_fd, 1, static_cast<int>(remaining.count()));
+
+                if (poll_result < 0)
+                {
+                    if (errno == EINTR)
+                    {
+                        continue;
+                    }
+
+                    throw std::runtime_error(
+                        "poll failed: " +
+                        std::string(std::strerror(errno)));
+                }
+
+                if (poll_result == 0)
+                {
+                    // Timed out with no incoming connection.
+                    return nullptr;
+                }
+
+                const int client_fd = ::accept(fd_, nullptr, nullptr);
+
+                if (client_fd < 0)
+                {
+                    if (errno == EINTR ||
+                        errno == EAGAIN ||
+                        errno == EWOULDBLOCK ||
+                        errno == ECONNABORTED)
+                    {
+                        // Spurious wakeup, or the peer dropped the
+                        // connection between poll() and accept();
+                        // retry within the remaining budget.
+                        continue;
+                    }
+
+                    throw std::runtime_error(
+                        "accept failed: " +
+                        std::string(std::strerror(errno)));
+                }
+
+                return finish_accept(client_fd);
             }
         }
 
     private:
+        std::unique_ptr<Connection> finish_accept(int client_fd)
+        {
+            try
+            {
+                apply_options(client_fd, options_);
+            }
+            catch (...)
+            {
+                ::close(client_fd);
+                throw;
+            }
+
+            return std::make_unique<TcpConnection>(client_fd);
+        }
+
         int fd_ = -1;
         TcpOptions options_;
     };
@@ -347,7 +420,7 @@ std::unique_ptr<Listener> tcp_listen(
             std::to_string(port) + ": " + error);
     }
 
-    if (::listen(fd, 1) != 0)
+    if (::listen(fd, SOMAXCONN) != 0)
     {
         const std::string error = std::strerror(errno);
 
