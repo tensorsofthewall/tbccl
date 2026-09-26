@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(tbccl STATIC
     src/transport/tcp.cpp
+    src/core/tcp_world.cpp
 )
 
 target_include_directories(tbccl
@@ -83,6 +84,31 @@ if(BUILD_TESTING)
     add_test(
         NAME tcp_transport_test
         COMMAND tcp_transport_test
+    )
+
+    add_executable(world_test
+        tests/world_test.cpp
+    )
+
+    target_link_libraries(world_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(world_test PRIVATE /W4)
+    else()
+        target_compile_options(world_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME world_test
+        COMMAND world_test
     )
 
 endif()
