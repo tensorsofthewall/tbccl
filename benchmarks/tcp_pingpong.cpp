@@ -1,8 +1,6 @@
+#include <tbccl/tcp.hpp>
+
 #include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <chrono>
@@ -97,235 +95,20 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Socket helpers
+    // Busy-poll status presentation
+    //
+    // The transport applies SO_BUSY_POLL (or throws on an explicit
+    // request it can't honor) but does no logging of its own. This
+    // benchmark decides what to print, using tbccl::busy_poll_supported()
+    // to tell "off" (0 requested) apart from "unsupported" (nonzero
+    // requested on a platform without SO_BUSY_POLL) from "applied".
     // -----------------------------------------------------------------------------
 
-    void send_all(int fd, const void *data, size_t length)
+    void print_busy_poll_status(int microseconds)
     {
-        const auto *ptr = static_cast<const uint8_t *>(data);
+        const bool applied =
+            tbccl::busy_poll_supported() && microseconds > 0;
 
-        size_t sent = 0;
-
-        while (sent < length)
-        {
-#ifdef MSG_NOSIGNAL
-            const ssize_t n =
-                ::send(fd, ptr + sent, length - sent, MSG_NOSIGNAL);
-#else
-            const ssize_t n =
-                ::send(fd, ptr + sent, length - sent, 0);
-#endif
-
-            if (n < 0)
-            {
-                if (errno == EINTR)
-                {
-                    continue;
-                }
-
-                throw std::runtime_error(
-                    "send failed: " + std::string(std::strerror(errno)));
-            }
-
-            if (n == 0)
-            {
-                throw std::runtime_error("send returned 0");
-            }
-
-            sent += static_cast<size_t>(n);
-        }
-    }
-
-    void recv_all(int fd, void *data, size_t length)
-    {
-        auto *ptr = static_cast<uint8_t *>(data);
-
-        size_t received = 0;
-
-        while (received < length)
-        {
-            const ssize_t n =
-                ::recv(fd, ptr + received, length - received, 0);
-
-            if (n < 0)
-            {
-                if (errno == EINTR)
-                {
-                    continue;
-                }
-
-                throw std::runtime_error(
-                    "recv failed: " + std::string(std::strerror(errno)));
-            }
-
-            if (n == 0)
-            {
-                throw std::runtime_error("peer closed connection");
-            }
-
-            received += static_cast<size_t>(n);
-        }
-    }
-
-    void set_tcp_nodelay(int fd)
-    {
-        int enabled = 1;
-
-        if (::setsockopt(
-                fd,
-                IPPROTO_TCP,
-                TCP_NODELAY,
-                &enabled,
-                sizeof(enabled)) != 0)
-        {
-
-            throw std::runtime_error(
-                "setsockopt(TCP_NODELAY) failed: " +
-                std::string(std::strerror(errno)));
-        }
-    }
-
-    int create_server_socket(
-        const std::string &bind_address,
-        uint16_t port)
-    {
-
-        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-
-        if (fd < 0)
-        {
-            throw std::runtime_error(
-                "socket failed: " + std::string(std::strerror(errno)));
-        }
-
-        int reuse = 1;
-
-        ::setsockopt(
-            fd,
-            SOL_SOCKET,
-            SO_REUSEADDR,
-            &reuse,
-            sizeof(reuse));
-
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_port = htons(port);
-
-        if (::inet_pton(
-                AF_INET,
-                bind_address.c_str(),
-                &address.sin_addr) != 1)
-        {
-
-            ::close(fd);
-
-            throw std::runtime_error(
-                "invalid IPv4 bind address: " + bind_address);
-        }
-
-        if (::bind(
-                fd,
-                reinterpret_cast<sockaddr *>(&address),
-                sizeof(address)) != 0)
-        {
-
-            const std::string error = std::strerror(errno);
-
-            ::close(fd);
-
-            throw std::runtime_error("bind failed: " + error);
-        }
-
-        if (::listen(fd, 1) != 0)
-        {
-            const std::string error = std::strerror(errno);
-
-            ::close(fd);
-
-            throw std::runtime_error("listen failed: " + error);
-        }
-
-        return fd;
-    }
-
-    int connect_socket(
-        const std::string &host,
-        uint16_t port)
-    {
-
-        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-
-        if (fd < 0)
-        {
-            throw std::runtime_error(
-                "socket failed: " + std::string(std::strerror(errno)));
-        }
-
-        sockaddr_in address{};
-        address.sin_family = AF_INET;
-        address.sin_port = htons(port);
-
-        if (::inet_pton(
-                AF_INET,
-                host.c_str(),
-                &address.sin_addr) != 1)
-        {
-
-            ::close(fd);
-
-            throw std::runtime_error(
-                "invalid IPv4 address: " + host);
-        }
-
-        if (::connect(
-                fd,
-                reinterpret_cast<sockaddr *>(&address),
-                sizeof(address)) != 0)
-        {
-
-            const std::string error = std::strerror(errno);
-
-            ::close(fd);
-
-            throw std::runtime_error("connect failed: " + error);
-        }
-
-        set_tcp_nodelay(fd);
-
-        return fd;
-    }
-
-    // Returns true if SO_BUSY_POLL was actually applied to the socket.
-    bool set_busy_poll(int fd, int microseconds)
-    {
-    #if defined(__linux__) && defined(SO_BUSY_POLL)
-        if (microseconds <= 0)
-        {
-            return false;
-        }
-
-        if (::setsockopt(
-                fd,
-                SOL_SOCKET,
-                SO_BUSY_POLL,
-                &microseconds,
-                sizeof(microseconds)) != 0)
-        {
-            throw std::runtime_error(
-                "setsockopt(SO_BUSY_POLL) failed: " +
-                std::string(std::strerror(errno)));
-        }
-
-        return true;
-    #else
-        (void)fd;
-        (void)microseconds;
-        return false;
-    #endif
-    }
-
-    void print_busy_poll_status(int microseconds, bool applied)
-    {
         if (applied)
         {
             std::cout
@@ -348,7 +131,7 @@ namespace
     // -----------------------------------------------------------------------------
 
     void send_command(
-        int fd,
+        tbccl::Connection &connection,
         uint32_t mode,
         uint64_t size,
         uint64_t iterations)
@@ -361,14 +144,14 @@ namespace
         command.size = hton64(size);
         command.iterations = hton64(iterations);
 
-        send_all(fd, &command, sizeof(command));
+        connection.send(&command, sizeof(command));
     }
 
-    WireCommand recv_command(int fd)
+    WireCommand recv_command(tbccl::Connection &connection)
     {
         WireCommand wire{};
 
-        recv_all(fd, &wire, sizeof(wire));
+        connection.recv(&wire, sizeof(wire));
 
         WireCommand host{};
 
@@ -511,7 +294,7 @@ namespace
     // Server
     // -----------------------------------------------------------------------------
 
-    void server_loop(int fd)
+    void server_loop(tbccl::Connection &connection)
     {
         std::vector<uint8_t> buffer;
 
@@ -520,7 +303,7 @@ namespace
         while (true)
         {
             const WireCommand command =
-                recv_command(fd);
+                recv_command(connection);
 
             if (command.mode == kModeQuit)
             {
@@ -542,7 +325,7 @@ namespace
                 static_cast<size_t>(command.size));
 
             // Signal that allocation/setup is done.
-            send_all(fd, &ready, sizeof(ready));
+            connection.send(&ready, sizeof(ready));
 
             if (command.mode == kModePingPong)
             {
@@ -551,13 +334,11 @@ namespace
                      ++i)
                 {
 
-                    recv_all(
-                        fd,
+                    connection.recv(
                         buffer.data(),
                         buffer.size());
 
-                    send_all(
-                        fd,
+                    connection.send(
                         buffer.data(),
                         buffer.size());
                 }
@@ -570,14 +351,13 @@ namespace
                      ++i)
                 {
 
-                    recv_all(
-                        fd,
+                    connection.recv(
                         buffer.data(),
                         buffer.size());
                 }
 
                 // Completion acknowledgement.
-                send_all(fd, &ready, sizeof(ready));
+                connection.send(&ready, sizeof(ready));
             }
             else
             {
@@ -592,7 +372,7 @@ namespace
     // -----------------------------------------------------------------------------
 
     Result run_pingpong(
-        int fd,
+        tbccl::Connection &connection,
         uint64_t size)
     {
 
@@ -604,14 +384,14 @@ namespace
             0xA5);
 
         send_command(
-            fd,
+            connection,
             kModePingPong,
             size,
             iterations);
 
         uint8_t ready = 0;
 
-        recv_all(fd, &ready, sizeof(ready));
+        connection.recv(&ready, sizeof(ready));
 
         const auto start =
             std::chrono::steady_clock::now();
@@ -621,13 +401,11 @@ namespace
              ++i)
         {
 
-            send_all(
-                fd,
+            connection.send(
                 buffer.data(),
                 buffer.size());
 
-            recv_all(
-                fd,
+            connection.recv(
                 buffer.data(),
                 buffer.size());
         }
@@ -670,7 +448,7 @@ namespace
     }
 
     Result run_stream(
-        int fd,
+        tbccl::Connection &connection,
         uint64_t size)
     {
 
@@ -682,14 +460,14 @@ namespace
             0x5A);
 
         send_command(
-            fd,
+            connection,
             kModeStream,
             size,
             iterations);
 
         uint8_t ready = 0;
 
-        recv_all(fd, &ready, sizeof(ready));
+        connection.recv(&ready, sizeof(ready));
 
         const auto start =
             std::chrono::steady_clock::now();
@@ -699,15 +477,14 @@ namespace
              ++i)
         {
 
-            send_all(
-                fd,
+            connection.send(
                 buffer.data(),
                 buffer.size());
         }
 
         // Wait until the receiver has consumed
         // every byte before stopping the timer.
-        recv_all(fd, &ready, sizeof(ready));
+        connection.recv(&ready, sizeof(ready));
 
         const auto end =
             std::chrono::steady_clock::now();
@@ -1123,10 +900,16 @@ namespace
 
     int run_server(const Options &options)
     {
-        const int listener =
-            create_server_socket(
+        tbccl::TcpOptions transport_options;
+
+        transport_options.tcp_nodelay = true;
+        transport_options.busy_poll_us = options.busy_poll_us;
+
+        auto listener =
+            tbccl::tcp_listen(
                 options.bind_address,
-                options.port);
+                options.port,
+                transport_options);
 
         std::cout
             << "Listening on "
@@ -1137,57 +920,19 @@ namespace
 
         while (true)
         {
-            sockaddr_in peer{};
-            socklen_t peer_length = sizeof(peer);
-
-            const int client =
-                ::accept(
-                    listener,
-                    reinterpret_cast<sockaddr *>(&peer),
-                    &peer_length);
-
-            if (client < 0)
-            {
-                if (errno == EINTR)
-                {
-                    continue;
-                }
-
-                ::close(listener);
-
-                throw std::runtime_error(
-                    "accept failed: " +
-                    std::string(std::strerror(errno)));
-            }
-
-            char peer_address[INET_ADDRSTRLEN]{};
-
-            ::inet_ntop(
-                AF_INET,
-                &peer.sin_addr,
-                peer_address,
-                sizeof(peer_address));
-
-            std::cout
-                << "Connected: "
-                << peer_address
-                << ':'
-                << ntohs(peer.sin_port)
-                << '\n';
-
             try
             {
-                set_tcp_nodelay(client);
+                auto connection = listener->accept();
 
-                const bool busy_poll_applied =
-                    set_busy_poll(client, options.busy_poll_us);
+                std::cout
+                    << "Connected: "
+                    << connection->peer_name()
+                    << '\n';
 
                 std::cout << "TCP_NODELAY=on\n";
-                print_busy_poll_status(
-                    options.busy_poll_us,
-                    busy_poll_applied);
+                print_busy_poll_status(options.busy_poll_us);
 
-                server_loop(client);
+                server_loop(*connection);
             }
             catch (const std::exception &error)
             {
@@ -1197,8 +942,6 @@ namespace
                     << '\n';
             }
 
-            ::close(client);
-
             std::cout
                 << "Client disconnected. "
                 << "Waiting for next connection...\n";
@@ -1207,10 +950,16 @@ namespace
 
     int run_client(const Options &options)
     {
-        const int fd =
-            connect_socket(
+        tbccl::TcpOptions transport_options;
+
+        transport_options.tcp_nodelay = true;
+        transport_options.busy_poll_us = options.busy_poll_us;
+
+        auto connection =
+            tbccl::tcp_connect(
                 options.host,
-                options.port);
+                options.port,
+                transport_options);
 
         std::cout
             << "Connected to "
@@ -1219,13 +968,8 @@ namespace
             << options.port
             << '\n';
 
-        const bool busy_poll_applied =
-            set_busy_poll(fd, options.busy_poll_us);
-
         std::cout << "TCP_NODELAY=on\n";
-        print_busy_poll_status(
-            options.busy_poll_us,
-            busy_poll_applied);
+        print_busy_poll_status(options.busy_poll_us);
         std::cout << '\n';
 
         std::vector<Result> results;
@@ -1246,7 +990,7 @@ namespace
             {
 
                 const Result result =
-                    run_pingpong(fd, size);
+                    run_pingpong(*connection, size);
 
                 print_result(result);
 
@@ -1258,7 +1002,7 @@ namespace
             {
 
                 const Result result =
-                    run_stream(fd, size);
+                    run_stream(*connection, size);
 
                 print_result(result);
 
@@ -1267,12 +1011,10 @@ namespace
         }
 
         send_command(
-            fd,
+            *connection,
             kModeQuit,
             0,
             0);
-
-        ::close(fd);
 
         write_csv(
             options.output,
