@@ -1,5 +1,6 @@
 #include <tbccl/tcp.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -187,6 +188,70 @@ namespace
         std::cout << "[PASS] test_peer_disconnect\n";
     }
 
+    // accept_for() must return nullptr, promptly, when nothing connects.
+    void test_accept_for_timeout()
+    {
+        const std::uint16_t port = kBasePort + 4;
+
+        auto listener = tbccl::tcp_listen("127.0.0.1", port, {});
+
+        const auto start = std::chrono::steady_clock::now();
+
+        auto connection = listener->accept_for(std::chrono::milliseconds(200));
+
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+
+        expect(connection == nullptr, "accept_for() should time out to nullptr");
+
+        expect(
+            elapsed < std::chrono::milliseconds(2000),
+            "accept_for() timeout took far longer than requested");
+
+        std::cout << "[PASS] test_accept_for_timeout\n";
+    }
+
+    // accept_for() must still return a working connection when a client
+    // connects before the deadline.
+    void test_accept_for_success()
+    {
+        const std::uint16_t port = kBasePort + 5;
+
+        auto listener = tbccl::tcp_listen("127.0.0.1", port, {});
+
+        std::thread server(
+            [&]()
+            {
+                auto connection =
+                    listener->accept_for(std::chrono::milliseconds(5000));
+
+                expect(
+                    connection != nullptr,
+                    "accept_for() should have accepted a real connection");
+
+                std::uint8_t value = 0;
+                connection->recv(&value, sizeof(value));
+                connection->send(&value, sizeof(value));
+            });
+
+        // Give the server a moment to reach accept_for() before connecting,
+        // so this also exercises the "connection arrives mid-wait" path.
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        auto client = tbccl::tcp_connect("127.0.0.1", port, {});
+
+        std::uint8_t sent = 0x7A;
+        client->send(&sent, sizeof(sent));
+
+        std::uint8_t echoed = 0;
+        client->recv(&echoed, sizeof(echoed));
+
+        server.join();
+
+        expect(echoed == sent, "accept_for() connection echo mismatch");
+
+        std::cout << "[PASS] test_accept_for_success\n";
+    }
+
 } // namespace
 
 int main()
@@ -197,6 +262,8 @@ int main()
         test_large_payload();
         test_persistent_listener();
         test_peer_disconnect();
+        test_accept_for_timeout();
+        test_accept_for_success();
     }
     catch (const std::exception &error)
     {
