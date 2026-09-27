@@ -1,5 +1,6 @@
 #include <tbccl/collectives.hpp>
 
+#include "algorithm_selector.hpp"
 #include "reduce_scatter_internal.hpp"
 
 #include <cstdint>
@@ -19,8 +20,29 @@ namespace tbccl
         DataType datatype,
         ReduceOp op)
     {
-        detail::reduce_scatter_reference(
+        detail::validate_reduce_scatter_args(
             world, send_buffer, recv_buffer, recv_count, datatype, op);
+
+        const std::size_t segment_bytes =
+            recv_count * datatype_size(datatype);
+
+        const auto mode = detail::resolve_algorithm_mode(
+            detail::CollectiveKind::ReduceScatter);
+        const auto decision = detail::select_reduce_scatter_algorithm(
+            world.size(), segment_bytes, mode);
+
+        switch (decision.algorithm)
+        {
+        case detail::CollectiveAlgorithm::Reference:
+            detail::reduce_scatter_reference(
+                world, send_buffer, recv_buffer, recv_count, datatype, op);
+            break;
+
+        case detail::CollectiveAlgorithm::Ring:
+            detail::reduce_scatter_ring(
+                world, send_buffer, recv_buffer, recv_count, datatype, op);
+            break;
+        }
     }
 
 } // namespace tbccl

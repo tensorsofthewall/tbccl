@@ -30,9 +30,12 @@ void validate_all_reduce_args(
     ReduceOp op);
 
 // The existing reduce(root=0)+broadcast(root=0) implementation,
-// unchanged in behavior — this is what the public all_reduce() calls,
-// and it remains the correctness oracle other algorithms are compared
-// against.
+// unchanged in behavior. The public all_reduce() routes through the
+// algorithm selector (see algorithm_selector.hpp) and may call this or
+// all_reduce_ring() depending on world size, tensor size, ring
+// divisibility, and any TBCCL_ALGORITHM/TBCCL_ALL_REDUCE_ALGORITHM
+// override; this remains the correctness oracle other algorithms are
+// compared against.
 void all_reduce_reference(
     World &world,
     const void *send_buffer,

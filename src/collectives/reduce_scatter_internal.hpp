@@ -29,9 +29,12 @@ std::size_t validate_reduce_scatter_args(
     ReduceOp op);
 
 // The existing centralized (reduce-to-rank-0-then-scatter)
-// implementation, unchanged in behavior — this is what the public
-// reduce_scatter() calls, and it remains the correctness oracle other
-// algorithms are compared against.
+// implementation, unchanged in behavior. The public reduce_scatter()
+// routes through the algorithm selector (see algorithm_selector.hpp)
+// and may call this or reduce_scatter_ring() depending on world size,
+// segment size, and any TBCCL_ALGORITHM/TBCCL_REDUCE_SCATTER_ALGORITHM
+// override; this remains the correctness oracle other algorithms are
+// compared against.
 void reduce_scatter_reference(
     World &world,
     const void *send_buffer,
