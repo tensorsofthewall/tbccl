@@ -156,6 +156,25 @@ else()
     )
 endif()
 
+add_executable(tbccl_all_reduce_smoke
+    tools/tbccl_all_reduce_smoke.cpp
+)
+
+target_link_libraries(tbccl_all_reduce_smoke
+    PRIVATE
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_all_reduce_smoke PRIVATE /W4)
+else()
+    target_compile_options(tbccl_all_reduce_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -310,6 +329,31 @@ if(BUILD_TESTING)
     add_test(
         NAME reduce_test
         COMMAND reduce_test
+    )
+
+    add_executable(all_reduce_test
+        tests/all_reduce_test.cpp
+    )
+
+    target_link_libraries(all_reduce_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(all_reduce_test PRIVATE /W4)
+    else()
+        target_compile_options(all_reduce_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME all_reduce_test
+        COMMAND all_reduce_test
     )
 
 endif()
