@@ -24,6 +24,7 @@ add_library(tbccl STATIC
     src/collectives/all_reduce.cpp
     src/collectives/reduce_scatter.cpp
     src/collectives/all_gather_ring.cpp
+    src/collectives/reduce_scatter_ring.cpp
 )
 
 target_include_directories(tbccl

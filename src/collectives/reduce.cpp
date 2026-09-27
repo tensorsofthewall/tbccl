@@ -1,105 +1,18 @@
 #include <tbccl/collectives.hpp>
 
-#include <algorithm>
+#include "reduction_internal.hpp"
+
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
 #include <vector>
 
 namespace tbccl
 {
 namespace
 {
-
-    template <typename T>
-    struct UnsignedOf;
-
-    template <>
-    struct UnsignedOf<std::int32_t>
-    {
-        using type = std::uint32_t;
-    };
-
-    template <>
-    struct UnsignedOf<std::int64_t>
-    {
-        using type = std::uint64_t;
-    };
-
-    // Signed Sum/Product go through the corresponding unsigned type so
-    // wraparound is two's-complement modular arithmetic, never signed-
-    // overflow undefined behavior.
-    template <typename T>
-    T wrapping_add(T a, T b)
-    {
-        using U = typename UnsignedOf<T>::type;
-        return static_cast<T>(
-            static_cast<U>(a) + static_cast<U>(b));
-    }
-
-    template <typename T>
-    T wrapping_mul(T a, T b)
-    {
-        using U = typename UnsignedOf<T>::type;
-        return static_cast<T>(
-            static_cast<U>(a) * static_cast<U>(b));
-    }
-
-    template <typename T>
-    void apply_reduction(
-        T *dst,
-        const T *src,
-        std::size_t count,
-        ReduceOp op)
-    {
-        switch (op)
-        {
-        case ReduceOp::Sum:
-            for (std::size_t i = 0; i < count; ++i)
-            {
-                if constexpr (std::is_integral_v<T>)
-                {
-                    dst[i] = wrapping_add(dst[i], src[i]);
-                }
-                else
-                {
-                    dst[i] = dst[i] + src[i];
-                }
-            }
-            break;
-
-        case ReduceOp::Product:
-            for (std::size_t i = 0; i < count; ++i)
-            {
-                if constexpr (std::is_integral_v<T>)
-                {
-                    dst[i] = wrapping_mul(dst[i], src[i]);
-                }
-                else
-                {
-                    dst[i] = dst[i] * src[i];
-                }
-            }
-            break;
-
-        case ReduceOp::Min:
-            for (std::size_t i = 0; i < count; ++i)
-            {
-                dst[i] = std::min(dst[i], src[i]);
-            }
-            break;
-
-        case ReduceOp::Max:
-            for (std::size_t i = 0; i < count; ++i)
-            {
-                dst[i] = std::max(dst[i], src[i]);
-            }
-            break;
-        }
-    }
 
     // Non-root ranks send their whole contribution to root in one shot.
     // Root copies its own contribution into recv_buffer (memcpy skipped
@@ -146,7 +59,7 @@ namespace
             }
 
             world.recv(peer, temp.data(), total_bytes);
-            apply_reduction(typed_recv, temp.data(), count, op);
+            detail::apply_reduction(typed_recv, temp.data(), count, op);
         }
     }
 
