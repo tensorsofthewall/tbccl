@@ -11,6 +11,32 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(APPLE)
+    # macOS's Local Network TCC permission is keyed to a binary's code-
+    # signing identity. An ad-hoc/unsigned build gets a fresh identity
+    # every rebuild, so each new binary looks like a new app and needs
+    # its own manual approval. Signing every build with the same local
+    # certificate keeps that identity stable across rebuilds, so one
+    # approval per tool sticks. Set to the name of a "Code Signing"
+    # identity in your keychain (Keychain Access > Certificate
+    # Assistant > Create a Certificate...; must be trusted "Always
+    # Trust" for Code Signing) to enable; leave empty to skip signing.
+    set(TBCCL_CODESIGN_IDENTITY "" CACHE STRING
+        "macOS code-signing identity for network-facing tbccl binaries")
+endif()
+
+function(tbccl_codesign_if_apple target)
+    if(APPLE AND TBCCL_CODESIGN_IDENTITY)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND codesign --force --sign "${TBCCL_CODESIGN_IDENTITY}"
+                    --identifier "com.tbccl.${target}"
+                    "$<TARGET_FILE:${target}>"
+            COMMENT "Code-signing ${target} with '${TBCCL_CODESIGN_IDENTITY}'"
+            VERBATIM
+        )
+    endif()
+endfunction()
+
 add_library(tbccl STATIC
     src/transport/tcp.cpp
     src/core/tcp_world.cpp
@@ -60,6 +86,8 @@ else()
     )
 endif()
 
+tbccl_codesign_if_apple(tb_pingpong)
+
 add_executable(tbccl_world_smoke
     tools/tbccl_world_smoke.cpp
 )
@@ -78,6 +106,8 @@ else()
         -Wpedantic
     )
 endif()
+
+tbccl_codesign_if_apple(tbccl_world_smoke)
 
 add_executable(tbccl_barrier_smoke
     tools/tbccl_barrier_smoke.cpp
@@ -98,6 +128,8 @@ else()
     )
 endif()
 
+tbccl_codesign_if_apple(tbccl_barrier_smoke)
+
 add_executable(tbccl_broadcast_smoke
     tools/tbccl_broadcast_smoke.cpp
 )
@@ -116,6 +148,8 @@ else()
         -Wpedantic
     )
 endif()
+
+tbccl_codesign_if_apple(tbccl_broadcast_smoke)
 
 add_executable(tbccl_all_gather_smoke
     tools/tbccl_all_gather_smoke.cpp
@@ -136,6 +170,8 @@ else()
     )
 endif()
 
+tbccl_codesign_if_apple(tbccl_all_gather_smoke)
+
 add_executable(tbccl_reduce_smoke
     tools/tbccl_reduce_smoke.cpp
 )
@@ -154,6 +190,8 @@ else()
         -Wpedantic
     )
 endif()
+
+tbccl_codesign_if_apple(tbccl_reduce_smoke)
 
 include(CTest)
 
