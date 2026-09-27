@@ -20,6 +20,7 @@ add_library(tbccl STATIC
     src/collectives/reduction.cpp
     src/collectives/reduce.cpp
     src/collectives/all_reduce.cpp
+    src/collectives/reduce_scatter.cpp
 )
 
 target_include_directories(tbccl
