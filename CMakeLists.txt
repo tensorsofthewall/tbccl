@@ -468,4 +468,37 @@ if(BUILD_TESTING)
         COMMAND all_gather_ring_test
     )
 
+    add_executable(reduce_scatter_ring_test
+        tests/reduce_scatter_ring_test.cpp
+    )
+
+    target_link_libraries(reduce_scatter_ring_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    # reduce_scatter_internal.hpp / all_gather_internal.hpp are not
+    # part of the public API — this path is private to this one test
+    # target, not installed/exported.
+    target_include_directories(reduce_scatter_ring_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+    )
+
+    if(MSVC)
+        target_compile_options(reduce_scatter_ring_test PRIVATE /W4)
+    else()
+        target_compile_options(reduce_scatter_ring_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME reduce_scatter_ring_test
+        COMMAND reduce_scatter_ring_test
+    )
+
 endif()
