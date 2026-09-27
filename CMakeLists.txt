@@ -95,6 +95,25 @@ else()
     )
 endif()
 
+add_executable(tbccl_broadcast_smoke
+    tools/tbccl_broadcast_smoke.cpp
+)
+
+target_link_libraries(tbccl_broadcast_smoke
+    PRIVATE
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_broadcast_smoke PRIVATE /W4)
+else()
+    target_compile_options(tbccl_broadcast_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -174,6 +193,31 @@ if(BUILD_TESTING)
     add_test(
         NAME barrier_test
         COMMAND barrier_test
+    )
+
+    add_executable(broadcast_test
+        tests/broadcast_test.cpp
+    )
+
+    target_link_libraries(broadcast_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(broadcast_test PRIVATE /W4)
+    else()
+        target_compile_options(broadcast_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME broadcast_test
+        COMMAND broadcast_test
     )
 
 endif()
