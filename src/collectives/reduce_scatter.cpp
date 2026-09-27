@@ -1,5 +1,7 @@
 #include <tbccl/collectives.hpp>
 
+#include "reduce_scatter_internal.hpp"
+
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -7,6 +9,23 @@
 #include <vector>
 
 namespace tbccl
+{
+
+    void reduce_scatter(
+        World &world,
+        const void *send_buffer,
+        void *recv_buffer,
+        std::size_t recv_count,
+        DataType datatype,
+        ReduceOp op)
+    {
+        detail::reduce_scatter_reference(
+            world, send_buffer, recv_buffer, recv_count, datatype, op);
+    }
+
+} // namespace tbccl
+
+namespace tbccl::detail
 {
 namespace
 {
@@ -21,9 +40,12 @@ namespace
     // its reduce() send before it reaches the segment recv() below, so
     // collective ordering alone provides the synchronization. `reduced`
     // is typed storage (not a byte buffer reinterpreted later), so it
-    // is correctly aligned for T by construction.
+    // is correctly aligned for T by construction. This is the
+    // correctness oracle other reduce_scatter algorithm variants (e.g.
+    // reduce_scatter_ring()) are compared against — its behavior must
+    // not change.
     template <typename T>
-    void reduce_scatter_typed(
+    void reduce_scatter_reference_typed(
         World &world,
         const void *send_buffer,
         void *recv_buffer,
@@ -66,10 +88,10 @@ namespace
 
 } // namespace
 
-    void reduce_scatter(
-        World &world,
+    std::size_t validate_reduce_scatter_args(
+        const World &world,
         const void *send_buffer,
-        void *recv_buffer,
+        const void *recv_buffer,
         std::size_t recv_count,
         DataType datatype,
         ReduceOp op)
@@ -88,7 +110,8 @@ namespace
 
         const std::size_t total_count = size * recv_count;
 
-        if (recv_count > std::numeric_limits<std::size_t>::max() / element_size)
+        if (recv_count >
+            std::numeric_limits<std::size_t>::max() / element_size)
         {
             throw std::overflow_error(
                 "reduce_scatter: receive segment size overflows size_t");
@@ -115,6 +138,20 @@ namespace
                 "receive count");
         }
 
+        return total_count;
+    }
+
+    void reduce_scatter_reference(
+        World &world,
+        const void *send_buffer,
+        void *recv_buffer,
+        std::size_t recv_count,
+        DataType datatype,
+        ReduceOp op)
+    {
+        validate_reduce_scatter_args(
+            world, send_buffer, recv_buffer, recv_count, datatype, op);
+
         if (recv_count == 0)
         {
             return;
@@ -123,25 +160,25 @@ namespace
         switch (datatype)
         {
         case DataType::Int32:
-            reduce_scatter_typed<std::int32_t>(
+            reduce_scatter_reference_typed<std::int32_t>(
                 world, send_buffer, recv_buffer, recv_count, datatype, op);
             break;
 
         case DataType::Int64:
-            reduce_scatter_typed<std::int64_t>(
+            reduce_scatter_reference_typed<std::int64_t>(
                 world, send_buffer, recv_buffer, recv_count, datatype, op);
             break;
 
         case DataType::Float32:
-            reduce_scatter_typed<float>(
+            reduce_scatter_reference_typed<float>(
                 world, send_buffer, recv_buffer, recv_count, datatype, op);
             break;
 
         case DataType::Float64:
-            reduce_scatter_typed<double>(
+            reduce_scatter_reference_typed<double>(
                 world, send_buffer, recv_buffer, recv_count, datatype, op);
             break;
         }
     }
 
-} // namespace tbccl
+} // namespace tbccl::detail
