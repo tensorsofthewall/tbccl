@@ -106,4 +106,28 @@ void all_reduce(
     DataType datatype,
     ReduceOp op);
 
+// Every rank contributes `world.size() * recv_count` elements of
+// `datatype` from `send_buffer`. Those full inputs are reduced
+// element-wise (via `op`), and the reduced array is partitioned into
+// `world.size()` equal, rank-ordered segments of `recv_count` elements
+// each; rank `r`'s `recv_buffer` receives exactly segment `r` (elements
+// `[r*recv_count, (r+1)*recv_count)` of the reduced array). All ranks
+// must call with the same `recv_count`, `datatype`, and `op`. There is
+// no root parameter: internally this reduces to rank 0 and scatters
+// segments back out, but that is an implementation detail, not part of
+// the contract. `send_buffer` and `recv_buffer` must both be non-null
+// on every rank when `recv_count > 0`, since every rank both
+// contributes and receives; validated before any communication is
+// attempted. `recv_count == 0` is valid and performs no communication.
+// Unlike all_reduce(), `send_buffer` and `recv_buffer` must refer to
+// separate storage for non-zero `recv_count` — in-place operation is
+// not supported in this version, and overlap is not detected.
+void reduce_scatter(
+    World &world,
+    const void *send_buffer,
+    void *recv_buffer,
+    std::size_t recv_count,
+    DataType datatype,
+    ReduceOp op);
+
 } // namespace tbccl
