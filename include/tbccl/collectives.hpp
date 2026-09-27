@@ -2,6 +2,7 @@
 
 #include <cstddef>
 
+#include <tbccl/reduction.hpp>
 #include <tbccl/world.hpp>
 
 namespace tbccl
@@ -51,5 +52,33 @@ void all_gather(
     const void *send_buffer,
     void *recv_buffer,
     std::size_t bytes_per_rank);
+
+// Every rank contributes `count` elements of `datatype` from
+// `send_buffer`; on successful return, `root`'s `recv_buffer` holds the
+// element-wise reduction (via `op`) of every rank's contribution, root's
+// own included. All ranks must call with the same `count`, `datatype`,
+// `op`, and `root` (`root < world.size()`). `send_buffer` must be
+// non-null on every rank when `count > 0`; `recv_buffer` must be
+// non-null on `root` when `count > 0`, but is ignored (may be nullptr)
+// on non-root ranks, which do not receive a result. `count == 0` is
+// valid and performs no communication. `send_buffer` and root's
+// `recv_buffer` must be suitably aligned for `datatype`; if they are
+// the same pointer, that aliasing is handled, but no other overlap
+// between them is supported. Root reduces peer contributions in
+// ascending rank order (its own contribution first), so results are
+// reproducible for a given input across runs, but floating-point Sum/
+// Product results are not associativity-independent — a different
+// reduction order (e.g. a future tree/ring implementation) may produce
+// a different Float32/Float64 result for the same inputs. Integer
+// Sum/Product wrap using two's-complement modular arithmetic rather
+// than invoking signed-overflow undefined behavior.
+void reduce(
+    World &world,
+    const void *send_buffer,
+    void *recv_buffer,
+    std::size_t count,
+    DataType datatype,
+    ReduceOp op,
+    std::size_t root);
 
 } // namespace tbccl
