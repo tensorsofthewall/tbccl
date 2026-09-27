@@ -75,6 +75,25 @@ else()
     )
 endif()
 
+add_executable(tbccl_barrier_smoke
+    tools/tbccl_barrier_smoke.cpp
+)
+
+target_link_libraries(tbccl_barrier_smoke
+    PRIVATE
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_barrier_smoke PRIVATE /W4)
+else()
+    target_compile_options(tbccl_barrier_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -129,6 +148,31 @@ if(BUILD_TESTING)
     add_test(
         NAME world_test
         COMMAND world_test
+    )
+
+    add_executable(barrier_test
+        tests/barrier_test.cpp
+    )
+
+    target_link_libraries(barrier_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(barrier_test PRIVATE /W4)
+    else()
+        target_compile_options(barrier_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME barrier_test
+        COMMAND barrier_test
     )
 
 endif()
