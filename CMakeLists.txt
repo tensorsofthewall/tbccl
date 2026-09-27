@@ -11,6 +11,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(Threads REQUIRED)
+
 add_library(tbccl STATIC
     src/transport/tcp.cpp
     src/core/tcp_world.cpp
@@ -21,11 +23,17 @@ add_library(tbccl STATIC
     src/collectives/reduce.cpp
     src/collectives/all_reduce.cpp
     src/collectives/reduce_scatter.cpp
+    src/collectives/all_gather_ring.cpp
 )
 
 target_include_directories(tbccl
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(tbccl
+    PUBLIC
+        Threads::Threads
 )
 
 target_compile_features(tbccl
