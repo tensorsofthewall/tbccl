@@ -36,4 +36,20 @@ void broadcast(
     std::size_t bytes,
     std::size_t root);
 
+// Every rank contributes exactly `bytes_per_rank` bytes from
+// `send_buffer`. On successful return, every rank's `recv_buffer`
+// holds all contributions concatenated in rank order: bytes
+// `[0, bytes_per_rank)` are rank 0's contribution, bytes
+// `[bytes_per_rank, 2*bytes_per_rank)` are rank 1's, and so on, so
+// `recv_buffer` must be at least `world.size() * bytes_per_rank`
+// bytes. `send_buffer`/`recv_buffer` may be nullptr only when
+// `bytes_per_rank` is 0. Not in-place: for non-zero payloads,
+// `send_buffer` and `recv_buffer` must refer to separate storage —
+// overlap is not detected and produces undefined results.
+void all_gather(
+    World &world,
+    const void *send_buffer,
+    void *recv_buffer,
+    std::size_t bytes_per_rank);
+
 } // namespace tbccl
