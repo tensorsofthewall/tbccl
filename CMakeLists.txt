@@ -203,6 +203,32 @@ else()
     )
 endif()
 
+add_executable(tbccl_collective_bench
+    benchmarks/collective_bench.cpp
+)
+
+target_link_libraries(tbccl_collective_bench
+    PRIVATE
+        tbccl
+)
+
+# all_gather_internal.hpp is not part of the public API — this path is
+# private to this one benchmark target, not installed/exported.
+target_include_directories(tbccl_collective_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+)
+
+if(MSVC)
+    target_compile_options(tbccl_collective_bench PRIVATE /W4)
+else()
+    target_compile_options(tbccl_collective_bench PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
