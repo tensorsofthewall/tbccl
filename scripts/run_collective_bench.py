@@ -53,8 +53,9 @@ def build_arg_parser():
     parser.add_argument(
         "--algorithm",
         default="reference",
-        choices=["reference", "ring", "both"],
-        help="Algorithm to benchmark, or 'both' to run reference then ring",
+        choices=["reference", "ring", "auto", "both"],
+        help="Algorithm to benchmark ('auto' resolves per-size via the "
+        "library's selector policy), or 'both' to run reference then ring",
     )
     parser.add_argument(
         "--sizes",

@@ -1,8 +1,18 @@
 // Generic collective benchmark harness. Currently supports:
-//   --collective all-gather     --algorithm reference|ring
-//   --collective reduce-scatter --algorithm reference|ring
+//   --collective all-gather     --algorithm reference|ring|auto
+//   --collective reduce-scatter --algorithm reference|ring|auto
+//   --collective all-reduce     --algorithm reference|ring|auto
 //                                --datatype int32|int64|float32|float64
 //                                --op sum|product|min|max
+//
+// --algorithm auto resolves the algorithm via the same pure selector
+// policy the public collective API uses (see algorithm_selector.hpp),
+// independently for every --sizes value — never via a
+// TBCCL_ALGORITHM/TBCCL_*_ALGORITHM environment override, so a
+// benchmark run's results are reproducible regardless of the user's
+// shell environment. Each CSV row records both requested_algorithm
+// ("reference"/"ring"/"auto") and the resolved algorithm actually
+// benchmarked, plus selection_reason for auto rows.
 //
 // The CLI/CSV shape is deliberately generic so later phases can add
 // more collectives/algorithms without replacing this tool — see
@@ -29,6 +39,7 @@
 #include <tbccl/collectives.hpp>
 #include <tbccl/tcp_world.hpp>
 
+#include "algorithm_selector.hpp"
 #include "all_gather_internal.hpp"
 #include "all_reduce_internal.hpp"
 #include "reduce_scatter_internal.hpp"
@@ -69,7 +80,7 @@ namespace
             << " --rank R --peers HOST:PORT,HOST:PORT,... "
             << "[--bind ADDRESS] [--busy-poll MICROSECONDS] "
             << "[--collective all-gather|reduce-scatter|all-reduce] "
-            << "[--algorithm reference|ring] "
+            << "[--algorithm reference|ring|auto] "
             << "[--datatype int32|int64|float32|float64] "
             << "[--op sum|product|min|max] "
             << "[--sizes BYTES[,BYTES...]] [--iterations N] "
@@ -531,11 +542,20 @@ namespace
 
     // One shared CSV row shape for every collective this tool
     // supports. `datatype`/`op` are empty for collectives (like
-    // AllGather) that have no reduction.
+    // AllGather) that have no reduction. `requested_algorithm` is
+    // whatever --algorithm asked for ("reference"/"ring"/"auto");
+    // `algorithm` is what was actually benchmarked for this row
+    // (always == requested_algorithm unless requested_algorithm ==
+    // "auto", in which case it is the selector's resolved choice for
+    // this row's specific size). `selection_reason` is empty for
+    // explicit reference/ring requests (no selector was consulted) and
+    // the selector's SelectionReason name for auto rows.
     struct BenchRow
     {
         std::string collective;
+        std::string requested_algorithm;
         std::string algorithm;
+        std::string selection_reason;
         std::string datatype;
         std::string op;
         std::size_t world_size = 0;
@@ -555,10 +575,10 @@ namespace
     void print_csv_header()
     {
         std::cout
-            << "collective,algorithm,datatype,op,world_size,segment_bytes,"
-               "input_bytes_per_rank,output_bytes_per_rank,iterations,"
-               "warmup,median_us,p95_us,min_us,max_us,algbw_GBps,"
-               "busbw_GBps,busy_poll_us\n";
+            << "collective,requested_algorithm,algorithm,selection_reason,"
+               "datatype,op,world_size,segment_bytes,input_bytes_per_rank,"
+               "output_bytes_per_rank,iterations,warmup,median_us,p95_us,"
+               "min_us,max_us,algbw_GBps,busbw_GBps,busy_poll_us\n";
     }
 
     void print_csv_row(const BenchRow &row)
@@ -577,8 +597,9 @@ namespace
             static_cast<double>(row.world_size);
 
         std::cout
-            << row.collective << ',' << row.algorithm << ',' << row.datatype
-            << ',' << row.op << ',' << row.world_size << ','
+            << row.collective << ',' << row.requested_algorithm << ','
+            << row.algorithm << ',' << row.selection_reason << ','
+            << row.datatype << ',' << row.op << ',' << row.world_size << ','
             << row.segment_bytes << ',' << row.input_bytes_per_rank << ','
             << row.output_bytes_per_rank << ',' << row.stats.iterations
             << ',' << row.warmup << ',' << row.stats.median_us << ','
@@ -590,19 +611,52 @@ namespace
     using AllGatherFn = void (*)(
         tbccl::World &, const void *, void *, std::size_t);
 
-    AllGatherFn select_all_gather_algorithm(const std::string &algorithm)
+    struct AllGatherResolution
     {
-        if (algorithm == "reference")
+        AllGatherFn function;
+        std::string resolved_name;
+        std::string reason_name;
+    };
+
+    // Resolves --algorithm to a concrete function pointer for one
+    // --sizes value. For "auto", this calls the same pure selector
+    // policy the public all_gather() uses (never a TBCCL_ALGORITHM
+    // environment override), so the resolution is reproducible and
+    // independent of the caller's shell environment; different
+    // --sizes values in the same run may resolve differently.
+    AllGatherResolution resolve_all_gather_function(
+        const std::string &requested,
+        std::size_t world_size,
+        std::size_t bytes_per_rank)
+    {
+        if (requested == "reference")
         {
-            return tbccl::detail::all_gather_reference;
+            return {tbccl::detail::all_gather_reference, "reference", ""};
         }
 
-        if (algorithm == "ring")
+        if (requested == "ring")
         {
-            return tbccl::detail::all_gather_ring;
+            return {tbccl::detail::all_gather_ring, "ring", ""};
         }
 
-        throw std::runtime_error("unknown --algorithm: " + algorithm);
+        if (requested == "auto")
+        {
+            const auto decision = tbccl::detail::select_all_gather_algorithm(
+                world_size, bytes_per_rank,
+                tbccl::detail::AlgorithmMode::Auto);
+
+            const AllGatherFn function =
+                decision.algorithm ==
+                        tbccl::detail::CollectiveAlgorithm::Ring
+                    ? tbccl::detail::all_gather_ring
+                    : tbccl::detail::all_gather_reference;
+
+            return {function,
+                    tbccl::detail::algorithm_name(decision.algorithm),
+                    tbccl::detail::selection_reason_name(decision.reason)};
+        }
+
+        throw std::runtime_error("unknown --algorithm: " + requested);
     }
 
     // Runs one (algorithm, bytes_per_rank) AllGather benchmark: an
@@ -712,19 +766,48 @@ namespace
         tbccl::World &, const void *, void *, std::size_t, tbccl::DataType,
         tbccl::ReduceOp);
 
-    ReduceScatterFn select_reduce_scatter_algorithm(const std::string &algorithm)
+    struct ReduceScatterResolution
     {
-        if (algorithm == "reference")
+        ReduceScatterFn function;
+        std::string resolved_name;
+        std::string reason_name;
+    };
+
+    ReduceScatterResolution resolve_reduce_scatter_function(
+        const std::string &requested,
+        std::size_t world_size,
+        std::size_t segment_bytes)
+    {
+        if (requested == "reference")
         {
-            return tbccl::detail::reduce_scatter_reference;
+            return {tbccl::detail::reduce_scatter_reference, "reference",
+                    ""};
         }
 
-        if (algorithm == "ring")
+        if (requested == "ring")
         {
-            return tbccl::detail::reduce_scatter_ring;
+            return {tbccl::detail::reduce_scatter_ring, "ring", ""};
         }
 
-        throw std::runtime_error("unknown --algorithm: " + algorithm);
+        if (requested == "auto")
+        {
+            const auto decision =
+                tbccl::detail::select_reduce_scatter_algorithm(
+                    world_size, segment_bytes,
+                    tbccl::detail::AlgorithmMode::Auto);
+
+            const ReduceScatterFn function =
+                decision.algorithm ==
+                        tbccl::detail::CollectiveAlgorithm::Ring
+                    ? tbccl::detail::reduce_scatter_ring
+                    : tbccl::detail::reduce_scatter_reference;
+
+            return {function,
+                    tbccl::detail::algorithm_name(decision.algorithm),
+                    tbccl::detail::selection_reason_name(decision.reason)};
+        }
+
+        throw std::runtime_error("unknown --algorithm: " + requested);
     }
 
     // Same structure as run_all_gather_benchmark: untimed correctness
@@ -879,19 +962,47 @@ namespace
         tbccl::World &, const void *, void *, std::size_t, tbccl::DataType,
         tbccl::ReduceOp);
 
-    AllReduceFn select_all_reduce_algorithm(const std::string &algorithm)
+    struct AllReduceResolution
     {
-        if (algorithm == "reference")
+        AllReduceFn function;
+        std::string resolved_name;
+        std::string reason_name;
+    };
+
+    AllReduceResolution resolve_all_reduce_function(
+        const std::string &requested,
+        std::size_t world_size,
+        std::size_t tensor_bytes,
+        std::size_t element_count)
+    {
+        if (requested == "reference")
         {
-            return tbccl::detail::all_reduce_reference;
+            return {tbccl::detail::all_reduce_reference, "reference", ""};
         }
 
-        if (algorithm == "ring")
+        if (requested == "ring")
         {
-            return tbccl::detail::all_reduce_ring;
+            return {tbccl::detail::all_reduce_ring, "ring", ""};
         }
 
-        throw std::runtime_error("unknown --algorithm: " + algorithm);
+        if (requested == "auto")
+        {
+            const auto decision = tbccl::detail::select_all_reduce_algorithm(
+                world_size, tensor_bytes, element_count,
+                tbccl::detail::AlgorithmMode::Auto);
+
+            const AllReduceFn function =
+                decision.algorithm ==
+                        tbccl::detail::CollectiveAlgorithm::Ring
+                    ? tbccl::detail::all_reduce_ring
+                    : tbccl::detail::all_reduce_reference;
+
+            return {function,
+                    tbccl::detail::algorithm_name(decision.algorithm),
+                    tbccl::detail::selection_reason_name(decision.reason)};
+        }
+
+        throw std::runtime_error("unknown --algorithm: " + requested);
     }
 
     // Same structure as run_reduce_scatter_benchmark: untimed
@@ -1050,6 +1161,14 @@ int main(int argc, char **argv)
                 "supported so far)");
         }
 
+        if (options.algorithm != "reference" && options.algorithm != "ring" &&
+            options.algorithm != "auto")
+        {
+            throw std::runtime_error(
+                "unsupported --algorithm: " + options.algorithm +
+                " (only reference, ring, and auto are supported)");
+        }
+
         tbccl::TcpWorldOptions world_options;
         world_options.rank = options.rank;
         world_options.peers = options.peers;
@@ -1081,25 +1200,27 @@ int main(int argc, char **argv)
 
         if (options.collective == "all-gather")
         {
-            const AllGatherFn collective =
-                select_all_gather_algorithm(options.algorithm);
-
             for (std::size_t bytes_per_rank : options.sizes)
             {
+                const auto resolution = resolve_all_gather_function(
+                    options.algorithm, size, bytes_per_rank);
+
                 const auto stats = run_all_gather_benchmark(
-                    *world, collective, bytes_per_rank, options.iterations,
-                    options.warmup);
+                    *world, resolution.function, bytes_per_rank,
+                    options.iterations, options.warmup);
 
                 std::cerr
                     << "rank " << world->rank()
                     << ": completed bytes_per_rank=" << bytes_per_rank
-                    << '\n';
+                    << " algorithm=" << resolution.resolved_name << '\n';
 
                 if (world->rank() == 0)
                 {
                     BenchRow row;
                     row.collective = options.collective;
-                    row.algorithm = options.algorithm;
+                    row.requested_algorithm = options.algorithm;
+                    row.algorithm = resolution.resolved_name;
+                    row.selection_reason = resolution.reason_name;
                     row.world_size = size;
                     row.segment_bytes = bytes_per_rank;
                     row.input_bytes_per_rank = bytes_per_rank;
@@ -1114,8 +1235,6 @@ int main(int argc, char **argv)
         }
         else if (options.collective == "reduce-scatter")
         {
-            const ReduceScatterFn collective =
-                select_reduce_scatter_algorithm(options.algorithm);
             const std::size_t element_size =
                 tbccl::datatype_size(options.datatype);
 
@@ -1132,19 +1251,26 @@ int main(int argc, char **argv)
 
                 const std::size_t recv_count = segment_bytes / element_size;
 
+                const auto resolution = resolve_reduce_scatter_function(
+                    options.algorithm, size, segment_bytes);
+
                 const auto stats = run_reduce_scatter_benchmark_dispatch(
-                    *world, collective, recv_count, options.datatype,
-                    options.op, options.iterations, options.warmup);
+                    *world, resolution.function, recv_count,
+                    options.datatype, options.op, options.iterations,
+                    options.warmup);
 
                 std::cerr
                     << "rank " << world->rank()
-                    << ": completed segment_bytes=" << segment_bytes << '\n';
+                    << ": completed segment_bytes=" << segment_bytes
+                    << " algorithm=" << resolution.resolved_name << '\n';
 
                 if (world->rank() == 0)
                 {
                     BenchRow row;
                     row.collective = options.collective;
-                    row.algorithm = options.algorithm;
+                    row.requested_algorithm = options.algorithm;
+                    row.algorithm = resolution.resolved_name;
+                    row.selection_reason = resolution.reason_name;
                     row.datatype = datatype_name(options.datatype);
                     row.op = op_name(options.op);
                     row.world_size = size;
@@ -1168,8 +1294,6 @@ int main(int argc, char **argv)
             // algorithms here, so segment_bytes (B/N) is always exact
             // and directly comparable between reference and ring rows
             // — ring itself would reject a non-divisible count anyway.
-            const AllReduceFn collective =
-                select_all_reduce_algorithm(options.algorithm);
             const std::size_t element_size =
                 tbccl::datatype_size(options.datatype);
 
@@ -1195,19 +1319,25 @@ int main(int argc, char **argv)
                         std::to_string(size));
                 }
 
+                const auto resolution = resolve_all_reduce_function(
+                    options.algorithm, size, tensor_bytes, count);
+
                 const auto stats = run_all_reduce_benchmark_dispatch(
-                    *world, collective, count, options.datatype, options.op,
-                    options.iterations, options.warmup);
+                    *world, resolution.function, count, options.datatype,
+                    options.op, options.iterations, options.warmup);
 
                 std::cerr
                     << "rank " << world->rank()
-                    << ": completed tensor_bytes=" << tensor_bytes << '\n';
+                    << ": completed tensor_bytes=" << tensor_bytes
+                    << " algorithm=" << resolution.resolved_name << '\n';
 
                 if (world->rank() == 0)
                 {
                     BenchRow row;
                     row.collective = options.collective;
-                    row.algorithm = options.algorithm;
+                    row.requested_algorithm = options.algorithm;
+                    row.algorithm = resolution.resolved_name;
+                    row.selection_reason = resolution.reason_name;
                     row.datatype = datatype_name(options.datatype);
                     row.op = op_name(options.op);
                     row.world_size = size;

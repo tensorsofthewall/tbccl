@@ -25,20 +25,27 @@ using tbccl_test::run_rank;
 namespace
 {
 
-    // Fixed high port ranges, one block per distributed test, well
-    // clear of every other test file's range (up through
-    // all_reduce_ring_test's 32100-32560).
-    constexpr std::uint16_t kAllGatherAutoRingBase = 42000;
-    constexpr std::uint16_t kReduceScatterAutoRingBase = 42010;
-    constexpr std::uint16_t kAllReduceAutoRingBase = 42020;
-    constexpr std::uint16_t kAllReduceAutoIneligibleBase = 42030;
-    constexpr std::uint16_t kForcedRefAllGatherBase = 42040;
-    constexpr std::uint16_t kForcedRefReduceScatterBase = 42050;
-    constexpr std::uint16_t kForcedRefAllReduceBase = 42060;
-    constexpr std::uint16_t kForcedRingAllGatherBase = 42070;
-    constexpr std::uint16_t kForcedRingReduceScatterBase = 42080;
-    constexpr std::uint16_t kForcedRingAllReduceBase = 42090;
-    constexpr std::uint16_t kForcedRingNondivisibleBase = 42100;
+    // Fixed port ranges, one block per distributed test, continuing on
+    // from every other test file's range (up through
+    // all_reduce_ring_test's 32100-32560) and — importantly — kept
+    // below 32768, the default Linux ephemeral port range floor
+    // (`/proc/sys/net/ipv4/ip_local_port_range`). Every other test
+    // file in this repo already stays below that floor; ports at or
+    // above it can transiently collide with any outbound connection's
+    // OS-assigned source port anywhere on the machine, which causes
+    // intermittent "Address already in use" bind failures unrelated to
+    // this test's own logic.
+    constexpr std::uint16_t kAllGatherAutoRingBase = 32600;
+    constexpr std::uint16_t kReduceScatterAutoRingBase = 32610;
+    constexpr std::uint16_t kAllReduceAutoRingBase = 32620;
+    constexpr std::uint16_t kAllReduceAutoIneligibleBase = 32630;
+    constexpr std::uint16_t kForcedRefAllGatherBase = 32640;
+    constexpr std::uint16_t kForcedRefReduceScatterBase = 32650;
+    constexpr std::uint16_t kForcedRefAllReduceBase = 32660;
+    constexpr std::uint16_t kForcedRingAllGatherBase = 32670;
+    constexpr std::uint16_t kForcedRingReduceScatterBase = 32680;
+    constexpr std::uint16_t kForcedRingAllReduceBase = 32690;
+    constexpr std::uint16_t kForcedRingNondivisibleBase = 32700;
 
     // -------------------------------------------------------------------
     // Environment RAII helpers. Every distributed test in this file
