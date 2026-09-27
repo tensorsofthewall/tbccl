@@ -1,26 +1,36 @@
 // Generic collective benchmark harness. Currently supports:
-//   --collective all-gather --algorithm reference|ring
+//   --collective all-gather     --algorithm reference|ring
+//   --collective reduce-scatter --algorithm reference|ring
+//                                --datatype int32|int64|float32|float64
+//                                --op sum|product|min|max
 //
 // The CLI/CSV shape is deliberately generic so later phases can add
 // more collectives/algorithms without replacing this tool — see
-// select_all_gather_algorithm() and run_all_gather_benchmark() as the
-// pattern to follow for e.g. reduce-scatter or all-reduce.
+// run_all_gather_benchmark()/run_reduce_scatter_benchmark() as the
+// pattern to follow for e.g. all-reduce.
 //
-// Bandwidth formulas (see collectives.hpp for AllGather's semantics):
-//   N = world size, B = bytes_per_rank contributed by each rank,
-//   T = measured collective duration (max across ranks, per iteration
-//   median).
-//   algbw = (N * B) / T             — total gathered bytes per rank
-//                                      over time.
+// Bandwidth formulas, using a single "segment_bytes" (B) meaning that
+// differs slightly by collective (see collectives.hpp for exact
+// semantics): for AllGather, B is the contribution bytes each rank
+// sends; for ReduceScatter, B is the output segment bytes each rank
+// receives. N = world size, T = measured collective duration (max
+// across ranks, per-iteration median).
+//   algbw = (N * B) / T             — total bytes moved per rank over
+//                                      time (gathered for AllGather,
+//                                      logically-input for
+//                                      ReduceScatter).
 //   busbw = algbw * (N - 1) / N
 //         = ((N - 1) * B) / T       — useful peer-delivered traffic
-//                                      per rank for an ideal AllGather.
+//                                      per rank for an ideal ring
+//                                      implementation of either
+//                                      collective.
 // Bandwidth is reported in decimal GB/s (1 GB = 1e9 bytes), not GiB/s.
 
 #include <tbccl/collectives.hpp>
 #include <tbccl/tcp_world.hpp>
 
 #include "all_gather_internal.hpp"
+#include "reduce_scatter_internal.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -43,6 +53,8 @@ namespace
         int busy_poll_us = 0;
         std::string collective = "all-gather";
         std::string algorithm = "reference";
+        tbccl::DataType datatype = tbccl::DataType::Float32;
+        tbccl::ReduceOp op = tbccl::ReduceOp::Sum;
         std::vector<std::size_t> sizes;
         int iterations = 100;
         int warmup = 20;
@@ -55,9 +67,17 @@ namespace
             << "  " << program
             << " --rank R --peers HOST:PORT,HOST:PORT,... "
             << "[--bind ADDRESS] [--busy-poll MICROSECONDS] "
-            << "[--collective all-gather] [--algorithm reference|ring] "
+            << "[--collective all-gather|reduce-scatter] "
+            << "[--algorithm reference|ring] "
+            << "[--datatype int32|int64|float32|float64] "
+            << "[--op sum|product|min|max] "
             << "[--sizes BYTES[,BYTES...]] [--iterations N] "
             << "[--warmup N]\n\n"
+            << "For all-gather, each --sizes value is contribution "
+               "bytes per rank. For reduce-scatter, each --sizes value "
+               "is output segment bytes per rank (must be a multiple "
+               "of the datatype size); --datatype/--op select the "
+               "reduction.\n\n"
             << "Example:\n"
             << "  " << program
             << " --rank 0 --peers "
@@ -201,6 +221,52 @@ namespace
         };
     }
 
+    tbccl::DataType parse_datatype(const std::string &text)
+    {
+        if (text == "int32") return tbccl::DataType::Int32;
+        if (text == "int64") return tbccl::DataType::Int64;
+        if (text == "float32") return tbccl::DataType::Float32;
+        if (text == "float64") return tbccl::DataType::Float64;
+
+        throw std::runtime_error("invalid --datatype value: " + text);
+    }
+
+    tbccl::ReduceOp parse_op(const std::string &text)
+    {
+        if (text == "sum") return tbccl::ReduceOp::Sum;
+        if (text == "product") return tbccl::ReduceOp::Product;
+        if (text == "min") return tbccl::ReduceOp::Min;
+        if (text == "max") return tbccl::ReduceOp::Max;
+
+        throw std::runtime_error("invalid --op value: " + text);
+    }
+
+    const char *datatype_name(tbccl::DataType datatype)
+    {
+        switch (datatype)
+        {
+        case tbccl::DataType::Int32: return "int32";
+        case tbccl::DataType::Int64: return "int64";
+        case tbccl::DataType::Float32: return "float32";
+        case tbccl::DataType::Float64: return "float64";
+        }
+
+        return "unknown";
+    }
+
+    const char *op_name(tbccl::ReduceOp op)
+    {
+        switch (op)
+        {
+        case tbccl::ReduceOp::Sum: return "sum";
+        case tbccl::ReduceOp::Product: return "product";
+        case tbccl::ReduceOp::Min: return "min";
+        case tbccl::ReduceOp::Max: return "max";
+        }
+
+        return "unknown";
+    }
+
     Options parse_options(int argc, char **argv)
     {
         Options options;
@@ -245,6 +311,14 @@ namespace
             else if (argument == "--algorithm")
             {
                 options.algorithm = require_value(argument);
+            }
+            else if (argument == "--datatype")
+            {
+                options.datatype = parse_datatype(require_value(argument));
+            }
+            else if (argument == "--op")
+            {
+                options.op = parse_op(require_value(argument));
             }
             else if (argument == "--sizes")
             {
@@ -374,22 +448,40 @@ namespace
         return buffer;
     }
 
-    using AllGatherFn = void (*)(
-        tbccl::World &, const void *, void *, std::size_t);
-
-    AllGatherFn select_all_gather_algorithm(const std::string &algorithm)
+    // Deterministic values kept small ([1, 7]) so Product cannot
+    // explode numerically.
+    template <typename T>
+    T generate_value(
+        std::size_t rank, std::size_t global_index, std::uint32_t seed)
     {
-        if (algorithm == "reference")
-        {
-            return tbccl::detail::all_gather_reference;
-        }
+        const long value =
+            (static_cast<long>(rank) * 131 +
+             static_cast<long>(global_index) * 7 +
+             static_cast<long>(seed)) %
+                7 +
+            1;
 
-        if (algorithm == "ring")
-        {
-            return tbccl::detail::all_gather_ring;
-        }
+        return static_cast<T>(value);
+    }
 
-        throw std::runtime_error("unknown --algorithm: " + algorithm);
+    template <typename T>
+    void combine(T &acc, T value, tbccl::ReduceOp op)
+    {
+        switch (op)
+        {
+        case tbccl::ReduceOp::Sum:
+            acc = acc + value;
+            break;
+        case tbccl::ReduceOp::Product:
+            acc = acc * value;
+            break;
+        case tbccl::ReduceOp::Min:
+            acc = acc < value ? acc : value;
+            break;
+        case tbccl::ReduceOp::Max:
+            acc = acc > value ? acc : value;
+            break;
+        }
     }
 
     struct LatencyStats
@@ -431,6 +523,76 @@ namespace
         stats.max_us = iteration_us.empty() ? 0.0 : iteration_us.back();
 
         return stats;
+    }
+
+    // One shared CSV row shape for every collective this tool
+    // supports. `datatype`/`op` are empty for collectives (like
+    // AllGather) that have no reduction.
+    struct BenchRow
+    {
+        std::string collective;
+        std::string algorithm;
+        std::string datatype;
+        std::string op;
+        std::size_t world_size = 0;
+        std::size_t segment_bytes = 0;
+        std::size_t input_bytes_per_rank = 0;
+        std::size_t output_bytes_per_rank = 0;
+        LatencyStats stats;
+        int warmup = 0;
+        int busy_poll_us = 0;
+    };
+
+    void print_csv_header()
+    {
+        std::cout
+            << "collective,algorithm,datatype,op,world_size,segment_bytes,"
+               "input_bytes_per_rank,output_bytes_per_rank,iterations,"
+               "warmup,median_us,p95_us,min_us,max_us,algbw_GBps,"
+               "busbw_GBps,busy_poll_us\n";
+    }
+
+    void print_csv_row(const BenchRow &row)
+    {
+        const double median_seconds = row.stats.median_us * 1e-6;
+        const double moved_bytes =
+            static_cast<double>(row.world_size) *
+            static_cast<double>(row.segment_bytes);
+
+        const double algbw_GBps =
+            median_seconds > 0.0 ? (moved_bytes / median_seconds) / 1e9
+                                  : 0.0;
+        const double busbw_GBps =
+            algbw_GBps * static_cast<double>(row.world_size - 1) /
+            static_cast<double>(row.world_size);
+
+        std::cout
+            << row.collective << ',' << row.algorithm << ',' << row.datatype
+            << ',' << row.op << ',' << row.world_size << ','
+            << row.segment_bytes << ',' << row.input_bytes_per_rank << ','
+            << row.output_bytes_per_rank << ',' << row.stats.iterations
+            << ',' << row.warmup << ',' << row.stats.median_us << ','
+            << row.stats.p95_us << ',' << row.stats.min_us << ','
+            << row.stats.max_us << ',' << algbw_GBps << ',' << busbw_GBps
+            << ',' << row.busy_poll_us << '\n';
+    }
+
+    using AllGatherFn = void (*)(
+        tbccl::World &, const void *, void *, std::size_t);
+
+    AllGatherFn select_all_gather_algorithm(const std::string &algorithm)
+    {
+        if (algorithm == "reference")
+        {
+            return tbccl::detail::all_gather_reference;
+        }
+
+        if (algorithm == "ring")
+        {
+            return tbccl::detail::all_gather_ring;
+        }
+
+        throw std::runtime_error("unknown --algorithm: " + algorithm);
     }
 
     // Runs one (algorithm, bytes_per_rank) AllGather benchmark: an
@@ -536,6 +698,173 @@ namespace
         return summarize(std::move(iteration_us));
     }
 
+    using ReduceScatterFn = void (*)(
+        tbccl::World &, const void *, void *, std::size_t, tbccl::DataType,
+        tbccl::ReduceOp);
+
+    ReduceScatterFn select_reduce_scatter_algorithm(const std::string &algorithm)
+    {
+        if (algorithm == "reference")
+        {
+            return tbccl::detail::reduce_scatter_reference;
+        }
+
+        if (algorithm == "ring")
+        {
+            return tbccl::detail::reduce_scatter_ring;
+        }
+
+        throw std::runtime_error("unknown --algorithm: " + algorithm);
+    }
+
+    // Same structure as run_all_gather_benchmark: untimed correctness
+    // gate, untimed warmup, timed iterations (barrier + collective
+    // only), untimed final recheck. `recv_count` elements are
+    // generated/verified per rank via generate_value()/combine(),
+    // independently of whichever algorithm is under test.
+    template <typename T>
+    LatencyStats run_reduce_scatter_benchmark(
+        tbccl::World &world,
+        ReduceScatterFn collective,
+        std::size_t recv_count,
+        tbccl::DataType datatype,
+        tbccl::ReduceOp op,
+        int iterations,
+        int warmup)
+    {
+        const std::size_t rank = world.rank();
+        const std::size_t size = world.size();
+        const std::size_t total_count = size * recv_count;
+        constexpr std::uint32_t kSeed = 0x9000u;
+
+        std::vector<T> send(total_count);
+
+        for (std::size_t i = 0; i < total_count; ++i)
+        {
+            send[i] = generate_value<T>(rank, i, kSeed);
+        }
+
+        std::vector<T> expected(recv_count);
+
+        for (std::size_t i = 0; i < recv_count; ++i)
+        {
+            const std::size_t global_index = rank * recv_count + i;
+            T acc = generate_value<T>(0, global_index, kSeed);
+
+            for (std::size_t p = 1; p < size; ++p)
+            {
+                combine(acc, generate_value<T>(p, global_index, kSeed), op);
+            }
+
+            expected[i] = acc;
+        }
+
+        std::vector<T> recv(recv_count, T{});
+
+        auto check_correctness = [&](const char *stage)
+        {
+            for (std::size_t i = 0; i < recv_count; ++i)
+            {
+                if (recv[i] != expected[i])
+                {
+                    throw std::runtime_error(
+                        std::string("correctness gate failed (") + stage +
+                        ") at recv_count=" + std::to_string(recv_count) +
+                        ", element " + std::to_string(i));
+                }
+            }
+        };
+
+        collective(
+            world, send.data(), recv.data(), recv_count, datatype, op);
+        check_correctness("pre-benchmark");
+
+        for (int i = 0; i < warmup; ++i)
+        {
+            tbccl::barrier(world);
+            collective(
+                world, send.data(), recv.data(), recv_count, datatype, op);
+        }
+
+        std::vector<double> iteration_us;
+        iteration_us.reserve(static_cast<std::size_t>(iterations));
+
+        for (int i = 0; i < iterations; ++i)
+        {
+            tbccl::barrier(world);
+
+            const auto start = std::chrono::steady_clock::now();
+            collective(
+                world, send.data(), recv.data(), recv_count, datatype, op);
+            const auto stop = std::chrono::steady_clock::now();
+
+            const double local_us =
+                std::chrono::duration<double, std::micro>(stop - start)
+                    .count();
+
+            if (rank == 0)
+            {
+                double max_us = local_us;
+
+                for (std::size_t peer = 1; peer < size; ++peer)
+                {
+                    double peer_us = 0.0;
+                    world.recv(peer, &peer_us, sizeof(peer_us));
+                    max_us = std::max(max_us, peer_us);
+                }
+
+                iteration_us.push_back(max_us);
+            }
+            else
+            {
+                world.send(0, &local_us, sizeof(local_us));
+            }
+        }
+
+        collective(
+            world, send.data(), recv.data(), recv_count, datatype, op);
+        check_correctness("post-benchmark");
+
+        if (rank != 0)
+        {
+            return LatencyStats{};
+        }
+
+        return summarize(std::move(iteration_us));
+    }
+
+    LatencyStats run_reduce_scatter_benchmark_dispatch(
+        tbccl::World &world,
+        ReduceScatterFn collective,
+        std::size_t recv_count,
+        tbccl::DataType datatype,
+        tbccl::ReduceOp op,
+        int iterations,
+        int warmup)
+    {
+        switch (datatype)
+        {
+        case tbccl::DataType::Int32:
+            return run_reduce_scatter_benchmark<std::int32_t>(
+                world, collective, recv_count, datatype, op, iterations,
+                warmup);
+        case tbccl::DataType::Int64:
+            return run_reduce_scatter_benchmark<std::int64_t>(
+                world, collective, recv_count, datatype, op, iterations,
+                warmup);
+        case tbccl::DataType::Float32:
+            return run_reduce_scatter_benchmark<float>(
+                world, collective, recv_count, datatype, op, iterations,
+                warmup);
+        case tbccl::DataType::Float64:
+            return run_reduce_scatter_benchmark<double>(
+                world, collective, recv_count, datatype, op, iterations,
+                warmup);
+        }
+
+        throw std::runtime_error("unreachable: unknown DataType");
+    }
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -544,15 +873,14 @@ int main(int argc, char **argv)
     {
         const Options options = parse_options(argc, argv);
 
-        if (options.collective != "all-gather")
+        if (options.collective != "all-gather" &&
+            options.collective != "reduce-scatter")
         {
             throw std::runtime_error(
                 "unsupported --collective: " + options.collective +
-                " (only all-gather is supported so far)");
+                " (only all-gather and reduce-scatter are supported so "
+                "far)");
         }
-
-        const AllGatherFn collective =
-            select_all_gather_algorithm(options.algorithm);
 
         tbccl::TcpWorldOptions world_options;
         world_options.rank = options.rank;
@@ -566,51 +894,100 @@ int main(int argc, char **argv)
         std::cerr
             << "rank=" << world->rank() << " world_size=" << size
             << " collective=" << options.collective
-            << " algorithm=" << options.algorithm << '\n';
+            << " algorithm=" << options.algorithm;
+
+        if (options.collective == "reduce-scatter")
+        {
+            std::cerr
+                << " datatype=" << datatype_name(options.datatype)
+                << " op=" << op_name(options.op);
+        }
+
+        std::cerr << '\n';
 
         if (world->rank() == 0)
         {
-            std::cout
-                << "collective,algorithm,world_size,bytes_per_rank,"
-                   "output_bytes_per_rank,iterations,warmup,median_us,"
-                   "p95_us,min_us,max_us,algbw_GBps,busbw_GBps,"
-                   "busy_poll_us\n";
+            print_csv_header();
         }
 
-        for (std::size_t bytes_per_rank : options.sizes)
+        if (options.collective == "all-gather")
         {
-            const auto stats =
-                run_all_gather_benchmark(
+            const AllGatherFn collective =
+                select_all_gather_algorithm(options.algorithm);
+
+            for (std::size_t bytes_per_rank : options.sizes)
+            {
+                const auto stats = run_all_gather_benchmark(
                     *world, collective, bytes_per_rank, options.iterations,
                     options.warmup);
 
-            std::cerr
-                << "rank " << world->rank()
-                << ": completed bytes_per_rank=" << bytes_per_rank << '\n';
+                std::cerr
+                    << "rank " << world->rank()
+                    << ": completed bytes_per_rank=" << bytes_per_rank
+                    << '\n';
 
-            if (world->rank() == 0)
+                if (world->rank() == 0)
+                {
+                    BenchRow row;
+                    row.collective = options.collective;
+                    row.algorithm = options.algorithm;
+                    row.world_size = size;
+                    row.segment_bytes = bytes_per_rank;
+                    row.input_bytes_per_rank = bytes_per_rank;
+                    row.output_bytes_per_rank = size * bytes_per_rank;
+                    row.stats = stats;
+                    row.warmup = options.warmup;
+                    row.busy_poll_us = options.busy_poll_us;
+
+                    print_csv_row(row);
+                }
+            }
+        }
+        else
+        {
+            const ReduceScatterFn collective =
+                select_reduce_scatter_algorithm(options.algorithm);
+            const std::size_t element_size =
+                tbccl::datatype_size(options.datatype);
+
+            for (std::size_t segment_bytes : options.sizes)
             {
-                const double median_seconds = stats.median_us * 1e-6;
-                const double gathered_bytes =
-                    static_cast<double>(size) *
-                    static_cast<double>(bytes_per_rank);
+                if (segment_bytes % element_size != 0)
+                {
+                    throw std::runtime_error(
+                        "--sizes value " + std::to_string(segment_bytes) +
+                        " is not a multiple of the " +
+                        datatype_name(options.datatype) + " element size (" +
+                        std::to_string(element_size) + " bytes)");
+                }
 
-                const double algbw_GBps =
-                    median_seconds > 0.0
-                        ? (gathered_bytes / median_seconds) / 1e9
-                        : 0.0;
-                const double busbw_GBps =
-                    algbw_GBps * static_cast<double>(size - 1) /
-                    static_cast<double>(size);
+                const std::size_t recv_count = segment_bytes / element_size;
 
-                std::cout
-                    << options.collective << ',' << options.algorithm << ','
-                    << size << ',' << bytes_per_rank << ','
-                    << (size * bytes_per_rank) << ',' << stats.iterations
-                    << ',' << options.warmup << ',' << stats.median_us
-                    << ',' << stats.p95_us << ',' << stats.min_us << ','
-                    << stats.max_us << ',' << algbw_GBps << ','
-                    << busbw_GBps << ',' << options.busy_poll_us << '\n';
+                const auto stats = run_reduce_scatter_benchmark_dispatch(
+                    *world, collective, recv_count, options.datatype,
+                    options.op, options.iterations, options.warmup);
+
+                std::cerr
+                    << "rank " << world->rank()
+                    << ": completed segment_bytes=" << segment_bytes << '\n';
+
+                if (world->rank() == 0)
+                {
+                    BenchRow row;
+                    row.collective = options.collective;
+                    row.algorithm = options.algorithm;
+                    row.datatype = datatype_name(options.datatype);
+                    row.op = op_name(options.op);
+                    row.world_size = size;
+                    row.segment_bytes = segment_bytes;
+                    row.input_bytes_per_rank = size * segment_bytes;
+                    row.output_bytes_per_rank = segment_bytes;
+                    row.stats = stats;
+                    row.warmup = options.warmup;
+                    row.busy_poll_us = options.busy_poll_us;
+
+                    print_csv_row(row);
+                }
             }
         }
 

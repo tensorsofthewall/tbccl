@@ -57,7 +57,22 @@ def build_arg_parser():
         help="Algorithm to benchmark, or 'both' to run reference then ring",
     )
     parser.add_argument(
-        "--sizes", default=None, help="Comma-separated bytes-per-rank sizes"
+        "--sizes",
+        default=None,
+        help="Comma-separated sizes (contribution bytes/rank for "
+        "all-gather, output segment bytes/rank for reduce-scatter)",
+    )
+    parser.add_argument(
+        "--datatype",
+        default=None,
+        choices=["int32", "int64", "float32", "float64"],
+        help="Reduction datatype (reduce-scatter only)",
+    )
+    parser.add_argument(
+        "--op",
+        default=None,
+        choices=["sum", "product", "min", "max"],
+        help="Reduction operator (reduce-scatter only)",
     )
     parser.add_argument("--iterations", type=int, default=None)
     parser.add_argument("--warmup", type=int, default=None)
@@ -138,7 +153,8 @@ def kill_all(processes):
 
 
 def run_one_algorithm(binary, ranks, host, base_port, collective, algorithm,
-                       sizes, iterations, warmup, busy_poll, timeout):
+                       sizes, datatype, op, iterations, warmup, busy_poll,
+                       timeout):
     """Launches `ranks` processes for one algorithm run. Returns
     (success, rank0_stdout, [stderr per rank])."""
 
@@ -153,6 +169,10 @@ def run_one_algorithm(binary, ranks, host, base_port, collective, algorithm,
 
     if sizes is not None:
         command_base += ["--sizes", sizes]
+    if datatype is not None:
+        command_base += ["--datatype", datatype]
+    if op is not None:
+        command_base += ["--op", op]
     if iterations is not None:
         command_base += ["--iterations", str(iterations)]
     if warmup is not None:
@@ -220,8 +240,8 @@ def main():
     for algorithm in algorithms:
         success, rank0_stdout, _ = run_one_algorithm(
             args.binary, args.ranks, args.host, args.base_port,
-            args.collective, algorithm, args.sizes, args.iterations,
-            args.warmup, args.busy_poll, args.timeout,
+            args.collective, algorithm, args.sizes, args.datatype, args.op,
+            args.iterations, args.warmup, args.busy_poll, args.timeout,
         )
 
         if not success:
