@@ -17,6 +17,7 @@ add_library(tbccl STATIC
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
+    src/collectives/reduction.cpp
 )
 
 target_include_directories(tbccl
