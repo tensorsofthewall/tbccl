@@ -115,6 +115,25 @@ else()
     )
 endif()
 
+add_executable(tbccl_all_gather_smoke
+    tools/tbccl_all_gather_smoke.cpp
+)
+
+target_link_libraries(tbccl_all_gather_smoke
+    PRIVATE
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_all_gather_smoke PRIVATE /W4)
+else()
+    target_compile_options(tbccl_all_gather_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -219,6 +238,31 @@ if(BUILD_TESTING)
     add_test(
         NAME broadcast_test
         COMMAND broadcast_test
+    )
+
+    add_executable(all_gather_test
+        tests/all_gather_test.cpp
+    )
+
+    target_link_libraries(all_gather_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(all_gather_test PRIVATE /W4)
+    else()
+        target_compile_options(all_gather_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME all_gather_test
+        COMMAND all_gather_test
     )
 
 endif()
