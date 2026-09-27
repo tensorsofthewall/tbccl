@@ -176,6 +176,25 @@ else()
     )
 endif()
 
+add_executable(tbccl_reduce_scatter_smoke
+    tools/tbccl_reduce_scatter_smoke.cpp
+)
+
+target_link_libraries(tbccl_reduce_scatter_smoke
+    PRIVATE
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_reduce_scatter_smoke PRIVATE /W4)
+else()
+    target_compile_options(tbccl_reduce_scatter_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -355,6 +374,31 @@ if(BUILD_TESTING)
     add_test(
         NAME all_reduce_test
         COMMAND all_reduce_test
+    )
+
+    add_executable(reduce_scatter_test
+        tests/reduce_scatter_test.cpp
+    )
+
+    target_link_libraries(reduce_scatter_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(reduce_scatter_test PRIVATE /W4)
+    else()
+        target_compile_options(reduce_scatter_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME reduce_scatter_test
+        COMMAND reduce_scatter_test
     )
 
 endif()
