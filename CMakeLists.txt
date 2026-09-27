@@ -19,6 +19,7 @@ add_library(tbccl STATIC
     src/collectives/all_gather.cpp
     src/collectives/reduction.cpp
     src/collectives/reduce.cpp
+    src/collectives/all_reduce.cpp
 )
 
 target_include_directories(tbccl

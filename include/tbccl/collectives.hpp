@@ -81,4 +81,29 @@ void reduce(
     ReduceOp op,
     std::size_t root);
 
+// Every rank contributes `count` elements of `datatype` from
+// `send_buffer`; on successful return, every rank's `recv_buffer` holds
+// the identical element-wise reduction (via `op`) of every rank's
+// contribution. All ranks must call with the same `count`, `datatype`,
+// and `op`. There is no root parameter: internally this reduces to
+// rank 0 and broadcasts the result back out, but that is an
+// implementation detail, not part of the contract. Unlike reduce(),
+// `send_buffer` and `recv_buffer` must both be non-null on *every*
+// rank when `count > 0`, since every rank receives the result; this is
+// validated before any communication is attempted, so no rank can
+// strand its peers by failing after they have already started
+// sending. `count == 0` is valid and performs no communication.
+// `send_buffer` and `recv_buffer` may be the same pointer (the
+// underlying reduce()+broadcast() composition supports this exactly:
+// non-root ranks never read recv_buffer during reduce(), and every
+// rank's send is already complete before broadcast() overwrites the
+// same memory with the final result); no other overlap is supported.
+void all_reduce(
+    World &world,
+    const void *send_buffer,
+    void *recv_buffer,
+    std::size_t count,
+    DataType datatype,
+    ReduceOp op);
+
 } // namespace tbccl
