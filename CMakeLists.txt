@@ -15,6 +15,7 @@ add_library(tbccl STATIC
     src/transport/tcp.cpp
     src/core/tcp_world.cpp
     src/collectives/barrier.cpp
+    src/collectives/broadcast.cpp
 )
 
 target_include_directories(tbccl
