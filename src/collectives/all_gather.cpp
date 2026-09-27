@@ -1,5 +1,7 @@
 #include <tbccl/collectives.hpp>
 
+#include "all_gather_internal.hpp"
+
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -8,18 +10,25 @@
 namespace tbccl
 {
 
-    // Two-phase centralized all-gather: gather every contribution to
-    // rank 0 (sequential blocking recv per peer, same ordering
-    // rationale as barrier()/broadcast() — every non-root rank has
-    // already entered all_gather() and is blocked in send(0, ...) by
-    // the time rank 0 gets to it), then reuse the already-tested
-    // broadcast() to hand the fully-assembled buffer to everyone. Not
-    // optimized: O(N) at the root for the gather, then broadcast's own
-    // O(N).
     void all_gather(
         World &world,
         const void *send_buffer,
         void *recv_buffer,
+        std::size_t bytes_per_rank)
+    {
+        detail::all_gather_reference(
+            world, send_buffer, recv_buffer, bytes_per_rank);
+    }
+
+} // namespace tbccl
+
+namespace tbccl::detail
+{
+
+    void validate_all_gather_args(
+        const World &world,
+        const void *send_buffer,
+        const void *recv_buffer,
         std::size_t bytes_per_rank)
     {
         const std::size_t size = world.size();
@@ -30,8 +39,6 @@ namespace tbccl
             throw std::runtime_error(
                 "all_gather: total receive size overflows size_t");
         }
-
-        const std::size_t total_bytes = size * bytes_per_rank;
 
         if (bytes_per_rank > 0)
         {
@@ -48,11 +55,33 @@ namespace tbccl
                     "count");
             }
         }
+    }
+
+    // Two-phase centralized all-gather: gather every contribution to
+    // rank 0 (sequential blocking recv per peer, same ordering
+    // rationale as barrier()/broadcast() — every non-root rank has
+    // already entered all_gather() and is blocked in send(0, ...) by
+    // the time rank 0 gets to it), then reuse the already-tested
+    // broadcast() to hand the fully-assembled buffer to everyone. Not
+    // optimized: O(N) at the root for the gather, then broadcast's own
+    // O(N). This is the correctness oracle other all_gather algorithm
+    // variants (e.g. all_gather_ring()) are compared against — its
+    // behavior must not change.
+    void all_gather_reference(
+        World &world,
+        const void *send_buffer,
+        void *recv_buffer,
+        std::size_t bytes_per_rank)
+    {
+        validate_all_gather_args(
+            world, send_buffer, recv_buffer, bytes_per_rank);
 
         if (bytes_per_rank == 0)
         {
             return;
         }
+
+        const std::size_t size = world.size();
 
         if (size == 1)
         {
@@ -60,6 +89,7 @@ namespace tbccl
             return;
         }
 
+        const std::size_t total_bytes = size * bytes_per_rank;
         const std::size_t rank = world.rank();
 
         auto *recv_bytes = static_cast<std::uint8_t *>(recv_buffer);
@@ -84,4 +114,4 @@ namespace tbccl
         broadcast(world, recv_buffer, total_bytes, 0);
     }
 
-} // namespace tbccl
+} // namespace tbccl::detail
