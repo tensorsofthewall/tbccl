@@ -26,4 +26,18 @@ namespace tbccl
         throw std::runtime_error("datatype_size: unknown DataType");
     }
 
+    void validate_reduce_op(ReduceOp op)
+    {
+        switch (op)
+        {
+        case ReduceOp::Sum:
+        case ReduceOp::Product:
+        case ReduceOp::Min:
+        case ReduceOp::Max:
+            return;
+        }
+
+        throw std::runtime_error("validate_reduce_op: unknown ReduceOp");
+    }
+
 } // namespace tbccl

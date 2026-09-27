@@ -28,4 +28,7 @@ enum class ReduceOp
 // enum value rather than silently returning 0.
 std::size_t datatype_size(DataType datatype);
 
+// Throws on an unrecognized ReduceOp value; returns normally otherwise.
+void validate_reduce_op(ReduceOp op);
+
 } // namespace tbccl
