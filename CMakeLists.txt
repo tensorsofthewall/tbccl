@@ -536,4 +536,36 @@ if(BUILD_TESTING)
         COMMAND all_reduce_ring_test
     )
 
+    add_executable(algorithm_selector_test
+        tests/algorithm_selector_test.cpp
+    )
+
+    target_link_libraries(algorithm_selector_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    # algorithm_selector.hpp is not part of the public API — this path
+    # is private to this one test target, not installed/exported.
+    target_include_directories(algorithm_selector_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+    )
+
+    if(MSVC)
+        target_compile_options(algorithm_selector_test PRIVATE /W4)
+    else()
+        target_compile_options(algorithm_selector_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME algorithm_selector_test
+        COMMAND algorithm_selector_test
+    )
+
 endif()

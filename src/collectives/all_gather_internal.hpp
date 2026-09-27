@@ -26,9 +26,11 @@ void validate_all_gather_args(
     std::size_t bytes_per_rank);
 
 // The existing centralized/gather-then-broadcast implementation,
-// unchanged in behavior — this is what the public all_gather() calls,
-// and it remains the correctness oracle other algorithms are compared
-// against.
+// unchanged in behavior. The public all_gather() routes through the
+// algorithm selector (see algorithm_selector.hpp) and may call this or
+// all_gather_ring() depending on world size, message size, and any
+// TBCCL_ALGORITHM/TBCCL_ALL_GATHER_ALGORITHM override; this remains
+// the correctness oracle other algorithms are compared against.
 void all_gather_reference(
     World &world,
     const void *send_buffer,

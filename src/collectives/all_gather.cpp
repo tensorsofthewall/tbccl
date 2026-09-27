@@ -1,5 +1,6 @@
 #include <tbccl/collectives.hpp>
 
+#include "algorithm_selector.hpp"
 #include "all_gather_internal.hpp"
 
 #include <cstdint>
@@ -16,8 +17,26 @@ namespace tbccl
         void *recv_buffer,
         std::size_t bytes_per_rank)
     {
-        detail::all_gather_reference(
+        detail::validate_all_gather_args(
             world, send_buffer, recv_buffer, bytes_per_rank);
+
+        const auto mode =
+            detail::resolve_algorithm_mode(detail::CollectiveKind::AllGather);
+        const auto decision = detail::select_all_gather_algorithm(
+            world.size(), bytes_per_rank, mode);
+
+        switch (decision.algorithm)
+        {
+        case detail::CollectiveAlgorithm::Reference:
+            detail::all_gather_reference(
+                world, send_buffer, recv_buffer, bytes_per_rank);
+            break;
+
+        case detail::CollectiveAlgorithm::Ring:
+            detail::all_gather_ring(
+                world, send_buffer, recv_buffer, bytes_per_rank);
+            break;
+        }
     }
 
 } // namespace tbccl

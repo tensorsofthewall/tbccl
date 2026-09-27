@@ -1,5 +1,6 @@
 #include <tbccl/collectives.hpp>
 
+#include "algorithm_selector.hpp"
 #include "all_reduce_internal.hpp"
 
 #include <limits>
@@ -16,8 +17,28 @@ namespace tbccl
         DataType datatype,
         ReduceOp op)
     {
-        detail::all_reduce_reference(
-            world, send_buffer, recv_buffer, count, datatype, op);
+        detail::validate_all_reduce_args(
+            send_buffer, recv_buffer, count, datatype, op);
+
+        const std::size_t tensor_bytes = count * datatype_size(datatype);
+
+        const auto mode =
+            detail::resolve_algorithm_mode(detail::CollectiveKind::AllReduce);
+        const auto decision = detail::select_all_reduce_algorithm(
+            world.size(), tensor_bytes, count, mode);
+
+        switch (decision.algorithm)
+        {
+        case detail::CollectiveAlgorithm::Reference:
+            detail::all_reduce_reference(
+                world, send_buffer, recv_buffer, count, datatype, op);
+            break;
+
+        case detail::CollectiveAlgorithm::Ring:
+            detail::all_reduce_ring(
+                world, send_buffer, recv_buffer, count, datatype, op);
+            break;
+        }
     }
 
 } // namespace tbccl
