@@ -30,6 +30,7 @@
 #include <tbccl/tcp_world.hpp>
 
 #include "all_gather_internal.hpp"
+#include "all_reduce_internal.hpp"
 #include "reduce_scatter_internal.hpp"
 
 #include <algorithm>
@@ -67,7 +68,7 @@ namespace
             << "  " << program
             << " --rank R --peers HOST:PORT,HOST:PORT,... "
             << "[--bind ADDRESS] [--busy-poll MICROSECONDS] "
-            << "[--collective all-gather|reduce-scatter] "
+            << "[--collective all-gather|reduce-scatter|all-reduce] "
             << "[--algorithm reference|ring] "
             << "[--datatype int32|int64|float32|float64] "
             << "[--op sum|product|min|max] "
@@ -75,9 +76,12 @@ namespace
             << "[--warmup N]\n\n"
             << "For all-gather, each --sizes value is contribution "
                "bytes per rank. For reduce-scatter, each --sizes value "
-               "is output segment bytes per rank (must be a multiple "
-               "of the datatype size); --datatype/--op select the "
-               "reduction.\n\n"
+               "is output segment bytes per rank. For all-reduce, each "
+               "--sizes value is total tensor bytes per rank (element "
+               "count must divide the world size for the ring "
+               "algorithm). All must be a multiple of the datatype "
+               "size where a datatype applies; --datatype/--op select "
+               "the reduction for reduce-scatter/all-reduce.\n\n"
             << "Example:\n"
             << "  " << program
             << " --rank 0 --peers "
@@ -541,6 +545,11 @@ namespace
         LatencyStats stats;
         int warmup = 0;
         int busy_poll_us = 0;
+        // busbw = algbw * busbw_multiplier * (N-1)/N. 1.0 for AllGather
+        // and ReduceScatter (each moves ~1 collective's worth of
+        // traffic); 2.0 for AllReduce, which is normalized as
+        // ReduceScatter + AllGather network volume per rank.
+        double busbw_multiplier = 1.0;
     };
 
     void print_csv_header()
@@ -563,7 +572,8 @@ namespace
             median_seconds > 0.0 ? (moved_bytes / median_seconds) / 1e9
                                   : 0.0;
         const double busbw_GBps =
-            algbw_GBps * static_cast<double>(row.world_size - 1) /
+            algbw_GBps * row.busbw_multiplier *
+            static_cast<double>(row.world_size - 1) /
             static_cast<double>(row.world_size);
 
         std::cout
@@ -865,6 +875,163 @@ namespace
         throw std::runtime_error("unreachable: unknown DataType");
     }
 
+    using AllReduceFn = void (*)(
+        tbccl::World &, const void *, void *, std::size_t, tbccl::DataType,
+        tbccl::ReduceOp);
+
+    AllReduceFn select_all_reduce_algorithm(const std::string &algorithm)
+    {
+        if (algorithm == "reference")
+        {
+            return tbccl::detail::all_reduce_reference;
+        }
+
+        if (algorithm == "ring")
+        {
+            return tbccl::detail::all_reduce_ring;
+        }
+
+        throw std::runtime_error("unknown --algorithm: " + algorithm);
+    }
+
+    // Same structure as run_reduce_scatter_benchmark: untimed
+    // correctness gate, untimed warmup, timed iterations (barrier +
+    // collective only), untimed final recheck. Every rank's full
+    // `count`-element output is independently verified, not just
+    // compared against another algorithm.
+    template <typename T>
+    LatencyStats run_all_reduce_benchmark(
+        tbccl::World &world,
+        AllReduceFn collective,
+        std::size_t count,
+        tbccl::DataType datatype,
+        tbccl::ReduceOp op,
+        int iterations,
+        int warmup)
+    {
+        const std::size_t rank = world.rank();
+        const std::size_t size = world.size();
+        constexpr std::uint32_t kSeed = 0x9000u;
+
+        std::vector<T> send(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            send[i] = generate_value<T>(rank, i, kSeed);
+        }
+
+        std::vector<T> expected(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            T acc = generate_value<T>(0, i, kSeed);
+
+            for (std::size_t p = 1; p < size; ++p)
+            {
+                combine(acc, generate_value<T>(p, i, kSeed), op);
+            }
+
+            expected[i] = acc;
+        }
+
+        std::vector<T> recv(count, T{});
+
+        auto check_correctness = [&](const char *stage)
+        {
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                if (recv[i] != expected[i])
+                {
+                    throw std::runtime_error(
+                        std::string("correctness gate failed (") + stage +
+                        ") at count=" + std::to_string(count) +
+                        ", element " + std::to_string(i));
+                }
+            }
+        };
+
+        collective(world, send.data(), recv.data(), count, datatype, op);
+        check_correctness("pre-benchmark");
+
+        for (int i = 0; i < warmup; ++i)
+        {
+            tbccl::barrier(world);
+            collective(world, send.data(), recv.data(), count, datatype, op);
+        }
+
+        std::vector<double> iteration_us;
+        iteration_us.reserve(static_cast<std::size_t>(iterations));
+
+        for (int i = 0; i < iterations; ++i)
+        {
+            tbccl::barrier(world);
+
+            const auto start = std::chrono::steady_clock::now();
+            collective(world, send.data(), recv.data(), count, datatype, op);
+            const auto stop = std::chrono::steady_clock::now();
+
+            const double local_us =
+                std::chrono::duration<double, std::micro>(stop - start)
+                    .count();
+
+            if (rank == 0)
+            {
+                double max_us = local_us;
+
+                for (std::size_t peer = 1; peer < size; ++peer)
+                {
+                    double peer_us = 0.0;
+                    world.recv(peer, &peer_us, sizeof(peer_us));
+                    max_us = std::max(max_us, peer_us);
+                }
+
+                iteration_us.push_back(max_us);
+            }
+            else
+            {
+                world.send(0, &local_us, sizeof(local_us));
+            }
+        }
+
+        collective(world, send.data(), recv.data(), count, datatype, op);
+        check_correctness("post-benchmark");
+
+        if (rank != 0)
+        {
+            return LatencyStats{};
+        }
+
+        return summarize(std::move(iteration_us));
+    }
+
+    LatencyStats run_all_reduce_benchmark_dispatch(
+        tbccl::World &world,
+        AllReduceFn collective,
+        std::size_t count,
+        tbccl::DataType datatype,
+        tbccl::ReduceOp op,
+        int iterations,
+        int warmup)
+    {
+        switch (datatype)
+        {
+        case tbccl::DataType::Int32:
+            return run_all_reduce_benchmark<std::int32_t>(
+                world, collective, count, datatype, op, iterations, warmup);
+        case tbccl::DataType::Int64:
+            return run_all_reduce_benchmark<std::int64_t>(
+                world, collective, count, datatype, op, iterations, warmup);
+        case tbccl::DataType::Float32:
+            return run_all_reduce_benchmark<float>(
+                world, collective, count, datatype, op, iterations, warmup);
+        case tbccl::DataType::Float64:
+            return run_all_reduce_benchmark<double>(
+                world, collective, count, datatype, op, iterations, warmup);
+        }
+
+        throw std::runtime_error("unreachable: unknown DataType");
+    }
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -874,12 +1041,13 @@ int main(int argc, char **argv)
         const Options options = parse_options(argc, argv);
 
         if (options.collective != "all-gather" &&
-            options.collective != "reduce-scatter")
+            options.collective != "reduce-scatter" &&
+            options.collective != "all-reduce")
         {
             throw std::runtime_error(
                 "unsupported --collective: " + options.collective +
-                " (only all-gather and reduce-scatter are supported so "
-                "far)");
+                " (only all-gather, reduce-scatter, and all-reduce are "
+                "supported so far)");
         }
 
         tbccl::TcpWorldOptions world_options;
@@ -896,7 +1064,8 @@ int main(int argc, char **argv)
             << " collective=" << options.collective
             << " algorithm=" << options.algorithm;
 
-        if (options.collective == "reduce-scatter")
+        if (options.collective == "reduce-scatter" ||
+            options.collective == "all-reduce")
         {
             std::cerr
                 << " datatype=" << datatype_name(options.datatype)
@@ -943,7 +1112,7 @@ int main(int argc, char **argv)
                 }
             }
         }
-        else
+        else if (options.collective == "reduce-scatter")
         {
             const ReduceScatterFn collective =
                 select_reduce_scatter_algorithm(options.algorithm);
@@ -985,6 +1154,70 @@ int main(int argc, char **argv)
                     row.stats = stats;
                     row.warmup = options.warmup;
                     row.busy_poll_us = options.busy_poll_us;
+
+                    print_csv_row(row);
+                }
+            }
+        }
+        else
+        {
+            // all-reduce: each --sizes value B is the total tensor
+            // bytes per rank (input and output are the same size).
+            // The benchmark requires B % datatype_size == 0 and the
+            // resulting element count % world_size == 0 for both
+            // algorithms here, so segment_bytes (B/N) is always exact
+            // and directly comparable between reference and ring rows
+            // — ring itself would reject a non-divisible count anyway.
+            const AllReduceFn collective =
+                select_all_reduce_algorithm(options.algorithm);
+            const std::size_t element_size =
+                tbccl::datatype_size(options.datatype);
+
+            for (std::size_t tensor_bytes : options.sizes)
+            {
+                if (tensor_bytes % element_size != 0)
+                {
+                    throw std::runtime_error(
+                        "--sizes value " + std::to_string(tensor_bytes) +
+                        " is not a multiple of the " +
+                        datatype_name(options.datatype) + " element size (" +
+                        std::to_string(element_size) + " bytes)");
+                }
+
+                const std::size_t count = tensor_bytes / element_size;
+
+                if (count % size != 0)
+                {
+                    throw std::runtime_error(
+                        "--sizes value " + std::to_string(tensor_bytes) +
+                        " (" + std::to_string(count) +
+                        " elements) is not divisible by world size " +
+                        std::to_string(size));
+                }
+
+                const auto stats = run_all_reduce_benchmark_dispatch(
+                    *world, collective, count, options.datatype, options.op,
+                    options.iterations, options.warmup);
+
+                std::cerr
+                    << "rank " << world->rank()
+                    << ": completed tensor_bytes=" << tensor_bytes << '\n';
+
+                if (world->rank() == 0)
+                {
+                    BenchRow row;
+                    row.collective = options.collective;
+                    row.algorithm = options.algorithm;
+                    row.datatype = datatype_name(options.datatype);
+                    row.op = op_name(options.op);
+                    row.world_size = size;
+                    row.segment_bytes = tensor_bytes / size;
+                    row.input_bytes_per_rank = tensor_bytes;
+                    row.output_bytes_per_rank = tensor_bytes;
+                    row.stats = stats;
+                    row.warmup = options.warmup;
+                    row.busy_poll_us = options.busy_poll_us;
+                    row.busbw_multiplier = 2.0;
 
                     print_csv_row(row);
                 }
