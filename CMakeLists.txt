@@ -579,4 +579,38 @@ if(BUILD_TESTING)
         COMMAND algorithm_selector_test
     )
 
+    add_executable(ring_executor_test
+        tests/ring_executor_test.cpp
+    )
+
+    target_link_libraries(ring_executor_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    # ring_executor.hpp / all_gather_internal.hpp / all_reduce_internal
+    # .hpp / reduce_scatter_internal.hpp are not part of the public API
+    # — this path is private to this one test target, not
+    # installed/exported.
+    target_include_directories(ring_executor_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+    )
+
+    if(MSVC)
+        target_compile_options(ring_executor_test PRIVATE /W4)
+    else()
+        target_compile_options(ring_executor_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME ring_executor_test
+        COMMAND ring_executor_test
+    )
+
 endif()
