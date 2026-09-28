@@ -1,6 +1,13 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
+
+namespace tbccl::detail
+{
+class RingExecutor;
+class RingExecutorAccess;
+} // namespace tbccl::detail
 
 namespace tbccl
 {
@@ -19,7 +26,7 @@ namespace tbccl
 class World
 {
 public:
-    virtual ~World() = default;
+    virtual ~World();
 
     World(const World &) = delete;
     World &operator=(const World &) = delete;
@@ -43,7 +50,42 @@ public:
         std::size_t bytes) = 0;
 
 protected:
-    World() = default;
+    World();
+
+private:
+    // Backs every ring collective algorithm (see
+    // src/collectives/ring_executor.hpp), lazily constructed by
+    // detail::RingExecutorAccess on the first ring collective call —
+    // a World that only ever executes reference collectives never
+    // allocates one. Declared on this abstract base rather than on a
+    // specific transport subclass (e.g. TcpWorld) so every current
+    // and future World implementation gets ring-collective execution
+    // support for free, without ring algorithm code needing to know
+    // the concrete transport type.
+    //
+    // Held as a pointer to an incomplete type, so this class's
+    // constructor/destructor are declared here but defined out of
+    // line (src/core/world.cpp) where RingExecutor is complete.
+    // Binary-layout note: this adds private state to World, changing
+    // its size/layout; any out-of-tree subclass of World must be
+    // recompiled against this header (source-level API compatibility
+    // is preserved — no public signature changed).
+    //
+    // Destruction-order note: for any subclass, the subclass's own
+    // members (e.g. TcpWorld's transport connections) are destroyed
+    // before this base class's members, including ring_executor_ —
+    // derived-class teardown always precedes base-class teardown in
+    // C++. This is safe only because it is never a supported use case
+    // for a World to be destroyed while a collective is still in
+    // flight on it (see the thread-safety note above); the ring
+    // worker is therefore always idle by the time any World's
+    // destructor runs, and RingExecutor's shutdown path touches only
+    // its own thread/mutex/condition_variable state, never the World
+    // or its transport, so it never touches already-destroyed
+    // transport resources.
+    std::unique_ptr<detail::RingExecutor> ring_executor_;
+
+    friend class detail::RingExecutorAccess;
 };
 
 } // namespace tbccl

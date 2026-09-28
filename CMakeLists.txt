@@ -15,6 +15,7 @@ find_package(Threads REQUIRED)
 
 add_library(tbccl STATIC
     src/transport/tcp.cpp
+    src/core/world.cpp
     src/core/tcp_world.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
@@ -23,6 +24,7 @@ add_library(tbccl STATIC
     src/collectives/reduce.cpp
     src/collectives/all_reduce.cpp
     src/collectives/reduce_scatter.cpp
+    src/collectives/ring_executor.cpp
     src/collectives/all_gather_ring.cpp
     src/collectives/reduce_scatter_ring.cpp
     src/collectives/all_reduce_ring.cpp
@@ -32,6 +34,15 @@ add_library(tbccl STATIC
 target_include_directories(tbccl
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+# src/core/world.cpp needs ring_executor.hpp (World::ring_executor_'s
+# complete type); ring_executor.hpp/.cpp are not part of the public
+# API — this path is private to the library build, not
+# installed/exported.
+target_include_directories(tbccl
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
 )
 
 target_link_libraries(tbccl
