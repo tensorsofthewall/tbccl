@@ -36,6 +36,7 @@ namespace
     // intermittent "Address already in use" bind failures unrelated to
     // this test's own logic.
     constexpr std::uint16_t kAllGatherAutoRingBase = 32600;
+    constexpr std::uint16_t kAllGatherAutoRingN2Base = 32605;
     constexpr std::uint16_t kReduceScatterAutoRingBase = 32610;
     constexpr std::uint16_t kAllReduceAutoRingBase = 32620;
     constexpr std::uint16_t kAllReduceAutoIneligibleBase = 32630;
@@ -327,8 +328,8 @@ namespace
         };
 
         for (Case c :
-             {Case{3, 16ull * 1024 * 1024}, Case{4, 1ull * 1024 * 1024},
-              Case{8, 512ull * 1024}})
+             {Case{2, 64}, Case{3, 64ull * 1024}, Case{4, 32ull * 1024},
+              Case{8, 32ull * 1024}})
         {
             expect_decision(
                 tbccl::detail::select_all_gather_algorithm(
@@ -368,8 +369,8 @@ namespace
         };
 
         for (Case c :
-             {Case{2, 512ull * 1024}, Case{3, 128ull * 1024},
-              Case{4, 512ull * 1024}, Case{8, 128ull * 1024}})
+             {Case{2, 128ull * 1024}, Case{3, 64ull * 1024},
+              Case{4, 64ull * 1024}, Case{8, 32ull * 1024}})
         {
             expect_decision(
                 tbccl::detail::select_reduce_scatter_algorithm(
@@ -450,7 +451,10 @@ namespace
         const std::vector<std::size_t> sample_bytes = {
             0, 1024, 1ull << 30};
 
-        for (std::size_t world_size : {1, 2, 5, 6, 7, 9, 16})
+        // N=2 is deliberately excluded here: it has its own
+        // measured threshold (see test_all_gather_threshold_boundaries),
+        // so it is no longer "unmeasured" for AllGather.
+        for (std::size_t world_size : {1, 5, 6, 7, 9, 16})
         {
             for (std::size_t bytes : sample_bytes)
             {
@@ -924,11 +928,27 @@ namespace
         EnvUnset unset_global("TBCCL_ALGORITHM");
         EnvUnset unset_ag("TBCCL_ALL_GATHER_ALGORITHM");
 
-        // N=4, bytes_per_rank exactly at the 1 MiB threshold -> Auto
-        // resolves Ring.
+        // N=4, bytes_per_rank well above the v2 32 KiB threshold ->
+        // Auto resolves Ring.
         run_all_gather_dispatch(kAllGatherAutoRingBase, 4, 1048576);
 
         std::cout << "[PASS] test_public_all_gather_auto_ring\n";
+    }
+
+    void test_public_all_gather_auto_ring_n2()
+    {
+        EnvUnset unset_global("TBCCL_ALGORITHM");
+        EnvUnset unset_ag("TBCCL_ALL_GATHER_ALGORITHM");
+
+        // N=2 is a policy change (it was always Reference under
+        // the earlier per-invocation-thread ring): Ring now resolves at
+        // any tested size, so even a small,
+        // otherwise-Reference-favoring-under-the-old-policy 4 KiB
+        // contribution must dispatch through ring_all_gather() and
+        // still produce correct output.
+        run_all_gather_dispatch(kAllGatherAutoRingN2Base, 2, 4096);
+
+        std::cout << "[PASS] test_public_all_gather_auto_ring_n2\n";
     }
 
     void test_public_reduce_scatter_auto_ring()
@@ -937,7 +957,7 @@ namespace
         EnvUnset unset_rs("TBCCL_REDUCE_SCATTER_ALGORITHM");
 
         // N=2, recv_count=131072 Int32 elements -> segment_bytes =
-        // 524288 = 512 KiB, exactly at N=2's threshold -> Auto
+        // 524288 B, well above the v2 128 KiB threshold -> Auto
         // resolves Ring.
         run_reduce_scatter_dispatch(kReduceScatterAutoRingBase, 2, 131072);
 
@@ -1085,6 +1105,7 @@ int main()
         test_resolve_algorithm_mode_precedence();
 
         test_public_all_gather_auto_ring();
+        test_public_all_gather_auto_ring_n2();
         test_public_reduce_scatter_auto_ring();
         test_public_all_reduce_auto_ring();
         test_public_all_reduce_auto_ineligible_fallback();
