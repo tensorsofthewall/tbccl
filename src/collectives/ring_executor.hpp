@@ -16,12 +16,16 @@
 
 #include <tbccl/world.hpp>
 
+#include "ring_trace.hpp"
+
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace tbccl::detail
 {
@@ -143,14 +147,37 @@ public:
     // waiting `sender` when `receiver` fails, is the caller's
     // responsibility, not this class's — RingExecutor only knows how
     // to run two callables concurrently and report their outcomes.
+    //
+    // `trace_operation_id` is diagnostic-only (see ring_trace.hpp): it
+    // correlates this call's T0 (submit)/T1 (worker wake)/T2 (sender
+    // begin)/T3 (sender end)/T4 (caller observes completion) trace
+    // events, which are recorded here and in worker_loop(). Rank is
+    // deliberately not tracked at this layer — RingExecutor has no
+    // notion of World/rank — callers that want rank-correlated stage
+    // events (e.g. send/recv/reduce timings) record those themselves,
+    // using the same operation_id, around their sender/receiver
+    // callables. Passing 0 (the default, and what
+    // ring_trace_next_operation_id() itself returns when tracing is
+    // compiled out) means "don't trace this call".
     template <typename SenderFn, typename ReceiverFn>
-    void execute(SenderFn &&sender, ReceiverFn &&receiver)
+    void execute(
+        SenderFn &&sender,
+        ReceiverFn &&receiver,
+        std::uint64_t trace_operation_id = 0)
     {
+        ring_trace_record(
+            trace_operation_id, 0, RingTraceRole::Sender,
+            RingTraceEventType::SenderSubmit);
+
         std::exception_ptr sender_exception;
 
         submit(
-            [&sender, &sender_exception]()
+            [&sender, &sender_exception, trace_operation_id]()
             {
+                ring_trace_record(
+                    trace_operation_id, 0, RingTraceRole::Sender,
+                    RingTraceEventType::SenderBegin);
+
                 try
                 {
                     sender();
@@ -159,7 +186,12 @@ public:
                 {
                     sender_exception = std::current_exception();
                 }
-            });
+
+                ring_trace_record(
+                    trace_operation_id, 0, RingTraceRole::Sender,
+                    RingTraceEventType::SenderEnd);
+            },
+            trace_operation_id);
 
         std::exception_ptr receiver_exception;
 
@@ -174,6 +206,10 @@ public:
 
         wait_for_job();
 
+        ring_trace_record(
+            trace_operation_id, 0, RingTraceRole::Receiver,
+            RingTraceEventType::CallerObserveDone);
+
         if (receiver_exception)
         {
             std::rethrow_exception(receiver_exception);
@@ -187,8 +223,20 @@ public:
 
     RingExecutorStats stats() const;
 
+#if defined(TBCCL_ENABLE_RING_TRACE)
+    // Diagnostic-only. The worker thread's T1/T2/T3 and sender-side
+    // stage events live in ITS OWN thread-local trace buffer (see
+    // ring_trace.hpp) — only the worker thread could drain that
+    // directly, and it never calls back into caller code to do so. So
+    // after each job, the worker copies its just-drained events into
+    // worker_trace_ (under the same mutex_ it already takes once per
+    // job for job_done_/stats_ bookkeeping — no new hot-path
+    // contention). This method retrieves that copy from any thread.
+    std::vector<RingTraceEvent> drain_worker_trace();
+#endif
+
 private:
-    void submit(std::function<void()> job);
+    void submit(std::function<void()> job, std::uint64_t trace_operation_id);
     void wait_for_job();
     void worker_loop();
 
@@ -212,8 +260,13 @@ private:
     bool job_ready_ = false;
     bool job_done_ = true;
     std::function<void()> job_;
+    std::uint64_t job_trace_operation_id_ = 0;
 
     RingExecutorStats stats_;
+
+#if defined(TBCCL_ENABLE_RING_TRACE)
+    std::vector<RingTraceEvent> worker_trace_;
+#endif
 
     std::thread worker_;
 };

@@ -65,9 +65,19 @@ namespace
             return;
         }
 
+        const std::uint64_t trace_op = ring_trace_next_operation_id();
+
+        ring_trace_record(
+            trace_op, rank, RingTraceRole::Receiver,
+            RingTraceEventType::InputCopyBegin, segment_bytes);
+
         std::vector<T> work(total_count);
         std::memcpy(
             work.data(), send_buffer, total_count * sizeof(T));
+
+        ring_trace_record(
+            trace_op, rank, RingTraceRole::Receiver,
+            RingTraceEventType::InputCopyEnd, segment_bytes);
 
         std::vector<T> incoming(recv_count);
 
@@ -85,9 +95,15 @@ namespace
                 {
                     const std::size_t send_chunk0 = (rank + size - 1) % size;
 
+                    ring_trace_record(
+                        trace_op, rank, RingTraceRole::Sender,
+                        RingTraceEventType::SendBegin, segment_bytes);
                     world.send(
                         next, work.data() + send_chunk0 * recv_count,
                         segment_bytes);
+                    ring_trace_record(
+                        trace_op, rank, RingTraceRole::Sender,
+                        RingTraceEventType::SendEnd, segment_bytes);
 
                     for (std::size_t step = 1; step < size - 1; ++step)
                     {
@@ -99,9 +115,15 @@ namespace
                         const std::size_t send_chunk =
                             (rank + size - step - 1) % size;
 
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Sender,
+                            RingTraceEventType::SendBegin, segment_bytes);
                         world.send(
                             next, work.data() + send_chunk * recv_count,
                             segment_bytes);
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Sender,
+                            RingTraceEventType::SendEnd, segment_bytes);
                     }
                 }
                 catch (...)
@@ -120,13 +142,28 @@ namespace
                         const std::size_t recv_chunk =
                             (rank + size - step - 2) % size;
 
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Receiver,
+                            RingTraceEventType::RecvBegin, segment_bytes);
                         world.recv(prev, incoming.data(), segment_bytes);
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Receiver,
+                            RingTraceEventType::RecvEnd, segment_bytes);
 
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Receiver,
+                            RingTraceEventType::ReduceBegin, segment_bytes);
                         apply_reduction(
                             work.data() + recv_chunk * recv_count,
                             incoming.data(), recv_count, op);
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Receiver,
+                            RingTraceEventType::ReduceEnd, segment_bytes);
 
                         session.complete_receive_step();
+                        ring_trace_record(
+                            trace_op, rank, RingTraceRole::Receiver,
+                            RingTraceEventType::StepComplete, segment_bytes);
                     }
                 }
                 catch (...)
@@ -134,10 +171,17 @@ namespace
                     session.report_failure();
                     throw;
                 }
-            });
+            },
+            trace_op);
 
+        ring_trace_record(
+            trace_op, rank, RingTraceRole::Receiver,
+            RingTraceEventType::OutputCopyBegin, segment_bytes);
         std::memcpy(
             recv_buffer, work.data() + rank * recv_count, segment_bytes);
+        ring_trace_record(
+            trace_op, rank, RingTraceRole::Receiver,
+            RingTraceEventType::OutputCopyEnd, segment_bytes);
     }
 
 } // namespace

@@ -30,11 +30,14 @@ namespace tbccl::detail
         worker_.join();
     }
 
-    void RingExecutor::submit(std::function<void()> job)
+    void RingExecutor::submit(
+        std::function<void()> job,
+        std::uint64_t trace_operation_id)
     {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             job_ = std::move(job);
+            job_trace_operation_id_ = trace_operation_id;
             job_ready_ = true;
             job_done_ = false;
             ++stats_.submitted_jobs;
@@ -54,6 +57,7 @@ namespace tbccl::detail
         while (true)
         {
             std::function<void()> job;
+            std::uint64_t trace_operation_id = 0;
 
             {
                 std::unique_lock<std::mutex> lock(mutex_);
@@ -65,8 +69,13 @@ namespace tbccl::detail
                 }
 
                 job = std::move(job_);
+                trace_operation_id = job_trace_operation_id_;
                 job_ready_ = false;
             }
+
+            ring_trace_record(
+                trace_operation_id, 0, RingTraceRole::Sender,
+                RingTraceEventType::WorkerWake);
 
             try
             {
@@ -87,6 +96,18 @@ namespace tbccl::detail
                 job_done_ = true;
                 job_ = nullptr;
                 ++stats_.completed_jobs;
+
+#if defined(TBCCL_ENABLE_RING_TRACE)
+                // Move this job's worker-side events (T1/T2/T3 and any
+                // sender-side stage events, all recorded on this
+                // thread) into the shared, mutex-protected snapshot so
+                // drain_worker_trace() can retrieve them from any
+                // thread. Reuses the lock already held for job_done_/
+                // stats_ above — no new hot-path contention.
+                auto drained = ring_trace_drain_this_thread();
+                worker_trace_.insert(
+                    worker_trace_.end(), drained.begin(), drained.end());
+#endif
             }
 
             cv_.notify_all();
@@ -98,6 +119,16 @@ namespace tbccl::detail
         std::lock_guard<std::mutex> lock(mutex_);
         return stats_;
     }
+
+#if defined(TBCCL_ENABLE_RING_TRACE)
+    std::vector<RingTraceEvent> RingExecutor::drain_worker_trace()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<RingTraceEvent> drained;
+        drained.swap(worker_trace_);
+        return drained;
+    }
+#endif
 
     RingExecutor &RingExecutorAccess::get_or_create(World &world)
     {
