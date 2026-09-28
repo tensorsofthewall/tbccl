@@ -53,9 +53,18 @@ def build_arg_parser():
     parser.add_argument(
         "--algorithm",
         default="reference",
-        choices=["reference", "ring", "auto", "both"],
+        choices=["reference", "ring", "ring-pipelined", "auto", "both"],
         help="Algorithm to benchmark ('auto' resolves per-size via the "
-        "library's selector policy), or 'both' to run reference then ring",
+        "library's selector policy; 'ring-pipelined' is the experimental "
+        "chunked ring variant and requires --chunk-bytes), or 'both' to "
+        "run reference then ring",
+    )
+    parser.add_argument(
+        "--chunk-bytes",
+        type=int,
+        default=None,
+        help="Chunk size in bytes, required for --algorithm ring-pipelined "
+        "and ignored otherwise",
     )
     parser.add_argument(
         "--sizes",
@@ -155,7 +164,7 @@ def kill_all(processes):
 
 def run_one_algorithm(binary, ranks, host, base_port, collective, algorithm,
                        sizes, datatype, op, iterations, warmup, busy_poll,
-                       timeout):
+                       timeout, chunk_bytes=None):
     """Launches `ranks` processes for one algorithm run. Returns
     (success, rank0_stdout, [stderr per rank])."""
 
@@ -170,6 +179,8 @@ def run_one_algorithm(binary, ranks, host, base_port, collective, algorithm,
 
     if sizes is not None:
         command_base += ["--sizes", sizes]
+    if chunk_bytes is not None:
+        command_base += ["--chunk-bytes", str(chunk_bytes)]
     if datatype is not None:
         command_base += ["--datatype", datatype]
     if op is not None:
@@ -243,6 +254,7 @@ def main():
             args.binary, args.ranks, args.host, args.base_port,
             args.collective, algorithm, args.sizes, args.datatype, args.op,
             args.iterations, args.warmup, args.busy_poll, args.timeout,
+            args.chunk_bytes,
         )
 
         if not success:

@@ -1,7 +1,7 @@
 // Generic collective benchmark harness. Currently supports:
-//   --collective all-gather     --algorithm reference|ring|auto
-//   --collective reduce-scatter --algorithm reference|ring|auto
-//   --collective all-reduce     --algorithm reference|ring|auto
+//   --collective all-gather     --algorithm reference|ring|ring-pipelined|auto
+//   --collective reduce-scatter --algorithm reference|ring|ring-pipelined|auto
+//   --collective all-reduce     --algorithm reference|ring|ring-pipelined|auto
 //                                --datatype int32|int64|float32|float64
 //                                --op sum|product|min|max
 //
@@ -11,8 +11,15 @@
 // TBCCL_ALGORITHM/TBCCL_*_ALGORITHM environment override, so a
 // benchmark run's results are reproducible regardless of the user's
 // shell environment. Each CSV row records both requested_algorithm
-// ("reference"/"ring"/"auto") and the resolved algorithm actually
-// benchmarked, plus selection_reason for auto rows.
+// ("reference"/"ring"/"ring-pipelined"/"auto") and the resolved
+// algorithm actually benchmarked, plus selection_reason for auto rows.
+//
+// --algorithm ring-pipelined selects the experimental chunked/
+// pipelined ring implementations (see all_gather_internal.hpp /
+// reduce_scatter_internal.hpp / all_reduce_internal.hpp) and requires
+// --chunk-bytes; it is never a possible Auto resolution — Auto only
+// ever resolves to "reference" or "ring", exactly as before. --chunk-
+// bytes is ignored (has no effect) for reference/ring/auto.
 //
 // The CLI/CSV shape is deliberately generic so later phases can add
 // more collectives/algorithms without replacing this tool — see
@@ -43,12 +50,14 @@
 #include "all_gather_internal.hpp"
 #include "all_reduce_internal.hpp"
 #include "reduce_scatter_internal.hpp"
+#include "ring_pipeline_session.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -70,6 +79,9 @@ namespace
         std::vector<std::size_t> sizes;
         int iterations = 100;
         int warmup = 20;
+        // 0 means "not set"; required (> 0) when algorithm ==
+        // "ring-pipelined", ignored otherwise.
+        std::size_t chunk_bytes = 0;
     };
 
     void print_usage(const char *program)
@@ -80,7 +92,8 @@ namespace
             << " --rank R --peers HOST:PORT,HOST:PORT,... "
             << "[--bind ADDRESS] [--busy-poll MICROSECONDS] "
             << "[--collective all-gather|reduce-scatter|all-reduce] "
-            << "[--algorithm reference|ring|auto] "
+            << "[--algorithm reference|ring|ring-pipelined|auto] "
+            << "[--chunk-bytes N] "
             << "[--datatype int32|int64|float32|float64] "
             << "[--op sum|product|min|max] "
             << "[--sizes BYTES[,BYTES...]] [--iterations N] "
@@ -89,10 +102,17 @@ namespace
                "bytes per rank. For reduce-scatter, each --sizes value "
                "is output segment bytes per rank. For all-reduce, each "
                "--sizes value is total tensor bytes per rank (element "
-               "count must divide the world size for the ring "
-               "algorithm). All must be a multiple of the datatype "
-               "size where a datatype applies; --datatype/--op select "
-               "the reduction for reduce-scatter/all-reduce.\n\n"
+               "count must divide the world size for the ring and "
+               "ring-pipelined algorithms). All must be a multiple of "
+               "the datatype size where a datatype applies; "
+               "--datatype/--op select the reduction for "
+               "reduce-scatter/all-reduce.\n\n"
+            << "--algorithm ring-pipelined is an experimental chunked/"
+               "pipelined ring variant, never a possible --algorithm "
+               "auto resolution; it requires --chunk-bytes (the "
+               "requested chunk size in bytes; must be a multiple of "
+               "the datatype size for reduce-scatter/all-reduce). "
+               "--chunk-bytes has no effect for reference/ring/auto.\n\n"
             << "Example:\n"
             << "  " << program
             << " --rank 0 --peers "
@@ -339,6 +359,12 @@ namespace
             {
                 options.sizes = parse_sizes(require_value(argument));
             }
+            else if (argument == "--chunk-bytes")
+            {
+                options.chunk_bytes =
+                    static_cast<std::size_t>(
+                        parse_unsigned(argument, require_value(argument)));
+            }
             else if (argument == "--iterations")
             {
                 const std::string value_text = require_value(argument);
@@ -570,6 +596,14 @@ namespace
         // traffic); 2.0 for AllReduce, which is normalized as
         // ReduceScatter + AllGather network volume per rank.
         double busbw_multiplier = 1.0;
+        // 0 for reference/ring/auto rows (not applicable).
+        // ring-pipelined rows carry the requested chunk size and the
+        // resulting chunk count per segment (ceil(segment_bytes /
+        // chunk_bytes)), so a chunk-size sweep's CSV is
+        // self-describing without needing to cross-reference the
+        // command line that produced it.
+        std::size_t chunk_bytes = 0;
+        std::size_t chunks_per_segment = 0;
     };
 
     void print_csv_header()
@@ -577,8 +611,9 @@ namespace
         std::cout
             << "collective,requested_algorithm,algorithm,selection_reason,"
                "datatype,op,world_size,segment_bytes,input_bytes_per_rank,"
-               "output_bytes_per_rank,iterations,warmup,median_us,p95_us,"
-               "min_us,max_us,algbw_GBps,busbw_GBps,busy_poll_us\n";
+               "output_bytes_per_rank,chunk_bytes,chunks_per_segment,"
+               "iterations,warmup,median_us,p95_us,min_us,max_us,"
+               "algbw_GBps,busbw_GBps,busy_poll_us\n";
     }
 
     void print_csv_row(const BenchRow &row)
@@ -601,15 +636,16 @@ namespace
             << row.algorithm << ',' << row.selection_reason << ','
             << row.datatype << ',' << row.op << ',' << row.world_size << ','
             << row.segment_bytes << ',' << row.input_bytes_per_rank << ','
-            << row.output_bytes_per_rank << ',' << row.stats.iterations
-            << ',' << row.warmup << ',' << row.stats.median_us << ','
+            << row.output_bytes_per_rank << ',' << row.chunk_bytes << ','
+            << row.chunks_per_segment << ',' << row.stats.iterations << ','
+            << row.warmup << ',' << row.stats.median_us << ','
             << row.stats.p95_us << ',' << row.stats.min_us << ','
             << row.stats.max_us << ',' << algbw_GBps << ',' << busbw_GBps
             << ',' << row.busy_poll_us << '\n';
     }
 
-    using AllGatherFn = void (*)(
-        tbccl::World &, const void *, void *, std::size_t);
+    using AllGatherFn = std::function<void(
+        tbccl::World &, const void *, void *, std::size_t)>;
 
     struct AllGatherResolution
     {
@@ -618,16 +654,20 @@ namespace
         std::string reason_name;
     };
 
-    // Resolves --algorithm to a concrete function pointer for one
-    // --sizes value. For "auto", this calls the same pure selector
-    // policy the public all_gather() uses (never a TBCCL_ALGORITHM
-    // environment override), so the resolution is reproducible and
-    // independent of the caller's shell environment; different
-    // --sizes values in the same run may resolve differently.
+    // Resolves --algorithm to a concrete callable for one --sizes
+    // value. For "auto", this calls the same pure selector policy the
+    // public all_gather() uses (never a TBCCL_ALGORITHM environment
+    // override), so the resolution is reproducible and independent of
+    // the caller's shell environment; different --sizes values in the
+    // same run may resolve differently. "ring-pipelined" is never a
+    // possible Auto resolution — it is only reachable by requesting it
+    // explicitly, with the experimental algorithm distinctly labeled
+    // in the returned name (never conflated with "ring").
     AllGatherResolution resolve_all_gather_function(
         const std::string &requested,
         std::size_t world_size,
-        std::size_t bytes_per_rank)
+        std::size_t bytes_per_rank,
+        std::size_t chunk_bytes)
     {
         if (requested == "reference")
         {
@@ -637,6 +677,20 @@ namespace
         if (requested == "ring")
         {
             return {tbccl::detail::all_gather_ring, "ring", ""};
+        }
+
+        if (requested == "ring-pipelined")
+        {
+            return {
+                [chunk_bytes](
+                    tbccl::World &world, const void *send_buffer,
+                    void *recv_buffer, std::size_t bytes)
+                {
+                    tbccl::detail::all_gather_pipelined(
+                        world, send_buffer, recv_buffer, bytes,
+                        chunk_bytes);
+                },
+                "ring-pipelined", ""};
         }
 
         if (requested == "auto")
@@ -762,9 +816,9 @@ namespace
         return summarize(std::move(iteration_us));
     }
 
-    using ReduceScatterFn = void (*)(
+    using ReduceScatterFn = std::function<void(
         tbccl::World &, const void *, void *, std::size_t, tbccl::DataType,
-        tbccl::ReduceOp);
+        tbccl::ReduceOp)>;
 
     struct ReduceScatterResolution
     {
@@ -776,7 +830,8 @@ namespace
     ReduceScatterResolution resolve_reduce_scatter_function(
         const std::string &requested,
         std::size_t world_size,
-        std::size_t segment_bytes)
+        std::size_t segment_bytes,
+        std::size_t chunk_bytes)
     {
         if (requested == "reference")
         {
@@ -787,6 +842,21 @@ namespace
         if (requested == "ring")
         {
             return {tbccl::detail::reduce_scatter_ring, "ring", ""};
+        }
+
+        if (requested == "ring-pipelined")
+        {
+            return {
+                [chunk_bytes](
+                    tbccl::World &world, const void *send_buffer,
+                    void *recv_buffer, std::size_t recv_count,
+                    tbccl::DataType datatype, tbccl::ReduceOp op)
+                {
+                    tbccl::detail::reduce_scatter_pipelined(
+                        world, send_buffer, recv_buffer, recv_count,
+                        datatype, op, chunk_bytes);
+                },
+                "ring-pipelined", ""};
         }
 
         if (requested == "auto")
@@ -958,9 +1028,9 @@ namespace
         throw std::runtime_error("unreachable: unknown DataType");
     }
 
-    using AllReduceFn = void (*)(
+    using AllReduceFn = std::function<void(
         tbccl::World &, const void *, void *, std::size_t, tbccl::DataType,
-        tbccl::ReduceOp);
+        tbccl::ReduceOp)>;
 
     struct AllReduceResolution
     {
@@ -973,7 +1043,8 @@ namespace
         const std::string &requested,
         std::size_t world_size,
         std::size_t tensor_bytes,
-        std::size_t element_count)
+        std::size_t element_count,
+        std::size_t chunk_bytes)
     {
         if (requested == "reference")
         {
@@ -983,6 +1054,21 @@ namespace
         if (requested == "ring")
         {
             return {tbccl::detail::all_reduce_ring, "ring", ""};
+        }
+
+        if (requested == "ring-pipelined")
+        {
+            return {
+                [chunk_bytes](
+                    tbccl::World &world, const void *send_buffer,
+                    void *recv_buffer, std::size_t count,
+                    tbccl::DataType datatype, tbccl::ReduceOp op)
+                {
+                    tbccl::detail::all_reduce_pipelined(
+                        world, send_buffer, recv_buffer, count, datatype,
+                        op, chunk_bytes);
+                },
+                "ring-pipelined", ""};
         }
 
         if (requested == "auto")
@@ -1162,11 +1248,21 @@ int main(int argc, char **argv)
         }
 
         if (options.algorithm != "reference" && options.algorithm != "ring" &&
+            options.algorithm != "ring-pipelined" &&
             options.algorithm != "auto")
         {
             throw std::runtime_error(
                 "unsupported --algorithm: " + options.algorithm +
-                " (only reference, ring, and auto are supported)");
+                " (only reference, ring, ring-pipelined, and auto are "
+                "supported)");
+        }
+
+        if (options.algorithm == "ring-pipelined" &&
+            options.chunk_bytes == 0)
+        {
+            throw std::runtime_error(
+                "--chunk-bytes is required (and must be > 0) for "
+                "--algorithm ring-pipelined");
         }
 
         tbccl::TcpWorldOptions world_options;
@@ -1203,7 +1299,8 @@ int main(int argc, char **argv)
             for (std::size_t bytes_per_rank : options.sizes)
             {
                 const auto resolution = resolve_all_gather_function(
-                    options.algorithm, size, bytes_per_rank);
+                    options.algorithm, size, bytes_per_rank,
+                    options.chunk_bytes);
 
                 const auto stats = run_all_gather_benchmark(
                     *world, resolution.function, bytes_per_rank,
@@ -1229,6 +1326,14 @@ int main(int argc, char **argv)
                     row.warmup = options.warmup;
                     row.busy_poll_us = options.busy_poll_us;
 
+                    if (resolution.resolved_name == "ring-pipelined")
+                    {
+                        row.chunk_bytes = options.chunk_bytes;
+                        row.chunks_per_segment =
+                            tbccl::detail::compute_chunk_count(
+                                bytes_per_rank, options.chunk_bytes);
+                    }
+
                     print_csv_row(row);
                 }
             }
@@ -1252,7 +1357,8 @@ int main(int argc, char **argv)
                 const std::size_t recv_count = segment_bytes / element_size;
 
                 const auto resolution = resolve_reduce_scatter_function(
-                    options.algorithm, size, segment_bytes);
+                    options.algorithm, size, segment_bytes,
+                    options.chunk_bytes);
 
                 const auto stats = run_reduce_scatter_benchmark_dispatch(
                     *world, resolution.function, recv_count,
@@ -1280,6 +1386,14 @@ int main(int argc, char **argv)
                     row.stats = stats;
                     row.warmup = options.warmup;
                     row.busy_poll_us = options.busy_poll_us;
+
+                    if (resolution.resolved_name == "ring-pipelined")
+                    {
+                        row.chunk_bytes = options.chunk_bytes;
+                        row.chunks_per_segment =
+                            tbccl::detail::compute_chunk_count(
+                                segment_bytes, options.chunk_bytes);
+                    }
 
                     print_csv_row(row);
                 }
@@ -1320,7 +1434,8 @@ int main(int argc, char **argv)
                 }
 
                 const auto resolution = resolve_all_reduce_function(
-                    options.algorithm, size, tensor_bytes, count);
+                    options.algorithm, size, tensor_bytes, count,
+                    options.chunk_bytes);
 
                 const auto stats = run_all_reduce_benchmark_dispatch(
                     *world, resolution.function, count, options.datatype,
@@ -1348,6 +1463,14 @@ int main(int argc, char **argv)
                     row.warmup = options.warmup;
                     row.busy_poll_us = options.busy_poll_us;
                     row.busbw_multiplier = 2.0;
+
+                    if (resolution.resolved_name == "ring-pipelined")
+                    {
+                        row.chunk_bytes = options.chunk_bytes;
+                        row.chunks_per_segment =
+                            tbccl::detail::compute_chunk_count(
+                                row.segment_bytes, options.chunk_bytes);
+                    }
 
                     print_csv_row(row);
                 }
