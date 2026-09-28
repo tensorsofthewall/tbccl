@@ -36,6 +36,8 @@ add_library(tbccl STATIC
     src/collectives/reduce_scatter_ring.cpp
     src/collectives/all_reduce_ring.cpp
     src/collectives/all_gather_pipelined.cpp
+    src/collectives/reduce_scatter_pipelined.cpp
+    src/collectives/all_reduce_pipelined.cpp
     src/collectives/algorithm_selector.cpp
 )
 
@@ -727,6 +729,66 @@ if(BUILD_TESTING)
     add_test(
         NAME all_gather_pipelined_test
         COMMAND all_gather_pipelined_test
+    )
+
+    add_executable(reduce_scatter_pipelined_test
+        tests/reduce_scatter_pipelined_test.cpp
+    )
+
+    target_link_libraries(reduce_scatter_pipelined_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    target_include_directories(reduce_scatter_pipelined_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+    )
+
+    if(MSVC)
+        target_compile_options(reduce_scatter_pipelined_test PRIVATE /W4)
+    else()
+        target_compile_options(reduce_scatter_pipelined_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME reduce_scatter_pipelined_test
+        COMMAND reduce_scatter_pipelined_test
+    )
+
+    add_executable(all_reduce_pipelined_test
+        tests/all_reduce_pipelined_test.cpp
+    )
+
+    target_link_libraries(all_reduce_pipelined_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    target_include_directories(all_reduce_pipelined_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+    )
+
+    if(MSVC)
+        target_compile_options(all_reduce_pipelined_test PRIVATE /W4)
+    else()
+        target_compile_options(all_reduce_pipelined_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME all_reduce_pipelined_test
+        COMMAND all_reduce_pipelined_test
     )
 
 endif()

@@ -59,4 +59,26 @@ void all_reduce_ring(
     DataType datatype,
     ReduceOp op);
 
+// Experimental: chunked/pipelined ring all-reduce — pipelined ring
+// reduce-scatter over the full input followed by pipelined ring
+// all-gather of each rank's reduced segment, exactly mirroring
+// all_reduce_ring()'s composition (same reasoning for why no barrier
+// is needed between the two phases and why send_buffer == recv_buffer
+// aliasing is safe). The two phases are not fused: all-gather does not
+// begin until reduce-scatter has fully returned, and chunk_bytes is
+// not pipelined *across* the reduce-scatter/all-gather boundary,
+// only within each primitive. Requires
+// `count % world.size() == 0`, rejected before any communication
+// otherwise. Every rank in the World must be called with the identical
+// chunk_bytes value. Not connected to the public Auto selector or any
+// public API; internal/benchmark-only.
+void all_reduce_pipelined(
+    World &world,
+    const void *send_buffer,
+    void *recv_buffer,
+    std::size_t count,
+    DataType datatype,
+    ReduceOp op,
+    std::size_t chunk_bytes);
+
 } // namespace tbccl::detail
