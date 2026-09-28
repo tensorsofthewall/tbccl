@@ -161,6 +161,15 @@ endif()
 if(TBCCL_ENABLE_METAL)
     target_compile_definitions(tbccl_tensor_backend PUBLIC TBCCL_ENABLE_METAL)
     target_link_libraries(tbccl_tensor_backend PUBLIC "-framework Metal" "-framework Foundation")
+
+    # ARC manages the id-typed C++ class members in metal_backend.mm
+    # (MTLBuffer/MTLCommandBuffer/etc. handles) like ordinary C++
+    # members -- retained on assignment, released on destruction --
+    # so no manual retain/release appears in that file.
+    set_source_files_properties(
+        benchmarks/tensor/metal_backend.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc"
+    )
 endif()
 
 # -Wall/-Wextra/-Wpedantic apply to our own C++/Objective-C++ sources
@@ -954,6 +963,30 @@ if(BUILD_TESTING)
         add_test(
             NAME tensor_cuda_test
             COMMAND tensor_cuda_test
+        )
+    endif()
+
+    if(TBCCL_ENABLE_METAL)
+        add_executable(tensor_metal_test
+            tests/tensor_metal_test.mm
+        )
+
+        target_link_libraries(tensor_metal_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        target_compile_options(tensor_metal_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+
+        add_test(
+            NAME tensor_metal_test
+            COMMAND tensor_metal_test
         )
     endif()
 
