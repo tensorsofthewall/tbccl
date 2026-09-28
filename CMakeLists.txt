@@ -35,6 +35,7 @@ add_library(tbccl STATIC
     src/collectives/all_gather_ring.cpp
     src/collectives/reduce_scatter_ring.cpp
     src/collectives/all_reduce_ring.cpp
+    src/collectives/all_gather_pipelined.cpp
     src/collectives/algorithm_selector.cpp
 )
 
@@ -693,6 +694,39 @@ if(BUILD_TESTING)
     add_test(
         NAME ring_pipeline_session_test
         COMMAND ring_pipeline_session_test
+    )
+
+    add_executable(all_gather_pipelined_test
+        tests/all_gather_pipelined_test.cpp
+    )
+
+    target_link_libraries(all_gather_pipelined_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    # all_gather_internal.hpp / ring_executor.hpp are not part of the
+    # public API — this path is private to this one test target, not
+    # installed/exported.
+    target_include_directories(all_gather_pipelined_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+    )
+
+    if(MSVC)
+        target_compile_options(all_gather_pipelined_test PRIVATE /W4)
+    else()
+        target_compile_options(all_gather_pipelined_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME all_gather_pipelined_test
+        COMMAND all_gather_pipelined_test
     )
 
 endif()
