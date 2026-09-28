@@ -48,4 +48,25 @@ void all_gather_ring(
     void *recv_buffer,
     std::size_t bytes_per_rank);
 
+// Experimental: chunked/pipelined ring all-gather. Same N-1 step ring
+// topology and send_chunk()/recv_chunk() formulas as all_gather_ring()
+// — the only difference is that each step's bytes_per_rank-sized
+// segment is itself split into chunk_bytes-sized pieces (the last one
+// possibly shorter), forwarded chunk-by-chunk instead of as one
+// send()/recv() call per step, so a chunk can begin forwarding to the
+// next rank as soon as it individually arrives rather than waiting for
+// its whole segment. Every rank in the World must be called with the
+// identical chunk_bytes value for one invocation — see
+// all_gather_pipelined.cpp. Not connected to the public Auto selector
+// or any public API in this phase; internal/benchmark-only, and kept
+// independent from all_gather_ring() (not a drop-in replacement — both
+// remain separately callable baselines). Requires chunk_bytes > 0 for
+// a nonzero bytes_per_rank; throws before any communication otherwise.
+void all_gather_pipelined(
+    World &world,
+    const void *send_buffer,
+    void *recv_buffer,
+    std::size_t bytes_per_rank,
+    std::size_t chunk_bytes);
+
 } // namespace tbccl::detail
