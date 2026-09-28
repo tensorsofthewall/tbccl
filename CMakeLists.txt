@@ -187,6 +187,30 @@ else()
     )
 endif()
 
+if(TBCCL_ENABLE_CUDA)
+    # The CUDA synchronization-audit work standalone CUDA diagnostic:
+    # no TBCCL networking or TensorBackend involvement, deliberately
+    # decoupled so its timing can't be perturbed by or confused with
+    # either.
+    add_executable(cuda_sync_bench
+        benchmarks/tensor/cuda_sync_bench.cu
+    )
+
+    target_link_libraries(cuda_sync_bench
+        PRIVATE
+            CUDA::cudart
+    )
+
+    set_target_properties(cuda_sync_bench PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+    )
+
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set_target_properties(cuda_sync_bench PROPERTIES CUDA_ARCHITECTURES native)
+    endif()
+endif()
+
 add_executable(tb_pingpong
     benchmarks/tcp_pingpong.cpp
 )
