@@ -95,6 +95,11 @@ namespace
         BackendKind local_backend = BackendKind::Host;
         std::size_t source_rank = 0;
 
+        // "ready" (default, matches Phase 17's only behavior exactly --
+        // see Part 18's timing audit) or "produce". Only end-to-end and
+        // ack-calibration modes consult this; ignored otherwise.
+        std::string timing_scope = "ready";
+
         std::vector<std::size_t> sizes;
         int warmup = 20;
         int iterations = 200;
@@ -112,7 +117,8 @@ namespace
             << "[--local-backend host|cuda-pageable|cuda-pinned|"
                "metal-shared|metal-private-staged] "
             << "[--source-rank N] [--sizes BYTES[,BYTES...]] "
-            << "[--warmup N] [--iterations N]\n\n"
+            << "[--warmup N] [--iterations N] "
+            << "[--timing-scope ready|produce]\n\n"
             << "staging-only needs no --rank/--peers (single process, no "
                "networking). Every other mode requires exactly 2 --peers. "
                "network-only and latency-floor always use the host "
@@ -126,6 +132,16 @@ namespace
                "always forces the host backend regardless of "
                "--local-backend (Part 37's host-only control baseline) "
                "and implicitly measures an extra 0-byte payload first.\n\n"
+            << "--timing-scope applies to end-to-end/ack-calibration only "
+               "(Phase 18, Part C). 'ready' (default, matches every prior "
+               "Phase 17 measurement exactly): source generation and "
+               "producer synchronization happen BEFORE the primary timer "
+               "-- completion_confirmed_us then measures the cost of "
+               "communicating an already-ready tensor. 'produce': the "
+               "timer starts BEFORE source generation, so "
+               "completion_confirmed_us also includes producer cost. "
+               "These are never the same number and must not be "
+               "compared as if they were.\n\n"
             << "Example:\n"
             << "  " << program
             << " --mode latency-floor --rank 0 --peers "
@@ -345,6 +361,10 @@ namespace
                     static_cast<int>(
                         parse_unsigned(argument, require_value(argument)));
             }
+            else if (argument == "--timing-scope")
+            {
+                options.timing_scope = require_value(argument);
+            }
             else if (argument == "--help" || argument == "-h")
             {
                 print_usage(argv[0]);
@@ -417,6 +437,11 @@ namespace
         if (options.iterations <= 0)
         {
             throw std::runtime_error("--iterations must be > 0");
+        }
+
+        if (options.timing_scope != "ready" && options.timing_scope != "produce")
+        {
+            throw std::runtime_error("--timing-scope must be ready or produce");
         }
 
         return options;
@@ -508,6 +533,20 @@ namespace
         double effective_GBps = 0.0;
         std::string allocation_type = "NA";
         AllocationStats alloc_stats;
+
+        // Phase 18, Part C/D: which of the two disjoint timing
+        // boundaries `stats`/`completion_confirmed_us` describes --
+        // "ready" (producer excluded, Phase 17's only behavior) or
+        // "produce" (producer included). "NA" for modes/rows where the
+        // distinction doesn't apply (staging-only/network-only/
+        // latency-floor). producer_enqueue_us is the CPU time to
+        // *submit* the producer's GPU work, kept separate from
+        // source_sync_us (the time spent *waiting* for it, via
+        // prepare_source()) per Part D item 19 -- these answered very
+        // differently in the Phase 18 CUDA audit (enqueue ~4us,
+        // sync ~1.3-1.9ms).
+        std::string timing_scope = "NA";
+        double producer_enqueue_us = kNA;
     };
 
     void print_csv_header()
@@ -521,18 +560,18 @@ namespace
                "destination_sync_us,completion_confirmed_us,"
                "effective_GBps,effective_Gbps,"
                "allocation_type,staging_capacity_bytes,allocation_count,"
-               "reuse_count\n";
+               "reuse_count,timing_scope,producer_enqueue_us\n";
     }
 
-    void print_optional(double value)
+    void print_optional(double value, char separator = ',')
     {
         if (value < 0.0)
         {
-            std::cout << "NA,";
+            std::cout << "NA" << separator;
         }
         else
         {
-            std::cout << value << ',';
+            std::cout << value << separator;
         }
     }
 
@@ -576,7 +615,10 @@ namespace
             << row.allocation_type << ','
             << row.alloc_stats.capacity_bytes << ','
             << row.alloc_stats.allocation_count << ','
-            << row.alloc_stats.reuse_count << '\n';
+            << row.alloc_stats.reuse_count << ','
+            << row.timing_scope << ',';
+
+        print_optional(row.producer_enqueue_us, '\n');
     }
 
     // -----------------------------------------------------------------------------
@@ -1169,28 +1211,69 @@ namespace
 
             if (is_source)
             {
+                const bool produce_scope = (options.timing_scope == "produce");
+
                 std::vector<double> completion_samples;
                 std::vector<double> staging_samples;
                 std::vector<double> sync_samples;
+                std::vector<double> enqueue_samples;
                 std::vector<double> send_samples;
                 completion_samples.reserve(reserve_n);
                 staging_samples.reserve(reserve_n);
                 sync_samples.reserve(reserve_n);
+                enqueue_samples.reserve(reserve_n);
                 send_samples.reserve(reserve_n);
 
                 for (int i = 0; i < total; ++i)
                 {
                     const std::uint32_t seed = static_cast<std::uint32_t>(0x3000 + i);
 
-                    backend->initialize_source(seed);
+                    // Phase 18, Part C: this is the ONLY difference
+                    // between the two timing scopes -- where
+                    // `interval_start` (the primary timer's start) is
+                    // captured relative to the producer's work.
+                    //
+                    // "ready": generate + synchronize the source BEFORE
+                    // starting the timer (Phase 17's only behavior,
+                    // and the default here) -- completion_confirmed_us
+                    // then measures the cost of communicating an
+                    // ALREADY-ready tensor, deliberately excluding
+                    // producer cost.
+                    //
+                    // "produce": the timer starts first, so producer
+                    // enqueue+sync work is INSIDE completion_confirmed_us.
+                    //
+                    // Every other stage (staging/send/ACK-wait) is
+                    // measured identically in both scopes -- only the
+                    // interval's start point and what precedes it
+                    // differ (Part 12: "share... only the timing
+                    // boundaries... differ").
+                    std::chrono::steady_clock::time_point interval_start;
+                    std::chrono::steady_clock::time_point enqueue_start;
+                    std::chrono::steady_clock::time_point enqueue_end;
+                    std::chrono::steady_clock::time_point sync_end;
 
-                    const auto sync_start = std::chrono::steady_clock::now();
-                    backend->prepare_source();
-                    const auto sync_end = std::chrono::steady_clock::now();
-
-                    // "source tensor ready" -- completion-confirmed
-                    // timing starts here (Part 35).
-                    const auto ready = sync_end;
+                    if (produce_scope)
+                    {
+                        interval_start = std::chrono::steady_clock::now();
+                        enqueue_start = interval_start;
+                        backend->initialize_source(seed);
+                        enqueue_end = std::chrono::steady_clock::now();
+                        backend->prepare_source();
+                        sync_end = std::chrono::steady_clock::now();
+                    }
+                    else
+                    {
+                        enqueue_start = std::chrono::steady_clock::now();
+                        backend->initialize_source(seed);
+                        enqueue_end = std::chrono::steady_clock::now();
+                        backend->prepare_source();
+                        sync_end = std::chrono::steady_clock::now();
+                        // "source tensor ready" -- the primary timer
+                        // starts here, deliberately after producer
+                        // work (Part 13).
+                        interval_start = sync_end;
+                    }
 
                     backend->stage_device_to_host();
                     const auto staging_end = std::chrono::steady_clock::now();
@@ -1202,18 +1285,48 @@ namespace
                     world.recv(peer, &ack, sizeof(ack));
                     const auto ack_observed = std::chrono::steady_clock::now();
 
+                    // Part 22's per-iteration invariant: in "produce"
+                    // scope, the timer starts at/before the producer's
+                    // own enqueue, so this iteration's completion
+                    // duration must be >= its own producer-completion
+                    // duration. Checked per iteration on raw values,
+                    // never against aggregated/cross-iteration medians
+                    // (Part 22's explicit warning). steady_clock is
+                    // monotonic, so this can only fail from an actual
+                    // logic error in the timestamps above.
+                    if (produce_scope)
+                    {
+                        const double producer_completion_this_iter =
+                            microseconds_between(enqueue_start, sync_end);
+                        const double completion_this_iter =
+                            microseconds_between(interval_start, ack_observed);
+
+                        if (completion_this_iter < producer_completion_this_iter)
+                        {
+                            throw std::runtime_error(
+                                "timing invariant violated: produce-scope "
+                                "completion (" +
+                                std::to_string(completion_this_iter) +
+                                "us) < producer completion (" +
+                                std::to_string(producer_completion_this_iter) +
+                                "us) at iteration " + std::to_string(i));
+                        }
+                    }
+
                     if (i >= options.warmup)
                     {
-                        sync_samples.push_back(microseconds_between(sync_start, sync_end));
-                        staging_samples.push_back(microseconds_between(ready, staging_end));
+                        enqueue_samples.push_back(microseconds_between(enqueue_start, enqueue_end));
+                        sync_samples.push_back(microseconds_between(enqueue_end, sync_end));
+                        staging_samples.push_back(microseconds_between(sync_end, staging_end));
                         send_samples.push_back(microseconds_between(staging_end, send_end));
-                        completion_samples.push_back(microseconds_between(ready, ack_observed));
+                        completion_samples.push_back(microseconds_between(interval_start, ack_observed));
                     }
                 }
 
                 const LatencyStats completion_stats = compute_stats(completion_samples);
                 const LatencyStats staging_stats = compute_stats(staging_samples);
                 const LatencyStats sync_stats = compute_stats(sync_samples);
+                const LatencyStats enqueue_stats = compute_stats(enqueue_samples);
                 const LatencyStats send_stats = compute_stats(send_samples);
 
                 WireStageSummary wire_summary{};
@@ -1263,10 +1376,13 @@ namespace
                 row.effective_GBps = effective_GBps;
                 row.allocation_type = local_backend_name;
                 row.alloc_stats = backend->stats();
+                row.timing_scope = options.timing_scope;
+                row.producer_enqueue_us = enqueue_stats.median_us;
                 print_csv_row(row);
 
                 std::cerr
-                    << '[' << mode_name << "] size=" << size
+                    << '[' << mode_name << '/' << options.timing_scope
+                    << "] size=" << size
                     << " completion_confirmed_median_us=" << completion_stats.median_us
                     << " effective_GBps=" << effective_GBps << '\n';
             }
