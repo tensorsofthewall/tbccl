@@ -86,6 +86,98 @@ else()
     )
 endif()
 
+# ---------------------------------------------------------------------------
+# Phase 17: heterogeneous tensor-transfer backends. Benchmark-only: the
+# tbccl library above has no CUDA/Metal awareness and no dependency on
+# anything below. Both backends default OFF; a host-only Linux or
+# macOS build never needs the CUDA Toolkit or Metal/Foundation.
+# ---------------------------------------------------------------------------
+
+option(
+    TBCCL_ENABLE_CUDA
+    "Build the CUDA pageable/pinned tensor-transfer backend (requires the CUDA Toolkit). Off by default."
+    OFF
+)
+
+option(
+    TBCCL_ENABLE_METAL
+    "Build the Metal shared/private-staged tensor-transfer backend (Apple platforms only). Off by default."
+    OFF
+)
+
+if(TBCCL_ENABLE_CUDA)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+endif()
+
+if(TBCCL_ENABLE_METAL)
+    if(NOT APPLE)
+        message(FATAL_ERROR "TBCCL_ENABLE_METAL requires an Apple platform")
+    endif()
+    enable_language(OBJCXX)
+endif()
+
+add_library(tbccl_tensor_backend STATIC
+    benchmarks/tensor/tensor_backend.cpp
+    benchmarks/tensor/host_backend.cpp
+)
+
+if(TBCCL_ENABLE_CUDA)
+    target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/cuda_backend.cu)
+endif()
+
+if(TBCCL_ENABLE_METAL)
+    target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/metal_backend.mm)
+endif()
+
+# benchmarks/ (not benchmarks/tensor/) is the public include root, so
+# consumers write #include "tensor/tensor_backend.hpp" etc.
+target_include_directories(tbccl_tensor_backend
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+)
+
+target_link_libraries(tbccl_tensor_backend
+    PUBLIC
+        tbccl
+        Threads::Threads
+)
+
+if(TBCCL_ENABLE_CUDA)
+    # PUBLIC: tensor_backend.hpp's make_backend()/backend_kind_available()
+    # behavior depends on this macro, so every consumer (tests, the
+    # tensor benchmark) must agree on its value.
+    target_compile_definitions(tbccl_tensor_backend PUBLIC TBCCL_ENABLE_CUDA)
+    target_link_libraries(tbccl_tensor_backend PUBLIC CUDA::cudart)
+    set_target_properties(tbccl_tensor_backend PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+    )
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set_target_properties(tbccl_tensor_backend PROPERTIES CUDA_ARCHITECTURES native)
+    endif()
+endif()
+
+if(TBCCL_ENABLE_METAL)
+    target_compile_definitions(tbccl_tensor_backend PUBLIC TBCCL_ENABLE_METAL)
+    target_link_libraries(tbccl_tensor_backend PUBLIC "-framework Metal" "-framework Foundation")
+endif()
+
+# -Wall/-Wextra/-Wpedantic apply to our own C++/Objective-C++ sources
+# only -- CUDA sources are compiled by nvcc, whose host-side forwarding
+# of these flags produces noise from NVIDIA's own headers unrelated to
+# our code, so they are intentionally not applied to CUDA_LANGUAGE.
+if(MSVC)
+    target_compile_options(tbccl_tensor_backend PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/W4>
+    )
+else()
+    target_compile_options(tbccl_tensor_backend PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>
+        $<$<COMPILE_LANGUAGE:OBJCXX>:-Wall;-Wextra;-Wpedantic>
+    )
+endif()
+
 add_executable(tb_pingpong
     benchmarks/tcp_pingpong.cpp
 )
@@ -289,6 +381,26 @@ if(MSVC)
     target_compile_options(tbccl_collective_bench PRIVATE /W4)
 else()
     target_compile_options(tbccl_collective_bench PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
+add_executable(tbccl_tensor_transfer_bench
+    benchmarks/tensor_transfer_bench.cpp
+)
+
+target_link_libraries(tbccl_tensor_transfer_bench
+    PRIVATE
+        tbccl_tensor_backend
+        tbccl
+)
+
+if(MSVC)
+    target_compile_options(tbccl_tensor_transfer_bench PRIVATE /W4)
+else()
+    target_compile_options(tbccl_tensor_transfer_bench PRIVATE
         -Wall
         -Wextra
         -Wpedantic
@@ -788,6 +900,32 @@ if(BUILD_TESTING)
     add_test(
         NAME all_reduce_pipelined_test
         COMMAND all_reduce_pipelined_test
+    )
+
+    add_executable(tensor_host_test
+        tests/tensor_host_test.cpp
+    )
+
+    target_link_libraries(tensor_host_test
+        PRIVATE
+            tbccl_tensor_backend
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(tensor_host_test PRIVATE /W4)
+    else()
+        target_compile_options(tensor_host_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME tensor_host_test
+        COMMAND tensor_host_test
     )
 
 endif()
