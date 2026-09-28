@@ -13,6 +13,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
+option(
+    TBCCL_ENABLE_RING_TRACE
+    "Enable internal ring execution tracing (diagnostic only; adds a lightweight per-thread event buffer to the ring collective path). Off by default; leave off for normal builds."
+    OFF
+)
+
 add_library(tbccl STATIC
     src/transport/tcp.cpp
     src/core/world.cpp
@@ -24,12 +30,24 @@ add_library(tbccl STATIC
     src/collectives/reduce.cpp
     src/collectives/all_reduce.cpp
     src/collectives/reduce_scatter.cpp
+    src/collectives/ring_trace.cpp
     src/collectives/ring_executor.cpp
     src/collectives/all_gather_ring.cpp
     src/collectives/reduce_scatter_ring.cpp
     src/collectives/all_reduce_ring.cpp
     src/collectives/algorithm_selector.cpp
 )
+
+if(TBCCL_ENABLE_RING_TRACE)
+    # PUBLIC: every consumer (tests, tools, benchmarks) must agree on
+    # this macro's value, since ring_trace.hpp's declarations differ
+    # by branch depending on it — a mismatched definition between
+    # translation units would be an ODR violation.
+    target_compile_definitions(tbccl
+        PUBLIC
+            TBCCL_ENABLE_RING_TRACE
+    )
+endif()
 
 target_include_directories(tbccl
     PUBLIC
@@ -211,6 +229,37 @@ if(MSVC)
     target_compile_options(tbccl_reduce_scatter_smoke PRIVATE /W4)
 else()
     target_compile_options(tbccl_reduce_scatter_smoke PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
+# Phase 14 diagnostic only — dumps the internal ring trace (see
+# ring_trace.hpp) for a handful of ReduceScatter invocations. Builds
+# fine without TBCCL_ENABLE_RING_TRACE, but prints no events in that
+# case (every ring_trace_* call is a no-op).
+add_executable(tbccl_ring_trace_dump
+    tools/tbccl_ring_trace_dump.cpp
+)
+
+target_link_libraries(tbccl_ring_trace_dump
+    PRIVATE
+        tbccl
+)
+
+# reduce_scatter_internal.hpp / ring_executor.hpp / ring_trace.hpp are
+# not part of the public API — this path is private to this one
+# diagnostic target, not installed/exported.
+target_include_directories(tbccl_ring_trace_dump
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+)
+
+if(MSVC)
+    target_compile_options(tbccl_ring_trace_dump PRIVATE /W4)
+else()
+    target_compile_options(tbccl_ring_trace_dump PRIVATE
         -Wall
         -Wextra
         -Wpedantic
