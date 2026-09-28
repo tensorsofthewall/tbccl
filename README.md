@@ -36,20 +36,22 @@ per-collective override values.** The current synchronous World
 protocol has no channel to negotiate or detect a mismatched algorithm
 choice across ranks, so a mismatch is unsupported and may deadlock.
 
-Current provisional `auto` thresholds (every unlisted world size uses
-reference):
+Current `auto` thresholds — "v2", recalibrated after a persistent
+ring worker thread (see below) substantially cut ring's fixed
+per-invocation cost — (every unlisted world size uses reference):
 
 ```text
 AllGather (threshold: contribution bytes per rank)
-  N=3  : 16 MiB
-  N=4  : 1 MiB
-  N=8  : 512 KiB
+  N=2  : 64 B (effectively always ring above the zero-size fast path)
+  N=3  : 64 KiB
+  N=4  : 32 KiB
+  N=8  : 32 KiB
 
 ReduceScatter (threshold: output segment bytes per rank)
-  N=2  : 512 KiB
-  N=3  : 128 KiB
-  N=4  : 512 KiB
-  N=8  : 128 KiB
+  N=2  : 128 KiB
+  N=3  : 64 KiB
+  N=4  : 64 KiB
+  N=8  : 32 KiB
 
 AllReduce (threshold: total tensor bytes per rank; N=2 and N=3
 always use reference regardless of size)
@@ -57,13 +59,31 @@ always use reference regardless of size)
   N=8  : 512 KiB
 ```
 
+An early version of this library (v1) added a persistent, World-owned
+ring worker thread that replaced a per-invocation `std::thread`
+create/join with a reusable one, cutting ring's fixed overhead
+substantially. The original thresholds above (set before that change)
+had gone stale as a result — several were one to two orders of
+magnitude too conservative — so they were recalibrated using both
+median *and* p95 (tail) latency, not median crossover points alone: a
+size where ring's median improves but its p95 gets meaningfully worse
+does not automatically get a lower threshold. AllGather at N=2 changed
+policy outright (was always reference; real-hardware A/B testing now
+shows ring consistently faster, including at the smallest tested
+size, with no p95 regression). AllReduce's thresholds are unchanged —
+recalibration measurements did not find repeatable evidence to lower
+them; composing two ring phases per call (reduce-scatter then
+all-gather) appears to need a larger message to amortize than either
+phase alone.
+
 These thresholds come from local-loopback and real Thunderbolt A/B
 benchmark data gathered so far and are deliberately conservative (a
 missed ring opportunity is preferred over a regression) — they are
-**not** an API/ABI guarantee and may change between versions as
-implementations and benchmark data improve. Applications that need a
-deterministic implementation choice should use the explicit
-overrides above rather than relying on the current thresholds.
+**performance heuristics, not an API/ABI guarantee, and may change
+between versions** as implementations and benchmark data improve.
+Applications that need a deterministic implementation choice should
+use the explicit overrides above rather than relying on the current
+thresholds.
 
 ### macOS Local Network permission
 
