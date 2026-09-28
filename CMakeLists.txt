@@ -938,6 +938,40 @@ if(BUILD_TESTING)
         COMMAND tensor_host_test
     )
 
+    # Exercises tbccl_tensor_transfer_bench's --timing-scope
+    # ready/produce CLI behavior by spawning the actual compiled
+    # binary -- its logic lives in that .cpp's anonymous namespace, so
+    # this is the CLI's real testable surface. Host backend only, so
+    # no CUDA/Metal dependency.
+    add_executable(tensor_timing_scope_test
+        tests/tensor_timing_scope_test.cpp
+    )
+
+    target_compile_definitions(tensor_timing_scope_test
+        PRIVATE
+            TBCCL_TENSOR_BENCH_PATH="$<TARGET_FILE:tbccl_tensor_transfer_bench>"
+    )
+
+    # $<TARGET_FILE:...> only supplies the path; it does not itself
+    # make `cmake --build` build that target first, so this test could
+    # otherwise run against a stale or missing binary.
+    add_dependencies(tensor_timing_scope_test tbccl_tensor_transfer_bench)
+
+    if(MSVC)
+        target_compile_options(tensor_timing_scope_test PRIVATE /W4)
+    else()
+        target_compile_options(tensor_timing_scope_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME tensor_timing_scope_test
+        COMMAND tensor_timing_scope_test
+    )
+
     if(TBCCL_ENABLE_CUDA)
         add_executable(tensor_cuda_test
             tests/tensor_cuda_test.cpp
