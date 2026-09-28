@@ -929,4 +929,32 @@ if(BUILD_TESTING)
         COMMAND tensor_host_test
     )
 
+    if(TBCCL_ENABLE_CUDA)
+        add_executable(tensor_cuda_test
+            tests/tensor_cuda_test.cpp
+        )
+
+        target_link_libraries(tensor_cuda_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        if(MSVC)
+            target_compile_options(tensor_cuda_test PRIVATE /W4)
+        else()
+            target_compile_options(tensor_cuda_test PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+            )
+        endif()
+
+        add_test(
+            NAME tensor_cuda_test
+            COMMAND tensor_cuda_test
+        )
+    endif()
+
 endif()
