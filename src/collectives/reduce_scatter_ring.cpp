@@ -1,26 +1,15 @@
 #include "reduce_scatter_internal.hpp"
 #include "reduction_internal.hpp"
+#include "ring_executor.hpp"
 
-#include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <exception>
-#include <mutex>
-#include <thread>
 #include <vector>
 
 namespace tbccl::detail
 {
 namespace
 {
-
-    struct RingSyncState
-    {
-        std::mutex mutex;
-        std::condition_variable cv;
-        std::size_t completed_steps = 0;
-        bool failed = false;
-    };
 
     // Ring reduce-scatter over N-1 steps. Each rank's local `work`
     // array starts as N chunks of recv_count elements — a copy of its
@@ -44,18 +33,19 @@ namespace
     // reduce_scatter_internal.hpp's comment and the ring correctness
     // tests for a worked N=4 example.
     //
-    // Concurrency: identical design to all_gather_ring — one helper
-    // thread handles every send for the whole operation while the
-    // calling thread handles every receive-and-reduce, so send and
-    // receive progress concurrently (required to avoid deadlock once
-    // messages are large enough to fill socket buffers). For N == 2,
-    // next == prev, so this send and recv run concurrently on the same
-    // full-duplex connection, which World's contract explicitly
-    // permits. The sender for step s >= 1 waits until the receiver has
-    // finished reducing into work[send_chunk(s)] during its own
-    // previous iteration before forwarding it — apply_reduction() must
-    // complete before the notify, or the sender could read a
-    // partially-combined chunk.
+    // Concurrency: identical design to all_gather_ring — the World's
+    // persistent RingExecutor runs every send on its one reusable
+    // worker thread while the calling thread handles every
+    // receive-and-reduce, so send and receive progress concurrently
+    // (required to avoid deadlock once messages are large enough to
+    // fill socket buffers). For N == 2, next == prev, so this send and
+    // recv run concurrently on the same full-duplex connection, which
+    // World's contract explicitly permits. The sender for step s >= 1
+    // waits (via a fresh, invocation-scoped RingSession) until the
+    // receiver has finished reducing into work[send_chunk(s)] during
+    // its own previous iteration before forwarding it —
+    // apply_reduction() must complete before the completion signal, or
+    // the sender could read a partially-combined chunk.
     template <typename T>
     void reduce_scatter_ring_typed(
         World &world,
@@ -84,10 +74,11 @@ namespace
         const std::size_t next = (rank + 1) % size;
         const std::size_t prev = (rank + size - 1) % size;
 
-        RingSyncState sync;
-        std::exception_ptr sender_exception;
+        RingSession session;
+        RingExecutor &executor = RingExecutorAccess::get_or_create(world);
 
-        std::thread sender(
+        executor.execute(
+            /* sender */
             [&]()
             {
                 try
@@ -100,20 +91,9 @@ namespace
 
                     for (std::size_t step = 1; step < size - 1; ++step)
                     {
+                        if (!session.wait_for_completed_steps(step))
                         {
-                            std::unique_lock<std::mutex> lock(sync.mutex);
-                            sync.cv.wait(
-                                lock,
-                                [&]()
-                                {
-                                    return sync.completed_steps >= step ||
-                                           sync.failed;
-                                });
-
-                            if (sync.failed)
-                            {
-                                return;
-                            }
+                            return;
                         }
 
                         const std::size_t send_chunk =
@@ -126,54 +106,35 @@ namespace
                 }
                 catch (...)
                 {
-                    sender_exception = std::current_exception();
+                    session.report_failure();
+                    throw;
+                }
+            },
+            /* receiver */
+            [&]()
+            {
+                try
+                {
+                    for (std::size_t step = 0; step < size - 1; ++step)
+                    {
+                        const std::size_t recv_chunk =
+                            (rank + size - step - 2) % size;
 
-                    std::lock_guard<std::mutex> lock(sync.mutex);
-                    sync.failed = true;
-                    sync.cv.notify_all();
+                        world.recv(prev, incoming.data(), segment_bytes);
+
+                        apply_reduction(
+                            work.data() + recv_chunk * recv_count,
+                            incoming.data(), recv_count, op);
+
+                        session.complete_receive_step();
+                    }
+                }
+                catch (...)
+                {
+                    session.report_failure();
+                    throw;
                 }
             });
-
-        std::exception_ptr receiver_exception;
-
-        try
-        {
-            for (std::size_t step = 0; step < size - 1; ++step)
-            {
-                const std::size_t recv_chunk =
-                    (rank + size - step - 2) % size;
-
-                world.recv(prev, incoming.data(), segment_bytes);
-
-                apply_reduction(
-                    work.data() + recv_chunk * recv_count, incoming.data(),
-                    recv_count, op);
-
-                std::lock_guard<std::mutex> lock(sync.mutex);
-                sync.completed_steps = step + 1;
-                sync.cv.notify_all();
-            }
-        }
-        catch (...)
-        {
-            receiver_exception = std::current_exception();
-
-            std::lock_guard<std::mutex> lock(sync.mutex);
-            sync.failed = true;
-            sync.cv.notify_all();
-        }
-
-        sender.join();
-
-        if (receiver_exception)
-        {
-            std::rethrow_exception(receiver_exception);
-        }
-
-        if (sender_exception)
-        {
-            std::rethrow_exception(sender_exception);
-        }
 
         std::memcpy(
             recv_buffer, work.data() + rank * recv_count, segment_bytes);

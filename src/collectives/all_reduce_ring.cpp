@@ -16,7 +16,13 @@ namespace
     // `count`-element input) followed by ring AllGather (of each
     // rank's now-reduced `count/N`-element segment) — no new
     // reduction arithmetic or ring transport engine, just composing
-    // the two already-validated ring primitives. `local_segment` is
+    // the two already-validated ring primitives. This composition also
+    // means no dedicated changes were needed here for Phase 13's
+    // persistent ring worker: both calls below resolve `world`'s
+    // RingExecutor (see ring_executor.hpp) themselves, so the two
+    // phases automatically submit two sequential jobs to the same
+    // already-running worker rather than restarting it in between.
+    // `local_segment` is
     // typed storage (not a byte buffer reinterpreted later), so it is
     // correctly aligned for T by construction, and it is entirely
     // separate from both `send_buffer` and `recv_buffer` — this is
