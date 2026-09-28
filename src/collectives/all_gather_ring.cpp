@@ -1,26 +1,11 @@
 #include "all_gather_internal.hpp"
+#include "ring_executor.hpp"
 
-#include <condition_variable>
 #include <cstdint>
 #include <cstring>
-#include <exception>
-#include <mutex>
-#include <thread>
 
 namespace tbccl::detail
 {
-namespace
-{
-
-    struct RingSyncState
-    {
-        std::mutex mutex;
-        std::condition_variable cv;
-        std::size_t completed_steps = 0;
-        bool failed = false;
-    };
-
-} // namespace
 
     // Ring all-gather over N-1 steps. At step s (0-indexed), each rank
     // sends chunk `(rank + N - s) % N` to `next = (rank + 1) % N` and
@@ -34,15 +19,17 @@ namespace
     // Blocking send()/recv() on every rank in a fixed order (e.g.
     // send-then-recv, or recv-then-send, everywhere) can deadlock once
     // a message is large enough to fill socket buffers, since nothing
-    // is then draining any rank's send. A single helper thread per
-    // invocation handles every send while the calling thread handles
-    // every receive, so send and receive progress concurrently for the
+    // is then draining any rank's send. The World's persistent
+    // RingExecutor (see ring_executor.hpp) runs every send on its one
+    // reusable worker thread while the calling thread handles every
+    // receive, so send and receive progress concurrently for the
     // whole operation — for N == 2, next == prev, so this send and
     // recv run concurrently on the very same full-duplex connection,
-    // which World's contract explicitly permits. The two threads
-    // synchronize through `completed_steps`: the sender for step s >= 1
-    // waits until the receiver has finished step s-1 (i.e. has written
-    // the chunk the sender is about to forward) before sending it.
+    // which World's contract explicitly permits. The sender and
+    // receiver synchronize through a fresh, invocation-scoped
+    // RingSession: the sender for step s >= 1 waits until the receiver
+    // has finished step s-1 (i.e. has written the chunk the sender is
+    // about to forward) before sending it.
     void all_gather_ring(
         World &world,
         const void *send_buffer,
@@ -73,14 +60,15 @@ namespace
 
         // Our own contribution is both part of the final output and
         // the first chunk we forward, so it must be in place before
-        // the sender thread starts.
+        // the sender job starts.
         std::memcpy(
             recv_bytes + rank * bytes_per_rank, send_buffer, bytes_per_rank);
 
-        RingSyncState sync;
-        std::exception_ptr sender_exception;
+        RingSession session;
+        RingExecutor &executor = RingExecutorAccess::get_or_create(world);
 
-        std::thread sender(
+        executor.execute(
+            /* sender */
             [&]()
             {
                 try
@@ -92,20 +80,9 @@ namespace
 
                     for (std::size_t step = 1; step < size - 1; ++step)
                     {
+                        if (!session.wait_for_completed_steps(step))
                         {
-                            std::unique_lock<std::mutex> lock(sync.mutex);
-                            sync.cv.wait(
-                                lock,
-                                [&]()
-                                {
-                                    return sync.completed_steps >= step ||
-                                           sync.failed;
-                                });
-
-                            if (sync.failed)
-                            {
-                                return;
-                            }
+                            return;
                         }
 
                         const std::size_t send_chunk =
@@ -119,52 +96,33 @@ namespace
                 }
                 catch (...)
                 {
-                    sender_exception = std::current_exception();
+                    session.report_failure();
+                    throw;
+                }
+            },
+            /* receiver */
+            [&]()
+            {
+                try
+                {
+                    for (std::size_t step = 0; step < size - 1; ++step)
+                    {
+                        const std::size_t recv_chunk =
+                            (rank + size - step - 1) % size;
 
-                    std::lock_guard<std::mutex> lock(sync.mutex);
-                    sync.failed = true;
-                    sync.cv.notify_all();
+                        world.recv(
+                            prev, recv_bytes + recv_chunk * bytes_per_rank,
+                            bytes_per_rank);
+
+                        session.complete_receive_step();
+                    }
+                }
+                catch (...)
+                {
+                    session.report_failure();
+                    throw;
                 }
             });
-
-        std::exception_ptr receiver_exception;
-
-        try
-        {
-            for (std::size_t step = 0; step < size - 1; ++step)
-            {
-                const std::size_t recv_chunk =
-                    (rank + size - step - 1) % size;
-
-                world.recv(
-                    prev, recv_bytes + recv_chunk * bytes_per_rank,
-                    bytes_per_rank);
-
-                std::lock_guard<std::mutex> lock(sync.mutex);
-                sync.completed_steps = step + 1;
-                sync.cv.notify_all();
-            }
-        }
-        catch (...)
-        {
-            receiver_exception = std::current_exception();
-
-            std::lock_guard<std::mutex> lock(sync.mutex);
-            sync.failed = true;
-            sync.cv.notify_all();
-        }
-
-        sender.join();
-
-        if (receiver_exception)
-        {
-            std::rethrow_exception(receiver_exception);
-        }
-
-        if (sender_exception)
-        {
-            std::rethrow_exception(sender_exception);
-        }
     }
 
 } // namespace tbccl::detail
