@@ -41,3 +41,6 @@ _deps/
 # Python
 __pycache__/
 *.pyc
+
+# Local Phase 20 health/benchmark artifacts (machine-specific, untracked).
+/results/phase20-local/
