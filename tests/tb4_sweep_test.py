@@ -153,6 +153,28 @@ class SweepTests(unittest.TestCase):
         with patch.object(Path,'exists',return_value=True), patch.object(sweep.health,'read',return_value='0'):
             with self.assertRaisesRegex(RuntimeError,'carrier lost'): guard.check()
 
+    def test_health_failure_excludes_completed_measurement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args=self.args('--output',str(Path(tmp)/'result'), '--sizes','64',
+                           '--busy-poll','0','--repetitions','1','--source','linux',
+                           '--mac-root','/tmp/repo','--mac-binary','/tmp/repo/benchmark')
+            args.loopback=False
+            before={p:dict(system='Linux',boot_id='abc',interface={'present':True},
+                           kernel_log_available=True,pci_devices=[],kernel_events=[]) for p in ['linux','mac']}
+            after=copy.deepcopy(before);after['linux']['interface']['present']=False
+            def completed(commands,directory,timeout,guard):
+                for rank in [0,1]: (directory/f'rank{rank}.stderr').write_text('')
+                return dict(success=True,error=None,exit_codes=[0,0])
+            with patch.object(sweep,'capture_health',side_effect=[before,after,after]), \
+                 patch.object(sweep,'healthy'), patch.object(sweep,'LinkGuard'), \
+                 patch.object(sweep,'free_port',return_value=12345), \
+                 patch.object(sweep,'run_processes',side_effect=completed), \
+                 patch.object(sweep,'parse_result',return_value={}):
+                self.assertEqual(sweep.run(args),1)
+            self.assertFalse((args.output/'runs.csv').exists())
+            self.assertFalse(json.loads((args.output/'run-0000/metadata.json').read_text())['success'])
+            self.assertEqual(json.loads((args.output/'status.json').read_text())['completed'],0)
+
     def test_dry_run_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             args=self.args('--dry-run','--output',str(Path(tmp)/'result'))
