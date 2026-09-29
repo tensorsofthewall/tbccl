@@ -1080,4 +1080,19 @@ if(BUILD_TESTING)
         )
     endif()
 
+    # the TB4 latency work scripts and opt-in benchmark telemetry; no physical
+    # TB4 required.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME tb4_sweep_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_sweep_test.py)
+        add_test(NAME tb4_health_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_health_test.py)
+        add_test(NAME tensor_diagnostics_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tensor_diagnostics_test.py
+                    $<TARGET_FILE:tbccl_tensor_transfer_bench>)
+        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test
+            PROPERTIES TIMEOUT 90)
+    endif()
+
 endif()

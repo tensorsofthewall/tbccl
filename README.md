@@ -134,3 +134,10 @@ polling side for up to the configured duration on every blocking
 socket call, so it trades CPU usage for latency — it does not
 reduce bulk throughput, but check with `--mode stream` before relying
 on it under load.
+### Controlled TB4 latency characterization
+
+The busy-poll sweep runner compares busy-poll settings with raw samples,
+per-rank steady-state CPU accounting and read-only link-health checks. It keeps
+the existing default and transport unchanged. See
+[the audited semantics and reproduction procedure](docs/tb4_busy_poll.md) and
+[the TB4 diagnosis/recovery procedure](docs/tb4_recovery.md).

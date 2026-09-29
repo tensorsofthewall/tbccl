@@ -41,3 +41,6 @@ _deps/
 # Python
 __pycache__/
 *.pyc
+
+# Local the TB4 latency work health/benchmark artifacts (machine-specific,
+# untracked).
