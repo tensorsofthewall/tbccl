@@ -1020,6 +1020,38 @@ if(BUILD_TESTING)
             NAME tensor_cuda_test
             COMMAND tensor_cuda_test
         )
+
+        # Phase 19 (Part J): exercises cuda_sync_bench's synchronization-
+        # mode/H2D/D2H correctness and CLI validation by spawning the
+        # actual compiled binary -- it is a standalone diagnostic tool
+        # (a plain main(), not a library), so this is its real
+        # testable surface, exactly as tensor_timing_scope_test does
+        # for tbccl_tensor_transfer_bench.
+        add_executable(cuda_sync_bench_test
+            tests/cuda_sync_bench_test.cpp
+        )
+
+        target_compile_definitions(cuda_sync_bench_test
+            PRIVATE
+                TBCCL_CUDA_SYNC_BENCH_PATH="$<TARGET_FILE:cuda_sync_bench>"
+        )
+
+        add_dependencies(cuda_sync_bench_test cuda_sync_bench)
+
+        if(MSVC)
+            target_compile_options(cuda_sync_bench_test PRIVATE /W4)
+        else()
+            target_compile_options(cuda_sync_bench_test PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+            )
+        endif()
+
+        add_test(
+            NAME cuda_sync_bench_test
+            COMMAND cuda_sync_bench_test
+        )
     endif()
 
     if(TBCCL_ENABLE_METAL)
