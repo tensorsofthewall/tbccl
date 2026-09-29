@@ -109,7 +109,7 @@ effect on Linux; macOS ignores it.
 
 ```text
 --busy-poll 0     normal blocking behavior, lowest CPU usage (default)
---busy-poll 100   current measured low-latency setting on Linux
+--busy-poll 100   historically measured low-latency setting on Linux
 ```
 
 Apply it on whichever socket is on the Linux side (server, client, or
@@ -120,7 +120,7 @@ both):
 ./build/tb_pingpong client --host 192.168.3.1 --busy-poll 100 --mode pingpong --sizes 64
 ```
 
-Measured 64 B ping-pong RTT, Mac ↔ Linux over Thunderbolt:
+Historical 64 B ping-pong RTT, Mac ↔ Linux over Thunderbolt:
 
 ```text
 normal          ~146 µs
@@ -129,11 +129,10 @@ busy-poll 100   ~55 µs
 
 This is hardware- and system-specific (CPU, NIC driver, kernel
 scheduler); treat it as a starting point to tune for your own setup,
-not a guaranteed result. Busy polling also spins the CPU on the
-polling side for up to the configured duration on every blocking
-socket call, so it trades CPU usage for latency — it does not
-reduce bulk throughput, but check with `--mode stream` before relying
-on it under load.
+not a guaranteed result. Busy polling can consume additional CPU on the Linux receive path.
+Measure latency tails, CPU cost and bulk throughput under the same conditions
+before choosing a value; see the controlled characterization below.
+
 ### Controlled TB4 latency characterization
 
 The Phase 20 sweep runner compares busy-poll settings with raw samples,

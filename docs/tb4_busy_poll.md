@@ -30,7 +30,7 @@ passes those options to `tcp_listen` and `tcp_connect`. In `src/transport/tcp.cp
   and ACK reception can be affected on the Linux endpoint.
 
 With `--diagnostics`, the benchmark inspects its connected IPv4 TCP file
- descriptors through `/proc/self/fd` and calls `getsockopt(SO_BUSY_POLL)` before
+descriptors through `/proc/self/fd` and calls `getsockopt(SO_BUSY_POLL)` before
 warmup. Its ordinary execution owns one connected World socket per rank. Each
 record contains the descriptor, local/peer ports and observed value. Failure to
 observe exactly one matching value rejects a Linux sweep result. macOS records
@@ -150,6 +150,11 @@ latency is bounded by scheduling and journal delivery, not hard real-time.
 
 A boot change requires a new baseline. Known unrelated PCI BDFs, including the
 NVMe root port, are retained as `other-pci`, not attributed to Thunderbolt.
-Correctable error growth of at least ten relevant events in a run or monitored
-sweep is a conservative stop threshold. The tool never writes PCI power
+Correctable growth of at least ten error-bearing journal records in a run or
+monitored sweep is a conservative stop threshold (one incident can produce
+several records). A same-boot increase of ten in a device correctable AER
+counter also stops; any increase in its fatal/nonfatal counters stops.
+Snapshots retain controller-specific continuation records such as `[12] Timeout`
+and raw per-device AER counters where available. macOS `netstat` link-layer
+error/drop counters are also recorded; address-specific duplicate rows are ignored. The tool never writes PCI power
 settings, resets hardware, or performs automatic recovery.
