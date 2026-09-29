@@ -55,6 +55,7 @@
 // scripts/run_collective_bench.py's rank0-stdout-is-CSV convention.
 
 #include "tensor/tensor_backend.hpp"
+#include "tensor/transfer_diagnostics.hpp"
 
 #include <tbccl/tcp_world.hpp>
 #include <tbccl/world.hpp>
@@ -90,6 +91,7 @@ namespace
         std::vector<tbccl::PeerEndpoint> peers;
         std::string bind_address;
         int busy_poll_us = 0;
+        bool diagnostics = false;
 
         std::string mode; // required
         BackendKind local_backend = BackendKind::Host;
@@ -119,7 +121,7 @@ namespace
                "metal-shared|metal-private-staged] "
             << "[--source-rank N] [--sizes BYTES[,BYTES...]] "
             << "[--warmup N] [--iterations N] "
-            << "[--timing-scope ready|produce]\n\n"
+            << "[--timing-scope ready|produce] [--diagnostics]\n\n"
             << "staging-only needs no --rank/--peers (single process, no "
                "networking). Every other mode requires exactly 2 --peers. "
                "network-only and latency-floor always use the host "
@@ -331,6 +333,10 @@ namespace
 
                 options.busy_poll_us = static_cast<int>(value);
             }
+            else if (argument == "--diagnostics")
+            {
+                options.diagnostics = true;
+            }
             else if (argument == "--mode")
             {
                 options.mode = require_value(argument);
@@ -444,6 +450,10 @@ namespace
         {
             throw std::runtime_error("--timing-scope must be ready or produce");
         }
+
+        if (options.diagnostics && options.mode != "end-to-end" &&
+            options.mode != "ack-calibration")
+            throw std::runtime_error("--diagnostics requires end-to-end or ack-calibration mode");
 
         return options;
     }
@@ -1211,6 +1221,8 @@ namespace
             const std::size_t reserve_n =
                 static_cast<std::size_t>(options.iterations);
 
+            tbccl_bench::diagnostics::CpuWindow cpu(options.diagnostics);
+
             if (is_source)
             {
                 const bool produce_scope = (options.timing_scope == "produce");
@@ -1228,6 +1240,7 @@ namespace
 
                 for (int i = 0; i < total; ++i)
                 {
+                    if (i == options.warmup) cpu.begin();
                     const std::uint32_t seed = static_cast<std::uint32_t>(0x3000 + i);
 
                     // the earlier behavior, this is the ONLY difference
@@ -1325,6 +1338,11 @@ namespace
                     }
                 }
 
+                cpu.end();
+                cpu.report(options.rank, size);
+                tbccl_bench::diagnostics::samples(options.diagnostics, options.rank, size,
+                                                "completion_confirmed", completion_samples);
+
                 const LatencyStats completion_stats = compute_stats(completion_samples);
                 const LatencyStats staging_stats = compute_stats(staging_samples);
                 const LatencyStats sync_stats = compute_stats(sync_samples);
@@ -1397,6 +1415,7 @@ namespace
 
                 for (int i = 0; i < total; ++i)
                 {
+                    if (i == options.warmup) cpu.begin();
                     const auto recv_start = std::chrono::steady_clock::now();
                     backend->host_recv_data(world, peer);
                     const auto recv_end = std::chrono::steady_clock::now();
@@ -1413,6 +1432,9 @@ namespace
                         staging_samples.push_back(microseconds_between(recv_end, stage_end));
                     }
                 }
+
+                cpu.end();
+                cpu.report(options.rank, size);
 
                 StageSummary summary;
                 summary.receiver_network_us = compute_stats(recv_samples).median_us;
@@ -1480,7 +1502,12 @@ int main(int argc, char **argv)
         world_options.bind_address = options.bind_address;
         world_options.tcp.busy_poll_us = options.busy_poll_us;
 
+        if (options.busy_poll_us > 0 && !tbccl::busy_poll_supported())
+            std::cerr << "busy-poll unsupported on this platform; requested_us="
+                      << options.busy_poll_us << " is not enabled\n";
+
         auto world = tbccl::create_tcp_world(world_options);
+        if (options.diagnostics) tbccl_bench::diagnostics::sockets(options.busy_poll_us);
 
         if (options.mode == "network-only")
         {
