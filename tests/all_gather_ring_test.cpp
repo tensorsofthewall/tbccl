@@ -25,23 +25,27 @@ namespace
 {
 
     // Fixed high port ranges, one block per test, well away from
-    // production (18515) and every other test file's range (up
-    // through reduce_scatter_test's 30890-30897).
+    // production (18515) and every other test file's range (the
+    // highest other file, algorithm_selector_test, runs through
+    // ~32710). Moved from an original 31000 base after that range was
+    // found to collide with an unrelated process on a developer
+    // machine (port 31052 held by an unrelated 'code' process) --
+    // 33000 is clear of every other test file's range.
     // Sizes swept by test_rank_counts (1,2,3,4,5,7,8) need up to 8
     // ports per offset, so kRankCountsBase's offsets (0,10,...,60) run
-    // through 31000-31067; every later block starts well past that.
-    constexpr std::uint16_t kRankCountsBase = 31000;
-    constexpr std::uint16_t kOddSizesBase = 31100;
-    constexpr std::uint16_t kLargeMessagesBase = 31150;
-    constexpr std::uint16_t kRepeated3RankBase = 31200;
-    constexpr std::uint16_t kRepeated5RankBase = 31210;
-    constexpr std::uint16_t kRepeated8RankBase = 31220;
-    constexpr std::uint16_t kRingThenBarrierBase = 31240;
-    constexpr std::uint16_t kBarrierThenRingBase = 31250;
-    constexpr std::uint16_t kBroadcastThenRingBase = 31260;
-    constexpr std::uint16_t kRingThenBroadcastBase = 31270;
-    constexpr std::uint16_t kAllReduceThenRingBase = 31280;
-    constexpr std::uint16_t kRingThenReduceScatterBase = 31290;
+    // through 33000-33067; every later block starts well past that.
+    constexpr std::uint16_t kRankCountsBase = 33000;
+    constexpr std::uint16_t kOddSizesBase = 33100;
+    constexpr std::uint16_t kLargeMessagesBase = 33150;
+    constexpr std::uint16_t kRepeated3RankBase = 33200;
+    constexpr std::uint16_t kRepeated5RankBase = 33210;
+    constexpr std::uint16_t kRepeated8RankBase = 33220;
+    constexpr std::uint16_t kRingThenBarrierBase = 33240;
+    constexpr std::uint16_t kBarrierThenRingBase = 33250;
+    constexpr std::uint16_t kBroadcastThenRingBase = 33260;
+    constexpr std::uint16_t kRingThenBroadcastBase = 33270;
+    constexpr std::uint16_t kAllReduceThenRingBase = 33280;
+    constexpr std::uint16_t kRingThenReduceScatterBase = 33290;
 
     // Runs both all_gather algorithm variants on a fresh World and
     // checks each against the directly-computed expected layout
