@@ -61,6 +61,8 @@ def pci_devices(sysroot):
         result.append({"bdf": bdf, "path": str(p.resolve()), "present": p.exists(),
                        "vendor": read(p / 'vendor'), "device": read(p / 'device'),
                        "class": read(p / 'class'),
+                       "aer": {f: read(p / f) for f in
+                               ['aer_dev_correctable', 'aer_dev_nonfatal', 'aer_dev_fatal']},
                        "driver": (p / 'driver').resolve().name if (p / 'driver').exists() else None,
                        "power": {f: read(p / 'power' / f) for f in
                                  ['control', 'runtime_status', 'runtime_active_time',
@@ -101,9 +103,13 @@ def linux_snapshot(interface='thunderbolt0', sysroot='/sys', procroot='/proc'):
         except ValueError:
             continue
         message = item.get('MESSAGE', '')
-        if not isinstance(message, str) or not ERROR.search(message):
+        if not isinstance(message, str):
             continue
         bdfs = set(re.findall(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]', message))
+        # Keep controller-specific continuation records such as '[12] Timeout',
+        # which do not contain the words AER or error.
+        if not ERROR.search(message) and not bdfs & relevant:
+            continue
         source = 'thunderbolt' if bdfs & relevant or 'thunderbolt' in message.lower() else ('other-pci' if bdfs else 'unattributed')
         events.append({"cursor": item.get('__CURSOR'), "monotonic_us": item.get('__MONOTONIC_TIMESTAMP'),
                        "message": message, "source": source})
@@ -152,7 +158,8 @@ def snapshot():
 
 def compare(before, after):
     result = {"same_boot": bool(before.get('boot_id')) and before.get('boot_id') == after.get('boot_id'),
-              "stop_reasons": [], "new_kernel_events": [], "counter_deltas": {}, "power_changes": []}
+              "stop_reasons": [], "new_kernel_events": [], "counter_deltas": {}, "power_changes": [],
+              "aer_counter_deltas": {}}
     if not after.get('interface', {}).get('present'):
         result['stop_reasons'].append('TB4 interface missing')
     if not result['same_boot']:
@@ -187,6 +194,24 @@ def compare(before, after):
         p = prior.get(bdf)
         if p and (p.get('vendor'), p.get('device')) != (d.get('vendor'), d.get('device')):
             result['stop_reasons'].append('PCI identity changed')
+        if p:
+            for field, total_name in [('aer_dev_correctable', 'TOTAL_ERR_COR'),
+                                      ('aer_dev_nonfatal', 'TOTAL_ERR_NONFATAL'),
+                                      ('aer_dev_fatal', 'TOTAL_ERR_FATAL')]:
+                def total(device):
+                    text = device.get('aer', {}).get(field) or ''
+                    match = re.search(r'^' + total_name + r' (\d+)$', text, re.M)
+                    return int(match[1]) if match else None
+                old_total, new_total = total(p), total(d)
+                if old_total is not None and new_total is not None:
+                    delta = new_total - old_total
+                    result['aer_counter_deltas'][bdf + '/' + field] = delta
+                    if delta < 0:
+                        result['stop_reasons'].append('AER counter reset; establish a new baseline')
+                    if delta > 0 and field != 'aer_dev_correctable':
+                        result['stop_reasons'].append('fatal/uncorrectable Thunderbolt AER counter increased')
+                    if delta >= 10 and field == 'aer_dev_correctable':
+                        result['stop_reasons'].append('rapid Thunderbolt correctable AER counter growth')
         if p and p['power'] != d['power']:
             result['power_changes'].append({'bdf': bdf, 'before': p['power'], 'after': d['power']})
     return result

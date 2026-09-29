@@ -77,6 +77,25 @@ class HealthTests(unittest.TestCase):
         after['interface']['present']=False
         self.assertIn('TB4 interface missing',health.compare(before,after)['stop_reasons'])
 
+    def test_aer_counter_delta_and_log_continuation(self):
+        before=self.base()
+        before['pci_devices']=[dict(bdf='0000:42:00.0',power={},aer={'aer_dev_fatal':'TOTAL_ERR_FATAL 0'})]
+        after=copy.deepcopy(before)
+        after['pci_devices'][0]['aer']['aer_dev_fatal']='TOTAL_ERR_FATAL 1'
+        result=health.compare(before,after)
+        self.assertEqual(result['aer_counter_deltas']['0000:42:00.0/aer_dev_fatal'],1)
+        self.assertTrue(result['stop_reasons'])
+        with tempfile.TemporaryDirectory() as tmp:
+            def cmd(argv):
+                result=self.fixture_command(argv)
+                if argv[0]=='journalctl':
+                    result.update(returncode=0,stdout=json.dumps({'__CURSOR':'timeout','MESSAGE':'pcieport 0000:42:00.0: [12] Timeout'})+'\n')
+                return result
+            with patch.object(health,'pci_devices',return_value=([{}],before['pci_devices'])), patch.object(health,'command',cmd):
+                result=health.linux_snapshot(sysroot=tmp,procroot=tmp)
+            self.assertEqual(result['kernel_events'][0]['source'],'thunderbolt')
+            self.assertIn('[12] Timeout',result['kernel_events'][0]['message'])
+
     def test_mac_link_counters_ignore_address_duplicates(self):
         text='Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll Drop\n'
         text+='bridge0 9000 <Link#17> 00:11:22:33:44:55 100 1 1234 200 2 5678 0 3\n'
