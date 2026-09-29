@@ -274,8 +274,12 @@ def run_processes(commands, directory, timeout, guard=None):
             if now >= next_heartbeat:
                 for p in processes:
                     if p.poll() is None:
-                        p.stdin.write(b'heartbeat\n')
-                        p.stdin.flush()
+                        try:
+                            os.write(p.stdin.fileno(), b'heartbeat\n')
+                        except BrokenPipeError:
+                            # Endpoint may have completed between poll and write.
+                            # Its exit status (or deadline) decides success.
+                            pass
                 next_heartbeat = now + 1
             time.sleep(0.025)
     except (Exception, KeyboardInterrupt) as exception:
@@ -515,14 +519,11 @@ def run(args):
                 if not outcome['success']:
                     raise RuntimeError(outcome['error'])
                 result = parse_result(directory, config, args.loopback)
-                results.append(result)
-                write_csv(args.output / 'runs.csv', results)
-                write_csv(args.output / 'summary.csv', aggregate(results))
             except BaseException as error:
                 meta.update(success=False, error=str(error))
                 raise
             finally:
-                dump(directory / 'metadata.json', meta)
+                stop = []
                 if not args.loopback:
                     post = capture_health(args)
                     dump(directory / 'health-after.json', post)
@@ -531,7 +532,13 @@ def run(args):
                     stop = [reason for delta in deltas.values() for reason in delta['stop_reasons']]
                     pre = post
                     if stop:
-                        raise RuntimeError('STOP: ' + '; '.join(stop))
+                        meta.update(success=False, error='STOP: ' + '; '.join(stop))
+                dump(directory / 'metadata.json', meta)
+                if stop:
+                    raise RuntimeError(meta['error'])
+            results.append(result)
+            write_csv(args.output / 'runs.csv', results)
+            write_csv(args.output / 'summary.csv', aggregate(results))
     except (Exception, KeyboardInterrupt) as error:
         failure = str(error) or type(error).__name__
         print(f'STOP: {failure}', file=sys.stderr)

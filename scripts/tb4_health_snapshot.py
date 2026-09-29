@@ -113,6 +113,23 @@ def linux_snapshot(interface='thunderbolt0', sysroot='/sys', procroot='/proc'):
     return snapshot
 
 
+def mac_counters(text):
+    lines = text.splitlines()
+    if not lines:
+        return {}
+    columns = lines[0].split()
+    mapping = {'Ibytes': 'rx_bytes', 'Obytes': 'tx_bytes', 'Ierrs': 'rx_errors',
+               'Oerrs': 'tx_errors', 'Drop': 'drops'}
+    for line in lines[1:]:
+        values = line.split()
+        if len(values) != len(columns) or '<Link#' not in line:
+            continue
+        row = dict(zip(columns, values))
+        return {name: row[field] for field, name in mapping.items()
+                if row.get(field, '').isdigit()}
+    return {}
+
+
 def snapshot():
     result = {"timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "system": platform.system(), "hostname": platform.node(), "uname": list(platform.uname())}
@@ -122,10 +139,12 @@ def snapshot():
         result['commands'] = {name: command(argv) for name, argv in {
             'enumeration': ['system_profiler', 'SPThunderboltDataType', '-json'],
             'interface': ['ifconfig', 'bridge0'],
+            'counters': ['netstat', '-ibdn', '-I', 'bridge0'],
             'boot': ['sysctl', '-n', 'kern.boottime'],
         }.items()}
         result['boot_id'] = result['commands']['boot']['stdout'].strip()
-        result['interface'] = {"name": 'bridge0', "present": result['commands']['interface']['returncode'] == 0}
+        result['interface'] = {"name": 'bridge0', "present": result['commands']['interface']['returncode'] == 0,
+                               "counters": mac_counters(result['commands']['counters']['stdout'])}
     else:
         result['error'] = 'unsupported platform'
     return result

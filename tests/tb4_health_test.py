@@ -77,6 +77,13 @@ class HealthTests(unittest.TestCase):
         after['interface']['present']=False
         self.assertIn('TB4 interface missing',health.compare(before,after)['stop_reasons'])
 
+    def test_mac_link_counters_ignore_address_duplicates(self):
+        text='Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll Drop\n'
+        text+='bridge0 9000 <Link#17> 00:11:22:33:44:55 100 1 1234 200 2 5678 0 3\n'
+        text+='bridge0 9000 192.168.3 192.168.3.1 100 - 1234 200 - 5678 - -\n'
+        self.assertEqual(health.mac_counters(text),dict(rx_bytes='1234',tx_bytes='5678',rx_errors='1',tx_errors='2',drops='3'))
+        self.assertEqual(health.mac_counters(''),{})
+
     def test_existing_events_not_new(self):
         before=self.base()
         before['kernel_events']=[dict(cursor='x',source='thunderbolt',message='AER: Fatal')]
