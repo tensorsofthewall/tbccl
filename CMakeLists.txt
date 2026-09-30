@@ -1040,6 +1040,33 @@ if(BUILD_TESTING)
         COMMAND tensor_host_test
     )
 
+    add_executable(tensor_backend_async_adapter_test
+        tests/tensor_backend_async_adapter_test.cpp
+    )
+
+    target_link_libraries(tensor_backend_async_adapter_test
+        PRIVATE
+            tbccl_tensor_backend
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(tensor_backend_async_adapter_test PRIVATE /W4)
+    else()
+        target_compile_options(tensor_backend_async_adapter_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME tensor_backend_async_adapter_test
+        COMMAND tensor_backend_async_adapter_test
+    )
+    set_tests_properties(tensor_backend_async_adapter_test PROPERTIES TIMEOUT 60)
+
     # Phase 18 (Part H): exercises tbccl_tensor_transfer_bench's
     # --timing-scope ready/produce CLI behavior by spawning the actual
     # compiled binary -- its logic lives in that .cpp's anonymous
