@@ -493,6 +493,15 @@ else()
     )
 endif()
 
+add_executable(tbccl_async_raw_transport_bench
+    benchmarks/async_raw_transport_bench.cpp
+)
+
+target_link_libraries(tbccl_async_raw_transport_bench
+    PRIVATE
+        tbccl
+)
+
 include(CTest)
 
 if(BUILD_TESTING)
