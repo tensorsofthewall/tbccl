@@ -1090,7 +1090,9 @@ if(BUILD_TESTING)
                     $<TARGET_FILE:tbccl_tensor_transfer_bench>)
         add_test(NAME tb4_trace_analysis_test
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_trace_analysis_test.py)
-        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test
+        add_test(NAME tb4_receive_trace_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_receive_trace_test.py)
+        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test
             PROPERTIES TIMEOUT 90)
     endif()
 
