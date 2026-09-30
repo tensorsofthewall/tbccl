@@ -99,6 +99,30 @@ THUNDERBOLT_DATA_EVENTS_EXTRA = [
 SYSTEM_WIDE_EVENTS = set(RECEIVE_EVENTS) | set(THUNDERBOLT_CONTROL_EVENTS) \
     | set(THUNDERBOLT_DATA_EVENTS) | set(THUNDERBOLT_DATA_EVENTS_EXTRA)
 
+# Candidate functions for Tier-1 narrow function tracing, selected from a
+# direct read of the exact v6.18.34 kernel source (the interrupt-throttling
+# experiment work's provenance, reused) covering the full ring-servicing
+# path: ring_msix (the actual MSI-X handler registered under name
+# "thunderbolt" -- confirmed to be what irq_handler_entry traces), the
+# NAPI/workqueue dispatch inside it, and the two functions that check the
+# hardware-set RING_DESC_COMPLETED flag (tb_ring_poll for the NAPI/RX path,
+# ring_work for the workqueue/TX path -- tb_ring_alloc_tx() always passes
+# start_poll=NULL, so TX servicing is unconditionally workqueue-based while
+# RX is unconditionally NAPI-based, confirmed from source, not assumed).
+# Filtered against this kernel's actual available_filter_functions before use
+# (do not assume traceability).
+NHI_FUNCTIONS = [
+    "ring_msix",
+    "ring_work",
+    "tb_ring_poll",
+    "tb_ring_poll_complete",
+]
+# __ring_interrupt was in the source-path map but is NOT traceable on this
+# kernel (confirmed via --list-filter-functions: absent from
+# available_filter_functions, almost certainly inlined into ring_msix at
+# compile time, a small static function) -- omitted rather than traced
+# unreliably.
+
 
 class TracefsUnavailable(RuntimeError):
     pass
@@ -175,13 +199,21 @@ def discover_supported_events(requested):
 class TraceSession:
     """Captures and restores exactly the tracefs state this script touches."""
 
-    def __init__(self, events):
+    def __init__(self, events, function_filter=None):
         self.events = events
+        # Optional Tier-1 narrow function tracing (a list of function
+        # names to restrict the function tracer to, via
+        # set_ftrace_filter). None means function tracing is left alone
+        # entirely (current_tracer/set_ftrace_filter are not touched at
+        # all) -- the default, preserving the previous behavior.
+        self.function_filter = function_filter
         self.original_tracing_on = None
         self.original_set_ftrace_pid = None
         self.original_event_enable = {}
         self.original_event_filter = {}
         self.original_trace_clock = None
+        self.original_current_tracer = None
+        self.original_set_ftrace_filter = None
         self.touched = False
 
     def __enter__(self):
@@ -210,10 +242,31 @@ class TraceSession:
             if filter_path.exists():
                 self.original_event_filter[event] = read_text(filter_path).strip()
 
+        if self.function_filter is not None:
+            current_tracer_path = TRACEFS / "current_tracer"
+            filter_path = TRACEFS / "set_ftrace_filter"
+            if current_tracer_path.exists():
+                self.original_current_tracer = read_text(current_tracer_path).strip()
+            if filter_path.exists():
+                self.original_set_ftrace_filter = read_text(filter_path).strip()
+
         self.touched = True
         write_text(TRACEFS / "trace", "")  # clear buffer
         for event in self.events:
             write_text(event_enable_path(event), "1")
+        if self.function_filter is not None:
+            # set_ftrace_filter must be narrowed BEFORE current_tracer is
+            # switched to "function" -- otherwise there is a window where
+            # the function tracer runs unfiltered (system-wide), exactly
+            # the set_ftrace_pid mistake the tail-latency investigation
+            # made for tracepoints.
+            write_text(TRACEFS / "set_ftrace_filter", "")  # clear first
+            for name in self.function_filter:
+                # Appending (not overwriting) each name is the documented
+                # way to build a multi-function filter set.
+                with open(TRACEFS / "set_ftrace_filter", "a") as handle:
+                    handle.write(name + "\n")
+            write_text(TRACEFS / "current_tracer", "function")
         write_text(TRACEFS / "tracing_on", "1")
         return self
 
@@ -227,9 +280,22 @@ class TraceSession:
         Writes both set_ftrace_pid (for the function tracer, if later
         enabled) and a real per-event filter expression to each event's own
         filter file -- set_ftrace_pid alone does NOT scope tracepoint
-        events enabled via events/*/*/enable, only the function tracer."""
+        events enabled via events/*/*/enable, only the function tracer.
+
+        the NHI DMA-ring discovery: when self.function_filter is active (Tier-1
+        NHI function tracing), set_ftrace_pid is deliberately NOT written.
+        ring_msix/ring_work/tb_ring_poll run in interrupt or workqueue
+        context, never attributed to the benchmark's own PID -- writing
+        set_ftrace_pid would scope the (single, global) function tracer
+        away from every context these functions actually run in, silently
+        producing zero trace lines (confirmed via a live smoke test: the
+        first version of this capability captured 0 function-trace lines
+        for exactly this reason). Function tracing is therefore
+        system-wide when enabled, same category as RECEIVE_EVENTS/
+        THUNDERBOLT_*_EVENTS -- safe for the same reason (short capture
+        windows, point-to-point traffic)."""
         set_ftrace_pid_path = TRACEFS / "set_ftrace_pid"
-        if set_ftrace_pid_path.exists():
+        if set_ftrace_pid_path.exists() and self.function_filter is None:
             write_text(set_ftrace_pid_path, str(pid))
         for event in self.events:
             expression = EVENT_PID_FILTERS.get(event)
@@ -249,6 +315,36 @@ class TraceSession:
             write_text(TRACEFS / "tracing_on", self.original_tracing_on or "0")
         except TracefsUnavailable as error:
             print(f"WARNING: failed to restore tracing_on: {error}", file=sys.stderr)
+        if self.function_filter is not None:
+            current_tracer_path = TRACEFS / "current_tracer"
+            if current_tracer_path.exists():
+                try:
+                    write_text(current_tracer_path, self.original_current_tracer or "nop")
+                except TracefsUnavailable as error:
+                    print(f"WARNING: failed to restore current_tracer: {error}", file=sys.stderr)
+            filter_path = TRACEFS / "set_ftrace_filter"
+            if filter_path.exists():
+                original = self.original_set_ftrace_filter
+                # The unset readback on this kernel is the literal string
+                # "#### all functions enabled ####" (confirmed via
+                # --dump-state), not empty -- writing that placeholder back
+                # verbatim is rejected (EINVAL), same class of bug as the
+                # receive-path investigation work's filter-file restoration
+                # quirks. Either that placeholder or genuine emptiness
+                # means "no filter was set," which is restored by writing
+                # "".
+                if original and "all functions enabled" not in original:
+                    try:
+                        write_text(filter_path, original)
+                    except TracefsUnavailable as error:
+                        print(f"WARNING: failed to restore set_ftrace_filter: {error}",
+                              file=sys.stderr)
+                else:
+                    try:
+                        write_text(filter_path, "")
+                    except TracefsUnavailable as error:
+                        print(f"WARNING: failed to clear set_ftrace_filter: {error}",
+                              file=sys.stderr)
         clock_path = TRACEFS / "trace_clock"
         if self.original_trace_clock and self.original_trace_clock != "mono" and clock_path.exists():
             try:
@@ -367,6 +463,24 @@ def list_available_events(output_path):
     print(f"wrote {output_path} ({len(all_events)} events across {len(by_group)} groups)")
 
 
+def check_filter_functions(candidates, output_path):
+    """Read-only: which of `candidates` actually appear in
+    available_filter_functions on this running kernel (do not assume traceability; a static function can be
+    inlined/optimized away and simply absent). Grep-style substring
+    match against the function-name column (ignoring any trailing
+    module annotation like ' [thunderbolt]')."""
+    path = TRACEFS / "available_filter_functions"
+    lines = read_text(path).splitlines()
+    names = set()
+    for line in lines:
+        name = line.split()[0] if line.split() else ""
+        if name:
+            names.add(name)
+    result = {name: (name in names) for name in candidates}
+    Path(output_path).write_text(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=2))
+
+
 def event_format_path(event):
     group, name = event.split("/", 1)
     return TRACEFS / "events" / group / name / "format"
@@ -399,6 +513,8 @@ def dump_state(events, output_path):
         if (TRACEFS / "set_ftrace_pid").exists() else None,
         "current_tracer": read_text(TRACEFS / "current_tracer").strip()
         if (TRACEFS / "current_tracer").exists() else None,
+        "set_ftrace_filter": read_text(TRACEFS / "set_ftrace_filter").strip()
+        if (TRACEFS / "set_ftrace_filter").exists() else None,
         "events": {},
     }
     for event in events:
@@ -518,6 +634,22 @@ def main():
         help="best-effort cleanup of a stale set_ftrace_pid left over from "
              "an earlier session (functionally inert since current_tracer "
              "stays 'nop', but cleared for hygiene)")
+    parser.add_argument(
+        "--list-filter-functions", action="store_true",
+        help="read-only: check which of NHI_FUNCTIONS (or --functions, if "
+             "given) actually appear in available_filter_functions on this "
+             "kernel, and exit -- no capture is performed")
+    parser.add_argument(
+        "--include-nhi-functions", action="store_true",
+        help="Tier-1 narrow function tracing: switch "
+             "current_tracer to 'function' filtered to NHI_FUNCTIONS "
+             "(ring_msix/__ring_interrupt/ring_work/tb_ring_poll/"
+             "tb_ring_poll_complete), scoped to the benchmark PID via "
+             "set_ftrace_pid same as the scheduler events")
+    parser.add_argument(
+        "--functions", default=None,
+        help="comma-separated function names, overriding NHI_FUNCTIONS "
+             "for --list-filter-functions/--include-nhi-functions")
     args = parser.parse_args()
 
     require_root()
@@ -527,6 +659,14 @@ def main():
 
     if args.list_available_events:
         list_available_events(args.output)
+        return
+
+    function_candidates = (
+        [f.strip() for f in args.functions.split(",") if f.strip()]
+        if args.functions else list(NHI_FUNCTIONS))
+
+    if args.list_filter_functions:
+        check_filter_functions(function_candidates, args.output)
         return
 
     requested_events = [event.strip() for event in args.events.split(",") if event.strip()]
@@ -570,6 +710,7 @@ def main():
         "supported_events": supported,
         "unsupported_events": unsupported,
         "system_wide_events": system_wide,
+        "function_filter": function_candidates if args.include_nhi_functions else None,
         "trace_clock": trace_clock,
         "command": args.command,
         "pid": None,
@@ -589,8 +730,9 @@ def main():
         print(json.dumps(result, indent=2))
         return
 
+    function_filter = function_candidates if args.include_nhi_functions else None
     try:
-        with TraceSession(supported) as session:
+        with TraceSession(supported, function_filter=function_filter) as session:
             pid, returncode = run_benchmark(
                 args.command, args.timeout_seconds, session, args.run_as_user)
             result["pid"] = pid
