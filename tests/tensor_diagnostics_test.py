@@ -21,11 +21,14 @@ def ports():
 
 
 class DiagnosticsTests(unittest.TestCase):
-    def pair(self,mode,scope='ready',source=0,diagnostics=False,warmup=2):
+    def pair(self,mode,scope='ready',source=0,diagnostics=False,warmup=2,
+             trace=False,source_gap=0):
         a,b=ports()
         base=[BINARY,'--mode',mode,'--sizes','0,64,65536','--warmup',str(warmup),'--iterations','5',
               '--peers',f'127.0.0.1:{a},127.0.0.1:{b}','--source-rank',str(source),'--timing-scope',scope]
         if diagnostics: base+=['--diagnostics']
+        base += ['--source-gap-us',str(source_gap)]
+        if trace: base += ['--trace','--run-id','fixture-run','--physical-machine','fixture-host']
         with tempfile.TemporaryDirectory() as tmp:
             directory=Path(tmp)
             outcome=sweep.run_processes([base+['--rank',str(r)] for r in [0,1]],directory,15)
@@ -49,6 +52,22 @@ class DiagnosticsTests(unittest.TestCase):
                             values=sorted(event['values_us'])
                             self.assertEqual(len(values),5)
                             self.assertAlmostEqual(float(row['median_us']),values[2],delta=max(.001,values[2]*1e-5))
+                    traces=[e for e in events if e['kind']=='transfer_trace']
+                    self.assertEqual(len(traces),3 if trace else 0)
+                    for event in traces:
+                        self.assertEqual(event['clock'],'CLOCK_MONOTONIC')
+                        self.assertEqual(event['clock_units'],'nanoseconds')
+                        self.assertEqual(event['capacity'],5)
+                        self.assertEqual([e['iteration_index'] for e in event['entries']],list(range(5)))
+                        self.assertTrue(all(e['run_id']=='fixture-run' for e in event['entries']))
+                        for entry in event['entries']:
+                            self.assertLessEqual(entry['iteration_begin_ns'],entry['iteration_end_ns'])
+                            if rank==source:
+                                self.assertIsNone(entry['recv_begin_ns'])
+                                self.assertLessEqual(entry['source_ready_ns'],entry['ack_received_ns'])
+                            else:
+                                self.assertIsNone(entry['source_ready_ns'])
+                                self.assertLessEqual(entry['recv_begin_ns'],entry['ack_send_end_ns'])
             return list(rows[0])
 
     def test_legacy_modes_and_header(self):
@@ -64,6 +83,16 @@ class DiagnosticsTests(unittest.TestCase):
         for scope in ['ready','produce']:
             for source in [0,1]: self.pair('end-to-end',scope,source,True,0)
         self.pair('ack-calibration',diagnostics=True)
+
+    def test_trace_and_source_gap(self):
+        self.pair('end-to-end',diagnostics=True,trace=True,source_gap=2000)
+        for value in ['-1','10000001']:
+            p=subprocess.run([BINARY,'--mode','staging-only','--source-gap-us',value],
+                             capture_output=True,text=True,timeout=5)
+            self.assertNotEqual(p.returncode,0)
+        p=subprocess.run([BINARY,'--mode','staging-only','--trace'],
+                         capture_output=True,text=True,timeout=5)
+        self.assertNotEqual(p.returncode,0)
 
     def test_invalid_diagnostic_mode(self):
         p=subprocess.run([BINARY,'--mode','staging-only','--diagnostics'],capture_output=True,text=True,timeout=5)
