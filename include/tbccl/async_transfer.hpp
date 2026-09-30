@@ -167,6 +167,31 @@ public:
     virtual void commit_destination_chunk(
         const Chunk &chunk,
         const void *staging) = 0;
+
+    // Capability, not type check. A backend whose tensor memory is
+    // ALREADY directly readable/writable by a Transport (plain host CPU
+    // memory over TCP, currently the only such case) can report true
+    // here to let TensorCommWorker skip the StagingPool entirely for
+    // this transfer -- no TBCCL-owned memcpy, no staging thread. A
+    // backend that must stage through host-visible memory to move data
+    // at all (CUDA, Metal-private-staged) leaves this false (the
+    // default) and keeps using stage_source_chunk()/
+    // commit_destination_chunk() as before. This does NOT mean
+    // kernel-level zero-copy (TCP still copies through the kernel
+    // normally) -- it means zero *additional* TBCCL-owned copies on top
+    // of that.
+    virtual bool supports_direct_transport_access() const noexcept { return false; }
+
+    // Valid only when supports_direct_transport_access() is true.
+    // Returns a pointer to the WHOLE already-ready source tensor
+    // (`total_bytes` from the owning TransferRequest), for a single
+    // direct Transport::send() -- no chunking, no staging thread.
+    virtual const void *direct_source_data() const noexcept { return nullptr; }
+
+    // Valid only when supports_direct_transport_access() is true.
+    // Returns a pointer to the WHOLE destination tensor, ready for a
+    // single direct Transport::recv() to write into.
+    virtual void *direct_destination_data() noexcept { return nullptr; }
 };
 
 // ---------------------------------------------------------------------
@@ -231,6 +256,20 @@ public:
 // TransferRequest
 // ---------------------------------------------------------------------
 
+// Buffer lifetime contract: whatever memory `backend` reads from or
+// writes to on this request's behalf -- whether via
+// stage_source_chunk()/commit_destination_chunk() (staged path) or
+// direct_source_data()/direct_destination_data() (direct path,
+// backend->supports_direct_transport_access()==true) -- must remain
+// valid for as long as this request's TransferWork has not yet
+// completed (i.e. until wait()/is_completed()==true). This is true of
+// the staged path too, not a new restriction the direct path
+// introduces; the direct path just makes it more consequential, since
+// there the CALLER's own source/destination buffer is what the network
+// reads/writes directly, with no TBCCL-owned copy in between to fall
+// back on. TBCCL never makes a hidden defensive copy to relax this --
+// doing so would silently reintroduce the staging cost the direct path
+// exists to avoid.
 struct TransferRequest
 {
     std::uint64_t transfer_id = 0;
@@ -242,6 +281,9 @@ struct TransferRequest
 
     std::size_t total_bytes = 0;
     // 0 means "one chunk, the whole payload" (see plan_chunks()).
+    // Ignored on the direct path: a direct-capable backend always
+    // transfers the whole buffer in one Transport call, regardless of
+    // chunk_hint, since there is no staging slot size to bound.
     std::size_t chunk_hint = 0;
     std::size_t alignment = 1;
 };
@@ -260,11 +302,16 @@ class TensorCommWorker
 {
 public:
     // `pipeline_depth` sizes the internal StagingPool used for every
-    // enqueued request's chunks (created lazily per request at the
-    // request's own chunk size, since different requests may use
-    // different chunk_hint values -- see the .cpp for why a single
-    // fixed-size pool across heterogeneous requests would either waste
-    // memory or reject valid requests). `queue_depth` bounds how many
+    // enqueued request's chunks. The pool is cached and reused across
+    // requests whose (chunk_capacity, depth) match the previous request
+    // -- measurement showed that a fresh allocation per request
+    // costs an order of magnitude more than a reused one for large
+    // buffers (first-touch page faults, not memcpy bandwidth). A
+    // request with a different chunk size does still pay a fresh
+    // allocation (the pool's buffers are sized to a specific
+    // chunk_capacity; a single fixed-size pool across heterogeneous
+    // requests would either waste memory or reject valid requests) --
+    // see the .cpp for the caching logic. `queue_depth` bounds how many
     // TransferRequests may be waiting; enqueue() blocks once
     // full rather than growing unbounded.
     explicit TensorCommWorker(

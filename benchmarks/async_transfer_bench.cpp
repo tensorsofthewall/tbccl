@@ -261,12 +261,36 @@ int main(int argc, char **argv)
             const auto enqueue_end = std::chrono::steady_clock::now();
 
             work.wait();
-            const auto completion_end = std::chrono::steady_clock::now();
 
             if (work.has_error())
             {
                 throw std::runtime_error("transfer failed: " + work.error());
             }
+
+            // Match the synchronous benchmark's timing scope exactly
+            // -- completion_confirmed_us there is the SENDER's own
+            // local time from source-ready to receiving a 1-byte
+            // application-level ACK the receiver only sends after its
+            // OWN host_recv_data()+stage_host_to_device() have
+            // returned. Without this, TransferWork::wait() for a Send
+            // only proves the local kernel accepted the bytes into its
+            // send buffer -- not that the peer's destination commit
+            // ever happened. This ack round-trip is a benchmark-level
+            // measurement concern, not a TensorCommWorker/TransferWork
+            // semantic change (the library's own completion contract
+            // is unchanged); it exists solely so this tool's numbers
+            // are comparable to tbccl_tensor_transfer_bench's.
+            std::uint8_t ack = 0;
+            if (is_sender)
+            {
+                transport.recv(&ack, sizeof(ack));
+            }
+            else
+            {
+                ack = 1;
+                transport.send(&ack, sizeof(ack));
+            }
+            const auto completion_end = std::chrono::steady_clock::now();
 
             if (round >= options.warmup)
             {

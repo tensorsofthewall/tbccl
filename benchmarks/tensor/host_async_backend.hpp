@@ -35,6 +35,17 @@ public:
         std::memcpy(buffer_ + chunk.offset, staging, chunk.size);
     }
 
+    // Plain host CPU memory is already directly readable/writable by
+    // TcpTransport -- no staging copy is needed at all.
+    // stage_source_chunk()/commit_destination_chunk() above remain
+    // correct and are still used whenever a caller explicitly
+    // requests chunking/pipelining via chunk_hint != 0 (e.g. to
+    // overlap transfer with compute) -- TensorCommWorker only takes
+    // the direct path when chunk_hint == 0 (see async_transfer.hpp).
+    bool supports_direct_transport_access() const noexcept override { return true; }
+    const void *direct_source_data() const noexcept override { return buffer_; }
+    void *direct_destination_data() noexcept override { return buffer_; }
+
     std::size_t capacity() const noexcept { return capacity_; }
 
 private:
