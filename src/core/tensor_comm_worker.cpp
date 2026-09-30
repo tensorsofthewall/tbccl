@@ -34,6 +34,21 @@ namespace
         return enabled;
     }
 
+    // Phase 34 Part X: diagnostic-only control to test the "idle
+    // staging-thread affects network-thread scheduling" hypothesis.
+    // When set, Impl skips creating staging_thread entirely -- ONLY
+    // safe for workloads that exclusively use the direct path (Part H:
+    // chunk_hint==0 && backend->supports_direct_transport_access()),
+    // since the staged path's submit_job()/wait_job() would otherwise
+    // block forever with no staging thread to service it. Not part of
+    // the public API; gated off by default, for a controlled A/B only
+    // (Part AT: no production topology change without justification).
+    bool no_staging_thread_enabled()
+    {
+        static const bool enabled = (std::getenv("TBCCL_ASYNC_NO_STAGING_THREAD") != nullptr);
+        return enabled;
+    }
+
     double now_us()
     {
         return std::chrono::duration<double, std::micro>(
@@ -369,11 +384,17 @@ struct TensorCommWorker::Impl
     std::thread staging_thread;
     std::thread network_thread;
 
+    bool staging_thread_created = false;
+
     Impl(std::size_t pipeline_depth_, std::size_t queue_depth_)
         : pipeline_depth(std::max<std::size_t>(1, pipeline_depth_)),
           queue_depth(std::max<std::size_t>(1, queue_depth_))
     {
-        staging_thread = std::thread([this]() { staging_loop(); });
+        if (!no_staging_thread_enabled())
+        {
+            staging_thread = std::thread([this]() { staging_loop(); });
+            staging_thread_created = true;
+        }
         network_thread = std::thread([this]() { network_loop(); });
     }
 
@@ -548,6 +569,19 @@ struct TensorCommWorker::Impl
         if (request.chunk_hint == 0 && request.backend->supports_direct_transport_access())
         {
             process_request_direct(request, state);
+            return;
+        }
+
+        if (!staging_thread_created)
+        {
+            // Safety net: TBCCL_ASYNC_NO_STAGING_THREAD was set but this
+            // request needs the staged path, which would otherwise
+            // deadlock forever waiting for a staging thread that was
+            // never created.
+            detail::TransferWorkAccess::complete_error(
+                state, "staged path requested but staging thread disabled "
+                       "(TBCCL_ASYNC_NO_STAGING_THREAD diagnostic mode)");
+            record_stat(false);
             return;
         }
 
