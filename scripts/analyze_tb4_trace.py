@@ -295,15 +295,202 @@ def historical_incidents(root):
     return rows
 
 
+def parse_diagnostic_file(path):
+    """Reads one rank's --trace stderr output (TBCCL_DIAGNOSTIC line(s))."""
+    events = diagnostics(path)
+    batches = [e for e in events if e.get('kind') == 'transfer_trace']
+    if not batches:
+        raise ValueError(f'{path}: no transfer_trace diagnostic found')
+    return batches[-1]
+
+
+# Correlate a Linux receiver's application trace with a bounded scheduler
+# trace (from capture_tb4_scheduler_trace.py) and, optionally, a packet
+# capture, to classify slow iterations per item 70. The scheduler trace's
+# tracefs events use trace_clock=mono, which the capture script sets to be
+# identical (same clock, units, epoch) to the application trace's
+# CLOCK_MONOTONIC -- no calibration needed between those two. A packet
+# capture's timestamps are in CLOCK_REALTIME, so correlating against it
+# requires the realtime<->monotonic offset the caller derives from the
+# application trace's own bracketing clock samples
+# (clock_sample_monotonic_ns / clock_sample_realtime_ns).
+
+def sched_cycles_for_pid(sched_result, pid):
+    """Returns [(sleep_ts, wakeup_ts, run_ts)] sleep/wakeup/resume cycles
+    for one PID, in trace_clock=mono seconds (== CLOCK_MONOTONIC). Each
+    cycle is: the PID goes to sleep (sched_switch, prev_state S/D/Z) ->
+    later woken (sched_wakeup) -> actually put on a CPU (sched_switch,
+    prev_state R, i.e. was runnable, not the wakeup itself)."""
+    if sched_result.get('error'):
+        return []
+    pid_str = str(pid)
+    events = []  # (ts, 'sleep'|'wakeup'|'run')
+    for line in (sched_result.get('trace_text') or '').splitlines():
+        if not line or line.startswith('#'):
+            continue
+        ts_match = re.search(r'(\d+\.\d+):\s*sched_', line)
+        if not ts_match:
+            continue
+        ts = float(ts_match.group(1))
+        if 'sched_wakeup' in line and f'pid={pid_str} ' in line + ' ':
+            events.append((ts, 'wakeup'))
+        elif 'sched_switch' in line:
+            if f'next_pid={pid_str} ' in line + ' ':
+                events.append((ts, 'run'))
+            if f'prev_pid={pid_str} ' in line + ' ' and 'prev_state=R' not in line:
+                events.append((ts, 'sleep'))
+    events.sort()
+    cycles = []
+    pending_sleep = None
+    pending_wakeup = None
+    for ts, kind in events:
+        if kind == 'sleep':
+            pending_sleep = ts
+        elif kind == 'wakeup' and pending_sleep is not None:
+            pending_wakeup = ts
+        elif kind == 'run' and pending_sleep is not None and pending_wakeup is not None:
+            cycles.append((pending_sleep, pending_wakeup, ts))
+            pending_sleep = pending_wakeup = None
+    return cycles
+
+
+def packet_silence_gaps(pcap_path, min_gap_us=200):
+    """Shells out to tcpdump -tt to list inter-packet gaps on the capture
+    above min_gap_us. Timestamps are CLOCK_REALTIME (unix epoch seconds,
+    tcpdump's native format) -- never compared directly to CLOCK_MONOTONIC
+    without the caller applying an offset. tcpdump is required (no extra
+    Python packet-parsing dependency)."""
+    import shutil
+    import subprocess
+    if not shutil.which('tcpdump'):
+        return None
+    proc = subprocess.run(
+        ['tcpdump', '-tt', '-r', str(pcap_path)],
+        capture_output=True, text=True, timeout=30)
+    timestamps = []
+    for line in proc.stdout.splitlines():
+        try:
+            timestamps.append(float(line.split()[0]))
+        except (IndexError, ValueError):
+            continue
+    timestamps.sort()
+    gaps = []
+    for a, b in zip(timestamps, timestamps[1:]):
+        gap_us = (b - a) * 1e6
+        if gap_us >= min_gap_us:
+            gaps.append((a, b, gap_us))
+    return gaps
+
+
+def classify_slow_iterations(
+        app_trace, sched_result=None, pcap_path=None, slow_threshold_us=500, gaps=None):
+    """Per-iteration diagnostics + classification for
+    every receiver-side iteration slower than slow_threshold_us.
+
+    Classifications are only made from intervals actually observed in this
+    run's evidence -- absence of a signal is reported as
+    'insufficient evidence', never inferred.
+
+    `gaps` (a list of (start_realtime_s, end_realtime_s, gap_us) tuples)
+    can be passed directly instead of `pcap_path`, to avoid recomputing
+    them for repeated calls or invoking tcpdump in tests."""
+    entries = app_trace.get('entries', [])
+    pid = app_trace.get('process_id')
+    cycles = sched_cycles_for_pid(sched_result, pid) if sched_result and pid else []
+
+    realtime_offset_ns = None
+    if app_trace.get('clock_sample_monotonic_ns') is not None and \
+            app_trace.get('clock_sample_realtime_ns') is not None:
+        realtime_offset_ns = (app_trace['clock_sample_realtime_ns'] -
+                              app_trace['clock_sample_monotonic_ns'])
+
+    if gaps is None and pcap_path is not None:
+        gaps = packet_silence_gaps(pcap_path, min_gap_us=200)
+
+    rows = []
+    for entry in entries:
+        recv_us = duration(entry, 'recv_begin_ns', 'recv_end_ns')
+        if recv_us is None or recv_us < slow_threshold_us:
+            continue
+        recv_begin_s = entry['recv_begin_ns'] / 1e9
+        recv_end_s = entry['recv_end_ns'] / 1e9
+
+        # Find the sleep/wakeup/run cycle enclosing this iteration's recv:
+        # the thread records recv_begin while still running (from a PRIOR
+        # cycle's wakeup), then blocks -- that block is this cycle's sleep
+        # event -- and later resumes (this cycle's run event) and records
+        # recv_end while running again. So: sleep must occur at/after
+        # recv_begin, and run must occur at/before recv_end.
+        enclosing = next(
+            (c for c in cycles if c[0] >= recv_begin_s and c[2] <= recv_end_s + 0.0005),
+            None)
+
+        row = {
+            'iteration_index': entry.get('iteration_index'),
+            'recv_us': recv_us,
+            'trace_quality': 'application-only',
+            'classification': 'insufficient evidence',
+            'wakeup_to_run_us': None,
+            'sleep_to_wakeup_us': None,
+            'wire_silence_overlap_us': None,
+        }
+
+        if enclosing is not None:
+            sleep_ts, wakeup_ts, run_ts = enclosing
+            row['wakeup_to_run_us'] = (run_ts - wakeup_ts) * 1e6
+            row['sleep_to_wakeup_us'] = (wakeup_ts - sleep_ts) * 1e6
+            row['trace_quality'] = 'application + scheduler'
+
+            if row['wakeup_to_run_us'] > 100:
+                row['classification'] = 'scheduler wakeup delay observed'
+            elif gaps is not None and realtime_offset_ns is not None:
+                row['trace_quality'] = 'application + scheduler + packet'
+                sleep_realtime = sleep_ts + realtime_offset_ns / 1e9
+                wakeup_realtime = wakeup_ts + realtime_offset_ns / 1e9
+                overlap = next(
+                    (g for g in gaps if g[0] <= wakeup_realtime and g[1] >= sleep_realtime),
+                    None)
+                if overlap is not None:
+                    row['wire_silence_overlap_us'] = overlap[2]
+                    row['classification'] = 'late local packet observation'
+                else:
+                    row['classification'] = 'mixed/ambiguous'
+            else:
+                row['classification'] = ('scheduler wakeup delay observed'
+                                         if row['wakeup_to_run_us'] > 100
+                                         else 'mixed/ambiguous')
+        rows.append(row)
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--run-dir', type=Path)
     group.add_argument('--historical-root', type=Path)
+    group.add_argument('--correlate', action='store_true',
+                       help='classify slow iterations from --application-trace, '
+                            'optionally with --sched-trace-json / --packet-pcap')
+    parser.add_argument('--application-trace', type=Path,
+                        help='a rank stderr file containing a TBCCL_DIAGNOSTIC '
+                             'transfer_trace line (--correlate mode)')
+    parser.add_argument('--sched-trace-json', type=Path,
+                        help='output of capture_tb4_scheduler_trace.py (--correlate mode)')
+    parser.add_argument('--packet-pcap', type=Path,
+                        help='tcpdump/tshark-readable capture (--correlate mode)')
+    parser.add_argument('--slow-threshold-us', type=float, default=500)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    result = analyze_run(args.run_dir) if args.run_dir else {
-        'incidents': historical_incidents(args.historical_root)}
+    if args.correlate:
+        if not args.application_trace:
+            parser.error('--correlate requires --application-trace')
+        app_trace = parse_diagnostic_file(args.application_trace)
+        sched_result = load(args.sched_trace_json) if args.sched_trace_json else None
+        result = {'slow_iterations': classify_slow_iterations(
+            app_trace, sched_result, args.packet_pcap, args.slow_threshold_us)}
+    else:
+        result = analyze_run(args.run_dir) if args.run_dir else {
+            'incidents': historical_incidents(args.historical_root)}
     text = json.dumps(result, indent=2) + '\n'
     if args.output:
         args.output.write_text(text)
