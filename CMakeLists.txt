@@ -23,6 +23,7 @@ add_library(tbccl STATIC
     src/transport/tcp.cpp
     src/core/world.cpp
     src/core/tcp_world.cpp
+    src/core/peer_capabilities.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -120,6 +121,7 @@ endif()
 add_library(tbccl_tensor_backend STATIC
     benchmarks/tensor/tensor_backend.cpp
     benchmarks/tensor/host_backend.cpp
+    benchmarks/tensor/tensor_backend_capabilities.cpp
 )
 
 if(TBCCL_ENABLE_CUDA)
@@ -468,6 +470,31 @@ if(BUILD_TESTING)
     add_test(
         NAME tcp_transport_test
         COMMAND tcp_transport_test
+    )
+
+    add_executable(peer_capabilities_test
+        tests/peer_capabilities_test.cpp
+    )
+
+    target_link_libraries(peer_capabilities_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(peer_capabilities_test PRIVATE /W4)
+    else()
+        target_compile_options(peer_capabilities_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME peer_capabilities_test
+        COMMAND peer_capabilities_test
     )
 
     add_executable(world_test
