@@ -128,7 +128,10 @@ add_library(tbccl_tensor_backend STATIC
 )
 
 if(TBCCL_ENABLE_CUDA)
-    target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/cuda_backend.cu)
+    target_sources(tbccl_tensor_backend PRIVATE
+        benchmarks/tensor/cuda_backend.cu
+        benchmarks/tensor/cuda_chunked_async_backend.cu
+    )
 endif()
 
 if(TBCCL_ENABLE_METAL)
@@ -1212,6 +1215,32 @@ if(BUILD_TESTING)
         add_test(
             NAME tensor_cuda_test
             COMMAND tensor_cuda_test
+        )
+
+        add_executable(cuda_chunked_async_backend_test
+            tests/cuda_chunked_async_backend_test.cpp
+        )
+
+        target_link_libraries(cuda_chunked_async_backend_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        if(MSVC)
+            target_compile_options(cuda_chunked_async_backend_test PRIVATE /W4)
+        else()
+            target_compile_options(cuda_chunked_async_backend_test PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+            )
+        endif()
+
+        add_test(
+            NAME cuda_chunked_async_backend_test
+            COMMAND cuda_chunked_async_backend_test
         )
 
         # Phase 19 (Part J): exercises cuda_sync_bench's synchronization-

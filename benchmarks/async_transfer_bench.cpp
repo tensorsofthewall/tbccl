@@ -22,6 +22,10 @@
 #include "tensor/tensor_backend.hpp"
 #include "tensor/tensor_backend_async_adapter.hpp"
 
+#if defined(TBCCL_ENABLE_CUDA)
+#include "tensor/cuda_chunked_async_backend.hpp"
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -196,7 +200,8 @@ int main(int argc, char **argv)
 
         tbccl::TcpTransport transport(std::move(connection));
 
-        const bool use_device_backend = (options.backend != "host");
+        const bool use_cuda_chunked_backend = (options.backend == "cuda-chunked");
+        const bool use_device_backend = (options.backend != "host") && !use_cuda_chunked_backend;
 
         // Host path: a plain buffer + HostAsyncBackend (Part Q).
         std::vector<std::uint8_t> buffer;
@@ -208,9 +213,30 @@ int main(int argc, char **argv)
         std::unique_ptr<tbccl_bench::tensor::TensorBackend> device_backend;
         std::unique_ptr<tbccl_bench::tensor::TensorBackendAsyncAdapter> device_adapter;
 
+#if defined(TBCCL_ENABLE_CUDA)
+        // Phase 35: the true per-chunk async CUDA D2H/H2D staging
+        // backend (docs/phase35_device_pipeline_design.md), selected
+        // via --backend cuda-chunked. Bypasses TensorBackend/
+        // TensorBackendAsyncAdapter's whole-buffer-only staging
+        // entirely.
+        std::unique_ptr<tbccl_bench::tensor::CudaChunkedAsyncBackend> cuda_chunked_backend;
+#endif
+
         tbccl::AsyncMemoryBackend *backend = nullptr;
 
-        if (use_device_backend)
+        if (use_cuda_chunked_backend)
+        {
+#if defined(TBCCL_ENABLE_CUDA)
+            cuda_chunked_backend = std::make_unique<tbccl_bench::tensor::CudaChunkedAsyncBackend>();
+            const std::size_t max_chunk_bytes =
+                (options.chunk_bytes == 0) ? options.bytes : options.chunk_bytes;
+            cuda_chunked_backend->allocate(options.bytes, max_chunk_bytes);
+            backend = cuda_chunked_backend.get();
+#else
+            throw std::runtime_error("--backend cuda-chunked requires a CUDA-enabled build");
+#endif
+        }
+        else if (use_device_backend)
         {
             const auto kind = tbccl_bench::tensor::parse_backend_kind(options.backend);
             if (!tbccl_bench::tensor::backend_kind_available(kind))
@@ -269,6 +295,12 @@ int main(int argc, char **argv)
                 }
                 device_adapter->begin_transfer(chunk_count);
             }
+#if defined(TBCCL_ENABLE_CUDA)
+            else if (use_cuda_chunked_backend && is_sender)
+            {
+                cuda_chunked_backend->initialize_source(0xA5A5A5A5u);
+            }
+#endif
 
             tbccl::TransferRequest request;
             request.transfer_id = transfer_id;
@@ -330,7 +362,7 @@ int main(int argc, char **argv)
 
         if (options.verify)
         {
-            if (!use_device_backend && !is_sender)
+            if (!use_device_backend && !use_cuda_chunked_backend && !is_sender)
             {
                 std::fill(buffer.begin(), buffer.end(), 0);
             }
@@ -341,6 +373,12 @@ int main(int argc, char **argv)
                 {
                     verify_ok = device_backend->verify_destination(0xA5A5A5A5u);
                 }
+#if defined(TBCCL_ENABLE_CUDA)
+                else if (use_cuda_chunked_backend)
+                {
+                    verify_ok = cuda_chunked_backend->verify_destination(0xA5A5A5A5u);
+                }
+#endif
                 else
                 {
                     for (std::size_t i = 0; i < options.bytes; ++i)
