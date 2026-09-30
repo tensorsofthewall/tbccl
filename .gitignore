@@ -45,3 +45,4 @@ __pycache__/
 # Local Phase 20 health/benchmark artifacts (machine-specific, untracked).
 /results/phase20-local/
 /results/phase21-local/
+/results/phase22-local/

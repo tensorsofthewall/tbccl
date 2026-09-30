@@ -3,6 +3,7 @@
 // Benchmark-only, opt-in per-iteration tracing. Events are buffered in memory
 // and emitted once after the measured batch; no hot-path file I/O occurs.
 #include <time.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <fstream>
@@ -13,6 +14,12 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(__linux__)
+#include <sys/syscall.h>
+#elif defined(__APPLE__)
+#include <pthread.h>
+#endif
 
 namespace tbccl_bench::trace
 {
@@ -31,6 +38,29 @@ inline std::int64_t realtime_ns()
     if (::clock_gettime(CLOCK_REALTIME, &value) != 0)
         throw std::runtime_error("clock_gettime(CLOCK_REALTIME) failed");
     return static_cast<std::int64_t>(value.tv_sec) * 1000000000LL + value.tv_nsec;
+}
+
+// PID/TID of the calling thread. TBCCL's World/transport code is entirely
+// synchronous on the caller's thread (no background threads in core/
+// transport), so a single PID/TID captured once at Batch construction
+// correctly identifies the thread performing every send/recv in the batch --
+// this does not require touching the World API.
+inline std::int64_t process_id()
+{
+    return static_cast<std::int64_t>(::getpid());
+}
+
+inline std::int64_t thread_id()
+{
+#if defined(__linux__)
+    return static_cast<std::int64_t>(::syscall(SYS_gettid));
+#elif defined(__APPLE__)
+    std::uint64_t tid = 0;
+    ::pthread_threadid_np(nullptr, &tid);
+    return static_cast<std::int64_t>(tid);
+#else
+    return -1;
+#endif
 }
 
 inline std::string boot_id()
@@ -104,6 +134,8 @@ public:
     {
         if (!enabled_) return;
         entries_.reserve(capacity_);
+        process_id_ = process_id();
+        thread_id_ = thread_id();
         boot_id_ = boot_id();
         clock_sample_monotonic_ns_ = monotonic_ns();
         clock_sample_realtime_ns_ = realtime_ns();
@@ -139,6 +171,14 @@ public:
                << ",\"clock_sample_monotonic_ns\":" << clock_sample_monotonic_ns_
                << ",\"clock_sample_realtime_ns\":" << clock_sample_realtime_ns_
                << ",\"boot_id\":\"" << escape_json(boot_id_) << "\""
+               << ",\"process_id\":" << process_id_
+               << ",\"thread_id\":" << thread_id_
+               // Always null: no local socket fd/port is obtainable here
+               // without touching tbccl::World's API, which Phase 22
+               // explicitly avoids. PID+TID is sufficient to correlate
+               // against scheduler/packet evidence for this benchmark,
+               // since it is single-threaded and each run uses one process.
+               << ",\"socket_identifier\":null"
                << ",\"capacity\":" << capacity_ << ",\"entries\":[";
         for (std::size_t index = 0; index < entries_.size(); ++index)
         {
@@ -203,6 +243,8 @@ private:
     std::string timing_scope_;
     int source_gap_us_ = 0;
     std::string boot_id_;
+    std::int64_t process_id_ = -1;
+    std::int64_t thread_id_ = -1;
     std::int64_t clock_sample_monotonic_ns_ = -1;
     std::int64_t clock_sample_realtime_ns_ = -1;
     std::int64_t clock_resolution_ns_ = -1;
