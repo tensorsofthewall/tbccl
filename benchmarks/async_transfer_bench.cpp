@@ -85,6 +85,15 @@ namespace
         std::string output;
         std::string label; // free-form tag echoed into output, for sweep bookkeeping
         std::string backend = "host"; // host, cuda-pageable, cuda-pinned, metal-shared, metal-private-staged
+        // Phase 34 diagnostic: the receiver's per-round std::fill +
+        // byte-pattern verify loop runs BEFORE the ack is sent, so it
+        // is included in the sender's own measured completion time
+        // (the ack is the sender's proof of destination-visible
+        // completion -- Part D). Disabling verification isolates
+        // whether this receiver-side CPU work, not Transport itself,
+        // is inflating the measured regression. Default true to match
+        // every prior phase's correctness-checked measurements.
+        bool verify = true;
     };
 
     std::string require_value(const std::string &flag, int &i, int argc, char **argv)
@@ -113,6 +122,12 @@ namespace
             else if (arg == "--output") options.output = require_value(arg, i, argc, argv);
             else if (arg == "--label") options.label = require_value(arg, i, argc, argv);
             else if (arg == "--backend") options.backend = require_value(arg, i, argc, argv);
+            else if (arg == "--verify") {
+                const std::string v = require_value(arg, i, argc, argv);
+                if (v == "on") options.verify = true;
+                else if (v == "off") options.verify = false;
+                else throw std::runtime_error("--verify must be 'on' or 'off'");
+            }
             else throw std::runtime_error("unknown argument: " + arg);
         }
         if (options.peers.size() != 2)
@@ -230,8 +245,20 @@ int main(int argc, char **argv)
         const auto chunk_plan = tbccl::plan_chunks(options.bytes, options.chunk_bytes, 1);
         const std::size_t chunk_count = chunk_plan.empty() ? 1 : chunk_plan.size();
 
-        const std::size_t total_rounds = options.warmup + options.iterations;
-        for (std::size_t round = 0; round < total_rounds; ++round)
+        // Phase 34 finding: a per-round std::fill()+byte-verify on the
+        // receiver, done INSIDE this timed loop, was found to inflate
+        // every measured round's completion time by tens of
+        // milliseconds -- the ack for round N is only sent after the
+        // receiver's own work.wait() returns, but the receiver doesn't
+        // re-post its next recv() until it finishes that round's
+        // verify, so large sends back up against TCP flow control
+        // waiting on a receiver that's busy verifying instead of
+        // reading. tbccl_tensor_transfer_bench never had this problem:
+        // it verifies exactly ONCE, in an explicitly untimed round
+        // after the whole measured loop (see its own comment: "One
+        // untimed, full-byte-verified round -- never folded into the
+        // timing above"). This benchmark now matches that convention.
+        auto run_one_transfer = [&](std::uint64_t transfer_id)
         {
             if (use_device_backend)
             {
@@ -242,13 +269,9 @@ int main(int argc, char **argv)
                 }
                 device_adapter->begin_transfer(chunk_count);
             }
-            else if (!is_sender)
-            {
-                std::fill(buffer.begin(), buffer.end(), 0);
-            }
 
             tbccl::TransferRequest request;
-            request.transfer_id = static_cast<std::uint64_t>(round);
+            request.transfer_id = transfer_id;
             request.direction = is_sender ? tbccl::TransferDirection::Send
                                            : tbccl::TransferDirection::Recv;
             request.backend = backend;
@@ -291,23 +314,32 @@ int main(int argc, char **argv)
                 transport.send(&ack, sizeof(ack));
             }
             const auto completion_end = std::chrono::steady_clock::now();
+            return std::make_pair(enqueue_end - enqueue_start, completion_end - enqueue_start);
+        };
 
+        const std::size_t total_rounds = options.warmup + options.iterations;
+        for (std::size_t round = 0; round < total_rounds; ++round)
+        {
+            const auto [enqueue_dur, completion_dur] = run_one_transfer(static_cast<std::uint64_t>(round));
             if (round >= options.warmup)
             {
-                enqueue_us.push_back(
-                    std::chrono::duration<double, std::micro>(enqueue_end - enqueue_start).count());
-                completion_us.push_back(
-                    std::chrono::duration<double, std::micro>(completion_end - enqueue_start).count());
+                enqueue_us.push_back(std::chrono::duration<double, std::micro>(enqueue_dur).count());
+                completion_us.push_back(std::chrono::duration<double, std::micro>(completion_dur).count());
             }
+        }
 
+        if (options.verify)
+        {
+            if (!use_device_backend && !is_sender)
+            {
+                std::fill(buffer.begin(), buffer.end(), 0);
+            }
+            run_one_transfer(static_cast<std::uint64_t>(total_rounds));
             if (!is_sender)
             {
                 if (use_device_backend)
                 {
-                    if (!device_backend->verify_destination(0xA5A5A5A5u))
-                    {
-                        verify_ok = false;
-                    }
+                    verify_ok = device_backend->verify_destination(0xA5A5A5A5u);
                 }
                 else
                 {
