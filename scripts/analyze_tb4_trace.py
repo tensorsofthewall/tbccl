@@ -572,6 +572,70 @@ def classify_slow_iterations(
     return rows
 
 
+# Aggregate a run_tb4_tail_trigger_sweep.py output into a condition-level
+# slow-event summary, and a position-in-burst ("first-N") breakdown. Kept
+# here rather than in the sweep script itself so both the sweep runner and
+# any future ad-hoc trigger data can be analyzed with the same code (the
+# "avoid duplicating packet/trace parsing").
+
+def summarize_by_condition(sweep_output, thresholds=(500, 800, 1000)):
+    """sweep_output: the parsed JSON from run_tb4_tail_trigger_sweep.py
+    (a dict with 'results', each having 'requested_idle_ms' and
+    'samples_us'). Returns one row per distinct requested_idle_ms with
+    session/iteration counts, threshold counts, and basic percentiles.
+    Sessions with samples_us=None (a failed burst) are excluded from the
+    iteration counts but still counted as attempted sessions."""
+    by_condition = {}
+    for result in sweep_output.get('results', []):
+        condition = result['requested_idle_ms']
+        by_condition.setdefault(condition, {'sessions': 0, 'samples': []})
+        by_condition[condition]['sessions'] += 1
+        if result.get('samples_us'):
+            by_condition[condition]['samples'].extend(result['samples_us'])
+
+    rows = []
+    for condition in sorted(by_condition):
+        samples = by_condition[condition]['samples']
+        row = {
+            'requested_idle_ms': condition,
+            'sessions': by_condition[condition]['sessions'],
+            'iterations': len(samples),
+        }
+        for threshold in thresholds:
+            row[f'over_{threshold}_us'] = sum(1 for v in samples if v >= threshold)
+        if samples:
+            row['median_us'] = statistics.median(samples)
+            row['p95_us'] = percentile(samples, .95)
+            row['max_us'] = max(samples)
+        else:
+            row['median_us'] = row['p95_us'] = row['max_us'] = None
+        rows.append(row)
+    return rows
+
+
+def summarize_by_position(sweep_output):
+    """Position-in-burst ("first-N") breakdown: for each 0-indexed
+    position within a burst, the median/mean/sample count across every
+    session that reached that position -- reveals whether early
+    iterations of a fresh burst are systematically slower than later ones,
+    independent of which idle condition preceded the burst."""
+    by_position = {}
+    for result in sweep_output.get('results', []):
+        for position, value in enumerate(result.get('samples_us') or []):
+            by_position.setdefault(position, []).append(value)
+
+    rows = []
+    for position in sorted(by_position):
+        values = by_position[position]
+        rows.append({
+            'position': position,
+            'samples': len(values),
+            'median_us': statistics.median(values),
+            'mean_us': statistics.mean(values),
+        })
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -585,6 +649,10 @@ def main():
                             'next-payload local interval distributions from '
                             '--linux-pcap and/or --mac-pcap (each analyzed '
                             'using only its own capture clock)')
+    group.add_argument('--trigger-summary', type=Path,
+                       help='condition-level and '
+                            'position-in-burst summary of a '
+                            'run_tb4_tail_trigger_sweep.py output JSON file')
     parser.add_argument('--application-trace', type=Path,
                         help='a rank stderr file containing a TBCCL_DIAGNOSTIC '
                              'transfer_trace line (--correlate mode)')
@@ -634,6 +702,12 @@ def main():
                 'excluded_beyond_expected_count': len(extra),
                 'intervals': intervals,
             }
+    elif args.trigger_summary:
+        sweep_output = load(args.trigger_summary)
+        result = {
+            'by_condition': summarize_by_condition(sweep_output),
+            'by_position': summarize_by_position(sweep_output),
+        }
     else:
         result = analyze_run(args.run_dir) if args.run_dir else {
             'incidents': historical_incidents(args.historical_root)}

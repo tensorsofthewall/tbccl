@@ -6,6 +6,7 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import analyze_tb4_trace as analysis
+import run_tb4_tail_trigger_sweep as sweep
 
 
 def entry(index,rank,source,start):
@@ -277,6 +278,93 @@ class BoundaryTests(unittest.TestCase):
         linux_intervals,_,_=analysis.ack_to_payload_intervals(linux_packets)
         self.assertAlmostEqual(mac_intervals[0]['gap_us'],100.0,delta=0.1)
         self.assertAlmostEqual(linux_intervals[0]['gap_us'],300.0,delta=0.1)
+
+
+def sweep_result(idle_ms,samples_us,success=True):
+    return dict(requested_idle_ms=idle_ms,samples_us=samples_us,success=success)
+
+
+class TriggerSummaryTests(unittest.TestCase):
+    def test_summarize_by_condition_counts_thresholds(self):
+        sweep=dict(results=[
+            sweep_result(0,[100,600,900]),
+            sweep_result(0,[200,1100]),
+            sweep_result(500,[150,160,170]),
+        ])
+        rows=analysis.summarize_by_condition(sweep,thresholds=(500,800,1000))
+        by_idle={r['requested_idle_ms']:r for r in rows}
+        self.assertEqual(by_idle[0]['sessions'],2)
+        self.assertEqual(by_idle[0]['iterations'],5)
+        self.assertEqual(by_idle[0]['over_500_us'],3)
+        self.assertEqual(by_idle[0]['over_800_us'],2)
+        self.assertEqual(by_idle[0]['over_1000_us'],1)
+        self.assertEqual(by_idle[500]['over_500_us'],0)
+        self.assertEqual(by_idle[500]['median_us'],160)
+
+    def test_summarize_by_condition_excludes_failed_sessions_from_iterations(self):
+        # A failed burst (samples_us=None) is still counted as an attempted
+        # session, but contributes zero iterations/events.
+        sweep=dict(results=[
+            sweep_result(0,[100,200]),
+            sweep_result(0,None,success=False),
+        ])
+        rows=analysis.summarize_by_condition(sweep)
+        row=rows[0]
+        self.assertEqual(row['sessions'],2)
+        self.assertEqual(row['iterations'],2)
+
+    def test_summarize_by_condition_handles_all_sessions_empty(self):
+        sweep=dict(results=[sweep_result(0,None,success=False)])
+        rows=analysis.summarize_by_condition(sweep)
+        self.assertEqual(rows[0]['iterations'],0)
+        self.assertIsNone(rows[0]['median_us'])
+
+    def test_summarize_by_position_first_n_breakdown(self):
+        sweep=dict(results=[
+            sweep_result(0,[500,300,300]),
+            sweep_result(10,[560,320,310]),
+        ])
+        rows=analysis.summarize_by_position(sweep)
+        by_pos={r['position']:r for r in rows}
+        self.assertEqual(by_pos[0]['samples'],2)
+        self.assertEqual(by_pos[0]['median_us'],530)
+        self.assertEqual(by_pos[1]['median_us'],310)
+        self.assertEqual(by_pos[2]['median_us'],305)
+
+    def test_summarize_by_position_handles_uneven_burst_lengths(self):
+        # A shorter burst simply contributes fewer positions; later
+        # positions aggregate only over the sessions that reached them.
+        sweep=dict(results=[
+            sweep_result(0,[100,200,300]),
+            sweep_result(0,[110,210]),
+        ])
+        rows=analysis.summarize_by_position(sweep)
+        by_pos={r['position']:r for r in rows}
+        self.assertEqual(by_pos[2]['samples'],1)
+        self.assertEqual(by_pos[0]['samples'],2)
+
+
+class TriggerSweepRunnerTests(unittest.TestCase):
+    def test_classify_thresholds_counts_at_and_above_boundary(self):
+        counts=sweep.classify_thresholds([100,499,500,799,800,999,1000,1500],
+                                          thresholds=(500,800,1000))
+        self.assertEqual(counts[500],6)  # 500,799,800,999,1000,1500 -- inclusive
+        self.assertEqual(counts[800],4)  # 800,999,1000,1500
+        self.assertEqual(counts[1000],2) # 1000,1500
+
+    def test_classify_thresholds_empty_samples(self):
+        counts=sweep.classify_thresholds(None)
+        self.assertEqual(counts,{500:0,800:0,1000:0})
+
+    def test_rotate_conditions_interleaves_not_grouped(self):
+        order=sweep.rotate_conditions([0,10,100],repeats=3)
+        self.assertEqual(len(order),9)
+        # Not grouped: the first occurrence of each condition should all
+        # appear before the second occurrence of any condition (the
+        # explicit "rotate order" requirement).
+        first_occurrence_positions=[order.index(c) for c in (0,10,100)]
+        second_occurrence_positions=[order.index(c,3) for c in (0,10,100)]
+        self.assertTrue(max(first_occurrence_positions)<min(second_occurrence_positions))
 
 
 if __name__=='__main__': unittest.main()
