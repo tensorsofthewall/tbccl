@@ -189,4 +189,94 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(rows[0]['classification'],'insufficient evidence')
 
 
+def tcpdump_line(ts,src,dst,length,flags='P.'):
+    """Builds one synthetic tcpdump -tt text line matching this phase's
+    real captured format closely enough for parse_tcpdump_text."""
+    return (f'{ts:.6f} IP {src} > {dst}: Flags [{flags}], seq 1:2, ack 1, '
+            f'win 100, options [nop,nop,TS val 1 ecr 1], length {length}')
+
+
+class BoundaryTests(unittest.TestCase):
+    def test_parse_tcpdump_text_extracts_fields(self):
+        text=tcpdump_line(100.5,'mac.33400','linux.44914',65536)
+        packets=analysis.parse_tcpdump_text(text)
+        self.assertEqual(len(packets),1)
+        self.assertEqual(packets[0]['ts'],100.5)
+        self.assertEqual(packets[0]['length'],65536)
+
+    def test_parse_tcpdump_text_ignores_unparseable_lines(self):
+        text='not a packet line\n'+tcpdump_line(1.0,'a','b',0)
+        self.assertEqual(len(analysis.parse_tcpdump_text(text)),1)
+
+    def test_classify_packet_by_length(self):
+        self.assertEqual(analysis.classify_packet(dict(length=0)),'tcp_ack_only')
+        self.assertEqual(analysis.classify_packet(dict(length=1)),'application_ack')
+        self.assertEqual(analysis.classify_packet(dict(length=2900)),'tensor_payload')
+        self.assertEqual(analysis.classify_packet(dict(length=24)),'other')
+
+    def _packets(self,*specs):
+        return [dict(ts=ts,src='s',dst='d',flags='.',length=length) for ts,length in specs]
+
+    def test_ack_to_payload_pairs_in_order(self):
+        packets=self._packets((1.000,1),(1.000050,62636),(1.000300,1),(1.000400,62636))
+        intervals,unmatched,extra=analysis.ack_to_payload_intervals(packets)
+        self.assertEqual(len(intervals),2)
+        self.assertAlmostEqual(intervals[0]['gap_us'],50.0,delta=0.1)
+        self.assertAlmostEqual(intervals[1]['gap_us'],100.0,delta=0.1)
+        self.assertEqual(unmatched,[])
+        self.assertEqual(extra,[])
+
+    def test_trailing_ack_without_payload_is_unmatched(self):
+        # Matches the real Phase 23 shape: N acks/payloads alternating,
+        # then one final trailing ack (e.g. the destination's verify_ok)
+        # with no payload after it at all.
+        packets=self._packets((1.000,1),(1.000050,62636),(1.000300,1))
+        intervals,unmatched,extra=analysis.ack_to_payload_intervals(packets)
+        self.assertEqual(len(intervals),1)
+        self.assertEqual(unmatched,[1.000300])
+        self.assertEqual(extra,[])
+
+    def test_verification_round_excluded_via_expected_count(self):
+        # Reproduces the real bug found in this phase: the benchmark's
+        # own untimed post-loop verification round (one more full tensor
+        # resend after the measured loop) gets structurally paired with
+        # the last measured iteration's ack, since ack/payload alternate
+        # correctly in temporal order regardless of which round they
+        # belong to. With 2 real iterations, only 1 meaningful transition
+        # exists (iteration 0's ack -> iteration 1's payload); the 2nd
+        # successful pairing found (iteration 1's ack -> the verification
+        # round's payload) must be excluded via expected_count, not
+        # silently treated as a real measurement.
+        packets=self._packets(
+            (1.000,1),(1.000050,62636),      # iteration 0 ack -> iter 1 payload
+            (1.000300,1),(1.003300,62636))   # iteration 1 ack -> verification payload (3ms later)
+        intervals,unmatched,extra=analysis.ack_to_payload_intervals(
+            packets,expected_count=1)
+        self.assertEqual(len(intervals),1)
+        self.assertAlmostEqual(intervals[0]['gap_us'],50.0,delta=0.1)
+        self.assertEqual(len(extra),1)
+        self.assertAlmostEqual(extra[0]['gap_us'],3000.0,delta=1.0)
+
+    def test_max_gap_excludes_implausible_pairing_without_expected_count(self):
+        # Even without expected_count, an implausibly distant "payload"
+        # (here, deliberately far beyond max_gap_us) is never paired --
+        # it is left unmatched instead of inflating the distribution.
+        packets=self._packets((1.000,1),(1.010,62636))  # 10ms gap
+        intervals,unmatched,extra=analysis.ack_to_payload_intervals(
+            packets,max_gap_us=5000)
+        self.assertEqual(intervals,[])
+        self.assertEqual(unmatched,[1.000])
+
+    def test_dual_end_intervals_from_independent_captures_never_subtract_clocks(self):
+        # Sanity check on the analysis contract: mac and linux boundary
+        # results are computed from entirely separate packet lists, each
+        # using only its own local timestamps.
+        mac_packets=self._packets((10.0,1),(10.0001,62636))
+        linux_packets=self._packets((500.0,1),(500.0003,62636))
+        mac_intervals,_,_=analysis.ack_to_payload_intervals(mac_packets)
+        linux_intervals,_,_=analysis.ack_to_payload_intervals(linux_packets)
+        self.assertAlmostEqual(mac_intervals[0]['gap_us'],100.0,delta=0.1)
+        self.assertAlmostEqual(linux_intervals[0]['gap_us'],300.0,delta=0.1)
+
+
 if __name__=='__main__': unittest.main()
