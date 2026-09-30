@@ -444,6 +444,30 @@ else()
     )
 endif()
 
+add_executable(tbccl_async_transfer_bench
+    benchmarks/async_transfer_bench.cpp
+)
+
+target_link_libraries(tbccl_async_transfer_bench
+    PRIVATE
+        tbccl
+)
+
+target_include_directories(tbccl_async_transfer_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+)
+
+if(MSVC)
+    target_compile_options(tbccl_async_transfer_bench PRIVATE /W4)
+else()
+    target_compile_options(tbccl_async_transfer_bench PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -1152,7 +1176,9 @@ if(BUILD_TESTING)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_runtime_state_test.py)
         add_test(NAME analyze_training_interference_test
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/analyze_training_interference_test.py)
-        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test tb4_runtime_state_test analyze_training_interference_test
+        add_test(NAME analyze_phase32_async_transport_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/analyze_phase32_async_transport_test.py)
+        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test tb4_runtime_state_test analyze_training_interference_test analyze_phase32_async_transport_test
             PROPERTIES TIMEOUT 90)
     endif()
 
