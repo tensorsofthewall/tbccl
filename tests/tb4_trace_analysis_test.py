@@ -938,4 +938,85 @@ class NhiCadenceReportTests(unittest.TestCase):
         self.assertIsNone(report['slow_events'][0]['both_vectors_silent'])
 
 
+def function_line(cpu, ts, func, caller, task='<idle>-0'):
+    return f"          {task:<15} [{cpu:03d}] d.h1. {ts:.6f}: {func} <-{caller}"
+
+
+class NhiFunctionTraceParsingTests(unittest.TestCase):
+    def test_parses_requested_functions_only(self):
+        text = "\n".join([
+            function_line(13, 435.483562, 'ring_msix', '__handle_irq_event_percpu'),
+            function_line(13, 435.483589, 'ring_work', 'process_one_work', task='kworker/13:2-628'),
+            function_line(14, 435.484365, 'tb_ring_poll', 'tbnet_poll'),
+            function_line(14, 435.484999, 'other_func', 'somewhere'),  # not requested -- ignored
+        ])
+        events = analysis.parse_nhi_function_trace(text)
+        self.assertEqual([e['func'] for e in events], ['ring_msix', 'ring_work', 'tb_ring_poll'])
+        self.assertEqual(events[0]['cpu'], 13)
+        self.assertEqual(events[1]['caller'], 'process_one_work')
+
+    def test_events_time_sorted(self):
+        text = "\n".join([
+            function_line(13, 2.0, 'ring_msix', '__handle_irq_event_percpu'),
+            function_line(13, 1.0, 'ring_msix', '__handle_irq_event_percpu'),
+        ])
+        events = analysis.parse_nhi_function_trace(text)
+        self.assertEqual([e['ts'] for e in events], [1.0, 2.0])
+
+
+class VectorRoleResolutionTests(unittest.TestCase):
+    def test_resolves_tx_and_rx_cpus_from_followon_function(self):
+        events = [
+            {'ts': 1.0, 'cpu': 13, 'func': 'ring_msix', 'caller': 'x'},
+            {'ts': 1.001, 'cpu': 13, 'func': 'ring_work', 'caller': 'process_one_work'},
+            {'ts': 1.0, 'cpu': 14, 'func': 'ring_msix', 'caller': 'x'},
+            {'ts': 1.001, 'cpu': 14, 'func': 'tb_ring_poll', 'caller': 'tbnet_poll'},
+        ]
+        roles = analysis.resolve_cpu_roles(events)
+        self.assertEqual(roles, {13: 'tx', 14: 'rx'})
+
+    def test_cpu_with_no_followon_function_is_absent(self):
+        events = [{'ts': 1.0, 'cpu': 5, 'func': 'ring_msix', 'caller': 'x'}]
+        roles = analysis.resolve_cpu_roles(events)
+        self.assertNotIn(5, roles)
+
+    def test_vector_roles_from_affinity_maps_irq_to_role(self):
+        cpu_roles = {13: 'tx', 14: 'rx'}
+        cpu_by_irq = {177: 13, 178: 14, 179: 99}
+        result = analysis.vector_roles_from_affinity(cpu_roles, cpu_by_irq)
+        self.assertEqual(result, {177: 'tx', 178: 'rx', 179: 'unknown'})
+
+
+class TbRingPollBurstTests(unittest.TestCase):
+    def test_groups_close_calls_into_one_burst(self):
+        events = [
+            {'ts': 1.000000, 'cpu': 14, 'func': 'tb_ring_poll', 'caller': 'tbnet_poll'},
+            {'ts': 1.000010, 'cpu': 14, 'func': 'tb_ring_poll', 'caller': 'tbnet_poll'},
+            {'ts': 1.000020, 'cpu': 14, 'func': 'tb_ring_poll', 'caller': 'tbnet_poll'},
+        ]
+        bursts = analysis.tb_ring_poll_bursts(events, max_gap_us=50)
+        self.assertEqual(len(bursts), 1)
+        self.assertEqual(bursts[0]['count'], 3)
+
+    def test_large_gap_starts_a_new_burst(self):
+        events = [
+            {'ts': 1.000000, 'cpu': 14, 'func': 'tb_ring_poll', 'caller': 'tbnet_poll'},
+            {'ts': 1.001000, 'cpu': 14, 'func': 'tb_ring_poll', 'caller': 'tbnet_poll'},  # 1ms gap
+        ]
+        bursts = analysis.tb_ring_poll_bursts(events, max_gap_us=50)
+        self.assertEqual(len(bursts), 2)
+        self.assertEqual([b['count'] for b in bursts], [1, 1])
+
+    def test_ignores_non_tb_ring_poll_events(self):
+        events = [
+            {'ts': 1.0, 'cpu': 13, 'func': 'ring_msix', 'caller': 'x'},
+            {'ts': 1.0001, 'cpu': 13, 'func': 'ring_work', 'caller': 'process_one_work'},
+        ]
+        bursts = analysis.tb_ring_poll_bursts(events)
+        self.assertEqual(bursts, [])
+
+    def test_empty_input_yields_no_bursts(self):
+        self.assertEqual(analysis.tb_ring_poll_bursts([]), [])
+
+
 if __name__=='__main__': unittest.main()

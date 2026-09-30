@@ -1290,6 +1290,96 @@ def nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000,
     }
 
 
+# Phase 29 Part F/G/K/L: parse Tier-1 narrow function-trace output
+# (capture_tb4_scheduler_trace.py --include-nhi-functions) and use it to
+# (a) resolve TX/RX vector role by call-site (ring_msix on a TX-ring IRQ
+# leads to ring_work/process_one_work in a kworker thread; ring_msix on an
+# RX-ring IRQ leads to tb_ring_poll/tb_ring_poll_complete inside
+# tbnet_poll's NAPI softirq context -- confirmed from the exact v6.18.34
+# source, Phase 28/29's provenance: tb_ring_alloc_tx() always passes
+# start_poll=NULL, so TX servicing is unconditionally workqueue-based
+# while RX is unconditionally NAPI-based) and (b) count tb_ring_poll
+# "bursts" (consecutive calls with no large gap) as the safe, source-
+# grounded way to run the plan's completion-accumulation test (Part L)
+# without any dynamic probe: tbnet_poll() calls tb_ring_poll() once per
+# already-hardware-completed descriptor in a tight loop, so N consecutive
+# calls in one burst means N descriptors were already completed when that
+# NAPI cycle started servicing the ring.
+FTRACE_FUNCTION_LINE = re.compile(
+    r'(?P<task>\S+)-\d+\s+\[(?P<cpu>\d+)\].*?(?P<ts>\d+\.\d+):\s*'
+    r'(?P<func>\w+)\s*<-(?P<caller>\S+)')
+
+
+def parse_nhi_function_trace(trace_text, functions=('ring_msix', 'ring_work',
+                              'tb_ring_poll', 'tb_ring_poll_complete')):
+    """Flat, time-sorted list of {ts, cpu, func, caller} for the given
+    function names, extracted from raw function-tracer output."""
+    wanted = set(functions)
+    events = []
+    for line in (trace_text or '').splitlines():
+        if not line or line.startswith('#'):
+            continue
+        match = FTRACE_FUNCTION_LINE.search(line)
+        if not match or match.group('func') not in wanted:
+            continue
+        events.append({
+            'ts': float(match.group('ts')), 'cpu': int(match.group('cpu')),
+            'func': match.group('func'), 'caller': match.group('caller'),
+        })
+    events.sort(key=lambda e: e['ts'])
+    return events
+
+
+def resolve_cpu_roles(function_events):
+    """Maps each CPU to 'tx' or 'rx' by which follow-on function runs on
+    it after ring_msix: ring_work (TX, always workqueue-based on this
+    kernel -- Part E: tb_ring_alloc_tx() always passes start_poll=NULL) or
+    tb_ring_poll (RX, always NAPI-based). Returns {cpu: 'tx'|'rx'}; a CPU
+    that shows neither is simply absent, never guessed."""
+    cpu_role = {}
+    for event in function_events:
+        if event['func'] == 'ring_work':
+            cpu_role.setdefault(event['cpu'], 'tx')
+        elif event['func'] == 'tb_ring_poll':
+            cpu_role.setdefault(event['cpu'], 'rx')
+    return cpu_role
+
+
+def vector_roles_from_affinity(cpu_role_by_cpu, cpu_by_irq):
+    """Combines resolve_cpu_roles()'s {cpu: 'tx'|'rx'} with a caller-
+    supplied {irq_number: cpu} affinity mapping (from /proc/interrupts,
+    Part E item 19 -- read-only, never changed) to produce the final
+    {irq_number: 'tx'|'rx'|'unknown'}."""
+    return {irq: cpu_role_by_cpu.get(cpu, 'unknown') for irq, cpu in cpu_by_irq.items()}
+
+
+def tb_ring_poll_bursts(function_events, max_gap_us=50):
+    """Groups consecutive tb_ring_poll calls into bursts (a new burst
+    starts when the gap since the previous tb_ring_poll exceeds
+    max_gap_us). Each burst's size is the number of already-hardware-
+    completed descriptors tbnet_poll() drained in that NAPI cycle (Part L
+    item 58-59) -- the safe, tracepoint-only completion-accumulation
+    signal, since no independent/periodic hardware-completion sampling
+    exists in this driver (Part E's architectural finding: completion
+    detection is 100% interrupt-gated, no polling thread). Returns a list
+    of {start_ts, end_ts, count}."""
+    polls = sorted(e['ts'] for e in function_events if e['func'] == 'tb_ring_poll')
+    bursts = []
+    current = None
+    for ts in polls:
+        if current is None:
+            current = {'start_ts': ts, 'end_ts': ts, 'count': 1}
+        elif (ts - current['end_ts']) * 1e6 <= max_gap_us:
+            current['end_ts'] = ts
+            current['count'] += 1
+        else:
+            bursts.append(current)
+            current = {'start_ts': ts, 'end_ts': ts, 'count': 1}
+    if current is not None:
+        bursts.append(current)
+    return bursts
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)

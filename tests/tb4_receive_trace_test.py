@@ -16,11 +16,14 @@ import capture_tb4_scheduler_trace as cap
 
 
 def make_fake_tracefs(root, events, tracing_on="0", trace_clock_active="local",
-                       set_ftrace_pid="no pid"):
+                       set_ftrace_pid="no pid", current_tracer="nop",
+                       set_ftrace_filter="#### all functions enabled ####"):
     root = Path(root)
     (root / "tracing_on").write_text(tracing_on)
     (root / "trace").write_text("")
     (root / "set_ftrace_pid").write_text(set_ftrace_pid)
+    (root / "current_tracer").write_text(current_tracer)
+    (root / "set_ftrace_filter").write_text(set_ftrace_filter)
     clocks = "local global counter x86-tsc mono mono_raw boot"
     tagged = " ".join(f"[{w}]" if w == trace_clock_active else w for w in clocks.split())
     (root / "trace_clock").write_text(tagged)
@@ -239,6 +242,126 @@ class ReceiveEventDiscoveryTests(unittest.TestCase):
             self.assertEqual(sorted(data["groups"]["irq"]),
                               ["irq:irq_handler_entry", "irq:softirq_entry"])
             self.assertEqual(data["groups"]["napi"], ["napi:napi_poll"])
+
+
+class FunctionTracingTests(unittest.TestCase):
+    """Phase 29 Part G: Tier-1 narrow function tracing (--include-nhi-
+    functions) -- current_tracer/set_ftrace_filter save/restore, and the
+    real bug this phase found: set_ftrace_pid must NOT be written when a
+    function_filter is active, since ring_msix/ring_work/tb_ring_poll run
+    in interrupt/workqueue context, never attributed to the benchmark's
+    own PID -- writing it would scope the function tracer away from every
+    context those functions actually run in (confirmed via a live smoke
+    test that captured zero function-trace lines before this fix)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self._original_tracefs = cap.TRACEFS
+
+    def tearDown(self):
+        cap.TRACEFS = self._original_tracefs
+        self._tmp.cleanup()
+
+    def test_function_filter_sets_current_tracer_and_filter(self):
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events)
+        cap.TRACEFS = self.root
+        with cap.TraceSession(events, function_filter=["ring_msix", "ring_work"]):
+            self.assertEqual((self.root / "current_tracer").read_text(), "function")
+            self.assertEqual((self.root / "set_ftrace_filter").read_text(),
+                              "ring_msix\nring_work\n")
+
+    def test_function_filter_restored_to_nop(self):
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events, current_tracer="nop")
+        cap.TRACEFS = self.root
+        with cap.TraceSession(events, function_filter=["ring_msix"]):
+            pass
+        self.assertEqual((self.root / "current_tracer").read_text(), "nop")
+
+    def test_unset_filter_placeholder_restored_as_empty(self):
+        # Regression test: writing back the literal "#### all functions
+        # enabled ####" placeholder (this kernel's readback for "no
+        # filter set") raises EINVAL -- must be normalized to "" instead.
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events,
+                           set_ftrace_filter="#### all functions enabled ####")
+        filter_path = self.root / "set_ftrace_filter"
+        original_write = Path.write_text
+
+        def guarded_write(self_path, value):
+            if self_path == filter_path and "all functions enabled" in value:
+                raise OSError(22, "Invalid argument: placeholder not accepted on restore")
+            return original_write(self_path, value)
+
+        cap.TRACEFS = self.root
+        Path.write_text = guarded_write
+        try:
+            with cap.TraceSession(events, function_filter=["ring_msix"]):
+                pass
+            self.assertEqual(filter_path.read_text(), "")
+        finally:
+            Path.write_text = original_write
+
+    def test_real_function_filter_restored_verbatim(self):
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events, set_ftrace_filter="some_other_func\n")
+        cap.TRACEFS = self.root
+        with cap.TraceSession(events, function_filter=["ring_msix"]):
+            pass
+        self.assertEqual((self.root / "set_ftrace_filter").read_text(), "some_other_func")
+
+    def test_set_pid_filter_does_not_write_set_ftrace_pid_when_function_filter_active(self):
+        # The real Phase 29 bug: NHI functions run in interrupt/workqueue
+        # context, not the benchmark's own PID -- set_ftrace_pid must stay
+        # untouched (system-wide function tracing) or every NHI function
+        # trace line is silently filtered away.
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events, set_ftrace_pid="no pid")
+        cap.TRACEFS = self.root
+        with cap.TraceSession(events, function_filter=["ring_msix"]) as session:
+            session.set_pid_filter(4242)
+            self.assertEqual((self.root / "set_ftrace_pid").read_text(), "no pid")
+            # Tracepoint PID filters (unrelated to the function tracer)
+            # must still be applied normally.
+            self.assertEqual(
+                (self.root / "events/sched/sched_switch/filter").read_text(),
+                "prev_pid == 4242 || next_pid == 4242")
+
+    def test_set_pid_filter_still_writes_set_ftrace_pid_without_function_filter(self):
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events, set_ftrace_pid="no pid")
+        cap.TRACEFS = self.root
+        with cap.TraceSession(events) as session:  # function_filter=None (default)
+            session.set_pid_filter(4242)
+            self.assertEqual((self.root / "set_ftrace_pid").read_text(), "4242")
+
+    def test_no_function_tracing_when_filter_is_none(self):
+        # Default behavior (every prior phase) must be completely
+        # untouched: current_tracer/set_ftrace_filter are never read or
+        # written when function_filter is None.
+        events = ["sched/sched_switch"]
+        make_fake_tracefs(self.root, events, current_tracer="nop")
+        cap.TRACEFS = self.root
+        with cap.TraceSession(events):
+            self.assertEqual((self.root / "current_tracer").read_text(), "nop")
+
+
+class CheckFilterFunctionsTests(unittest.TestCase):
+    def test_reports_presence_and_absence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "available_filter_functions").write_text(
+                "ring_msix\nring_work\ntb_ring_poll\nunrelated_func [thunderbolt]\n")
+            cap.TRACEFS = root
+            output = root / "out.json"
+            cap.check_filter_functions(
+                ["ring_msix", "__ring_interrupt", "tb_ring_poll"], str(output))
+            data = json.loads(output.read_text())
+            self.assertTrue(data["ring_msix"])
+            self.assertTrue(data["tb_ring_poll"])
+            self.assertFalse(data["__ring_interrupt"])
 
 
 if __name__ == "__main__":
