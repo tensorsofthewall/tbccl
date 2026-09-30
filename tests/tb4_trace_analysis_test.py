@@ -525,4 +525,286 @@ class SenderBoundaryTests(unittest.TestCase):
         self.assertIn(sum(report['classification_counts'].values()),(1,))
 
 
+def ftrace_receive_line(ts, event, rest):
+    return f"          <idle>-0       [013] ..s1. {ts:.6f}: {event}: {rest}"
+
+
+class ReceivePathParsingTests(unittest.TestCase):
+    def test_parses_and_filters_thunderbolt_irq(self):
+        text = "\n".join([
+            ftrace_receive_line(1.0001, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_receive_line(1.0002, 'irq_handler_entry', 'irq=42 name=i915'),
+        ])
+        events = analysis.parse_receive_path_trace(text)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]['event'], 'irq_handler_entry')
+
+    def test_filters_softirq_to_net_rx_only(self):
+        text = "\n".join([
+            ftrace_receive_line(1.0, 'softirq_entry', 'vec=3 [action=NET_RX]'),
+            ftrace_receive_line(1.0001, 'softirq_entry', 'vec=9 [action=RCU]'),
+        ])
+        events = analysis.parse_receive_path_trace(text)
+        self.assertEqual(len(events), 1)
+
+    def test_filters_napi_poll_and_skb_by_device(self):
+        text = "\n".join([
+            ftrace_receive_line(1.0, 'napi_poll', 'napi poll on napi struct X for device thunderbolt0 work 1 budget 64'),
+            ftrace_receive_line(1.0001, 'napi_poll', 'napi poll on napi struct Y for device enp6s0 work 1 budget 64'),
+            ftrace_receive_line(1.0002, 'napi_gro_receive_entry', 'dev=thunderbolt0 len=84'),
+            ftrace_receive_line(1.0003, 'napi_gro_receive_entry', 'dev=wlan0 len=46'),
+        ])
+        events = analysis.parse_receive_path_trace(text, device='thunderbolt0')
+        self.assertEqual(len(events), 2)
+        self.assertTrue(all('thunderbolt0' in e['raw'] for e in events))
+
+    def test_filters_sk_data_ready_to_inet(self):
+        text = "\n".join([
+            ftrace_receive_line(1.0, 'sk_data_ready', 'family=2 protocol=1 func=sock_def_readable'),
+            ftrace_receive_line(1.0001, 'sk_data_ready', 'family=1 protocol=0 func=unix_stream'),
+        ])
+        events = analysis.parse_receive_path_trace(text)
+        self.assertEqual(len(events), 1)
+
+    def test_events_returned_time_sorted(self):
+        text = "\n".join([
+            ftrace_receive_line(2.0, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_receive_line(1.0, 'irq_handler_entry', 'irq=178 name=thunderbolt'),
+        ])
+        events = analysis.parse_receive_path_trace(text)
+        self.assertEqual([e['ts'] for e in events], [1.0, 2.0])
+
+
+class ReceivePathWindowTests(unittest.TestCase):
+    def test_last_occurrence_per_kind_within_window(self):
+        events = [
+            {'ts': 1.0001, 'event': 'irq_handler_entry', 'raw': ''},
+            {'ts': 1.0005, 'event': 'irq_handler_entry', 'raw': ''},  # later irq -- wins
+            {'ts': 1.0002, 'event': 'softirq_entry', 'raw': ''},
+            {'ts': 5.0, 'event': 'sk_data_ready', 'raw': ''},  # outside window
+        ]
+        found = analysis.receive_path_events_in_window(events, 1.0, 1.001)
+        self.assertEqual(found['irq_handler_entry'], 1.0005)
+        self.assertEqual(found['softirq_entry'], 1.0002)
+        self.assertNotIn('sk_data_ready', found)
+
+
+class IrqCadenceTests(unittest.TestCase):
+    def test_gaps_computed_between_consecutive_irq_timestamps(self):
+        events = [
+            {'ts': 1.0000, 'event': 'irq_handler_entry', 'raw': ''},
+            {'ts': 1.0001, 'event': 'irq_handler_entry', 'raw': ''},
+            {'ts': 1.0100, 'event': 'irq_handler_entry', 'raw': ''},  # 9.9ms-scale big gap
+            {'ts': 1.0102, 'event': 'softirq_entry', 'raw': ''},  # wrong kind -- ignored
+        ]
+        gaps = analysis.irq_cadence_gaps(events)
+        self.assertEqual(len(gaps), 2)
+        self.assertAlmostEqual(gaps[0][2], 100, delta=1)
+        self.assertAlmostEqual(gaps[1][2], 9900, delta=1)
+
+    def test_baseline_excludes_anomalous_gaps(self):
+        gaps = [(0, 0, 60.0), (0, 0, 70.0), (0, 0, 80.0), (0, 0, 1200.0)]
+        baseline = analysis.irq_cadence_baseline(gaps, anomaly_threshold_us=500)
+        self.assertEqual(baseline['n'], 3)
+        self.assertEqual(baseline['max_us'], 80.0)
+
+    def test_silence_overlap_finds_gap_spanning_window(self):
+        gaps = [(10.0, 10.00006, 60.0), (10.0500, 10.0512, 1200.0), (10.09, 10.091, 70.0)]
+        overlap = analysis.irq_silence_overlap(10.0505, 10.0511, gaps)
+        self.assertIsNotNone(overlap)
+        self.assertAlmostEqual(overlap[2], 1200.0)
+
+    def test_silence_overlap_none_when_window_fully_inside_normal_cadence(self):
+        gaps = [(10.0, 10.00006, 60.0), (10.00006, 10.00013, 70.0)]
+        overlap = analysis.irq_silence_overlap(10.00002, 10.00004, gaps)
+        self.assertIsNone(overlap)
+
+    def test_silence_overlap_ignores_gaps_below_threshold(self):
+        gaps = [(10.0, 10.0003, 300.0)]  # below default 500us anomaly threshold
+        overlap = analysis.irq_silence_overlap(10.0, 10.0003, gaps)
+        self.assertIsNone(overlap)
+
+
+class ReceivePathClassificationTests(unittest.TestCase):
+    def test_no_irq_at_all_is_delayed_before_ingress(self):
+        classification, detail = analysis.classify_receive_path_event(1.0, 1.0012, {})
+        self.assertEqual(classification, 'delayed before receiver kernel-observable ingress')
+        self.assertIsNone(detail['irq_us'])
+
+    def test_irq_gap_overlap_short_circuits_the_finer_decomposition(self):
+        # The receive-path investigation work's actual live-capture
+        # finding: even though a (irrelevant, earlier-cycle)
+        # irq/softirq/skb/wakeup quadruple is present in `found` (as
+        # would happen with the continuous background cadence), an
+        # anomalous gap overlapping the window must take priority and
+        # short-circuit the finer per-stage decomposition, which would
+        # otherwise misleadingly report "receiver path normal" using an
+        # unrelated earlier cycle.
+        found = {'irq_handler_entry': 0.9999, 'softirq_entry': 0.99991,
+                 'napi_gro_receive_entry': 0.99992, 'sk_data_ready': 0.99993}
+        irq_gaps = [(0.9999, 2.001, 1002100.0)]  # huge gap spanning the window
+        classification, detail = analysis.classify_receive_path_event(
+            1.0, 1.0012, found, irq_gaps=irq_gaps)
+        self.assertEqual(classification, 'delayed before receiver kernel-observable ingress')
+        self.assertAlmostEqual(detail['irq_gap_us'], 1002100.0)
+
+    def test_no_gap_overlap_falls_through_to_fine_decomposition(self):
+        found = {'irq_handler_entry': 1.00001, 'softirq_entry': 1.00002,
+                  'napi_gro_receive_entry': 1.00003, 'sk_data_ready': 1.00004}
+        irq_gaps = [(0.5, 0.5001, 100.0)]  # nowhere near the window
+        classification, _ = analysis.classify_receive_path_event(
+            1.0, 1.0012, found, irq_gaps=irq_gaps)
+        self.assertEqual(classification, 'receiver path normal / delay upstream')
+
+    def test_prompt_irq_but_missing_softirq_is_insufficient_evidence(self):
+        found = {'irq_handler_entry': 1.00001}
+        classification, _ = analysis.classify_receive_path_event(1.0, 1.0012, found)
+        self.assertEqual(classification, 'insufficient evidence')
+
+    def test_delayed_softirq_scheduling(self):
+        found = {'irq_handler_entry': 1.00001, 'softirq_entry': 1.0015}
+        classification, detail = analysis.classify_receive_path_event(1.0, 1.0016, found)
+        self.assertEqual(classification, 'delayed softirq scheduling')
+        self.assertGreater(detail['softirq_us'], 150)
+
+    def test_prolonged_napi_processing(self):
+        found = {'irq_handler_entry': 1.00001, 'softirq_entry': 1.00002,
+                  'napi_gro_receive_entry': 1.0015}
+        classification, detail = analysis.classify_receive_path_event(1.0, 1.0016, found)
+        self.assertEqual(classification, 'prolonged NAPI processing')
+        self.assertGreater(detail['skb_us'], 150)
+
+    def test_delayed_socket_delivery(self):
+        found = {'irq_handler_entry': 1.00001, 'softirq_entry': 1.00002,
+                  'napi_gro_receive_entry': 1.00003, 'sk_data_ready': 1.0015}
+        classification, detail = analysis.classify_receive_path_event(1.0, 1.0016, found)
+        self.assertEqual(classification, 'delayed socket delivery')
+        self.assertGreater(detail['wakeup_us'], 150)
+
+    def test_all_stages_prompt_is_receiver_path_normal(self):
+        found = {'irq_handler_entry': 1.00001, 'softirq_entry': 1.00002,
+                  'napi_gro_receive_entry': 1.00003, 'sk_data_ready': 1.00004}
+        classification, _ = analysis.classify_receive_path_event(1.0, 1.0012, found)
+        self.assertEqual(classification, 'receiver path normal / delay upstream')
+
+    def test_baseline_widens_prompt_threshold(self):
+        # A 300us softirq gap would normally be classified as delayed
+        # (>150us fixed threshold), but if same-run normal iterations
+        # regularly see ~200us softirq gaps (p95), 2x that (400us) covers
+        # it -- baseline must be consulted, not just the fixed default.
+        found = {'irq_handler_entry': 1.00001, 'softirq_entry': 1.0003}
+        baseline = {'softirq_us': {'p95_us': 200.0}}
+        classification, _ = analysis.classify_receive_path_event(
+            1.0, 1.0016, found, baseline=baseline)
+        self.assertEqual(classification, 'insufficient evidence')  # no napi event given
+        # Without baseline, the same gap (~290us) would be flagged delayed:
+        classification_no_baseline, _ = analysis.classify_receive_path_event(1.0, 1.0016, found)
+        self.assertEqual(classification_no_baseline, 'delayed softirq scheduling')
+
+
+class ReceivePathBaselineTests(unittest.TestCase):
+    def test_computes_stage_stats_from_normal_windows(self):
+        events = [
+            {'ts': 10.0001, 'event': 'irq_handler_entry', 'raw': ''},
+            {'ts': 10.0002, 'event': 'softirq_entry', 'raw': ''},
+            {'ts': 10.0003, 'event': 'napi_gro_receive_entry', 'raw': ''},
+            {'ts': 10.0004, 'event': 'sk_data_ready', 'raw': ''},
+        ]
+        baseline = analysis.receive_path_baseline(events, [(10.0, 10.001)])
+        self.assertEqual(baseline['irq_us']['n'], 1)
+        self.assertAlmostEqual(baseline['irq_us']['median_us'], 100, delta=1)
+        self.assertAlmostEqual(baseline['softirq_us']['median_us'], 100, delta=1)
+
+    def test_empty_normal_windows_yields_null_stats(self):
+        baseline = analysis.receive_path_baseline([], [])
+        self.assertIsNone(baseline['irq_us']['median_us'])
+        self.assertEqual(baseline['irq_us']['n'], 0)
+
+
+class ReceivePathReportTests(unittest.TestCase):
+    def test_end_to_end_classifies_slow_iteration_and_builds_baseline(self):
+        # iteration 5: normal (150us recv), a normal irq/softirq/skb/wakeup
+        # cycle within its window. iteration 6: slow (1200us recv) with a
+        # continuous background irq cadence (~100us apart, no gap >=500us
+        # anywhere) but a delayed socket wakeup within its own cycle --
+        # must fall through the irq-gap check (no anomalous gap exists) to
+        # the finer per-stage decomposition, and must not pollute the
+        # baseline (which should reflect only iteration 5's cycle).
+        app_trace = dict(entries=[
+            dict(iteration_index=5, recv_begin_ns=10_000_000_000,
+                 recv_end_ns=10_000_150_000),
+            dict(iteration_index=6, recv_begin_ns=10_001_000_000,
+                 recv_end_ns=10_002_200_000),
+        ])
+        trace_lines = [
+            ftrace_receive_line(10.0000001, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_receive_line(10.0000002, 'softirq_entry', 'vec=3 [action=NET_RX]'),
+            ftrace_receive_line(10.0000003, 'napi_gro_receive_entry', 'dev=thunderbolt0 len=84'),
+            ftrace_receive_line(10.0000004, 'sk_data_ready', 'family=2 protocol=1 func=x'),
+        ]
+        # A continuous ~100us-spaced background irq cadence spanning both
+        # windows, mimicking the real driver's RX ring polling substrate
+        # (the receive-path investigation work finding) -- no gap here
+        # reaches the 500us anomaly threshold, so
+        # classify_receive_path_event must fall through to the fine
+        # decomposition rather than reporting "upstream".
+        ts = 10.0005
+        while ts < 10.0010:
+            trace_lines.append(
+                ftrace_receive_line(ts, 'irq_handler_entry', 'irq=177 name=thunderbolt'))
+            ts += 0.0001
+        # The slow iteration's OWN cycle: prompt irq/softirq/skb, delayed
+        # socket wakeup (1.5ms after skb -- must be flagged).
+        trace_lines += [
+            ftrace_receive_line(10.0010001, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_receive_line(10.0010002, 'softirq_entry', 'vec=3 [action=NET_RX]'),
+            ftrace_receive_line(10.0010003, 'napi_gro_receive_entry', 'dev=thunderbolt0 len=84'),
+            ftrace_receive_line(10.0025000, 'sk_data_ready', 'family=2 protocol=1 func=x'),
+        ]
+        sched_result = {'trace_text': "\n".join(trace_lines)}
+        report = analysis.receive_path_report(app_trace, sched_result, slow_threshold_us=1000)
+        self.assertEqual(len(report['slow_events']), 1)
+        self.assertEqual(report['slow_events'][0]['iteration'], 6)
+        self.assertEqual(report['slow_events'][0]['classification'], 'delayed socket delivery')
+        self.assertEqual(report['normal_iteration_count'], 1)
+        self.assertEqual(report['same_run_baseline']['irq_us']['n'], 1)
+
+    def test_missing_sched_trace_text_yields_insufficient_evidence_not_a_crash(self):
+        app_trace = dict(entries=[
+            dict(iteration_index=1, recv_begin_ns=0, recv_end_ns=1_200_000),
+        ])
+        report = analysis.receive_path_report(app_trace, {'trace_text': None, 'error': 'x'})
+        self.assertEqual(len(report['slow_events']), 1)
+        self.assertEqual(report['slow_events'][0]['classification'],
+                          'delayed before receiver kernel-observable ingress')
+
+    def test_irq_silence_gap_overlapping_slow_window_is_flagged_upstream(self):
+        # The receive-path investigation work's live-capture central
+        # finding, reproduced as a fixture: a slow iteration whose window
+        # overlaps a real ~1ms gap in an otherwise-continuous irq cadence
+        # must be classified as delayed upstream of all traced receiver
+        # network processing -- even though softirq/napi/skb events DO
+        # eventually appear later in the window (just not promptly relative
+        # to where the cadence broke).
+        app_trace = dict(entries=[
+            dict(iteration_index=1, recv_begin_ns=10_000_000_000,
+                 recv_end_ns=10_001_100_000),
+        ])
+        trace_lines = [
+            ftrace_receive_line(9.9995, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_receive_line(9.9996, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            # ~1.05ms silence in the irq cadence spanning the recv window:
+            ftrace_receive_line(10.00105, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_receive_line(10.00106, 'softirq_entry', 'vec=3 [action=NET_RX]'),
+            ftrace_receive_line(10.00107, 'napi_gro_receive_entry', 'dev=thunderbolt0 len=84'),
+            ftrace_receive_line(10.00109, 'sk_data_ready', 'family=2 protocol=1 func=x'),
+        ]
+        sched_result = {'trace_text': "\n".join(trace_lines)}
+        report = analysis.receive_path_report(app_trace, sched_result, slow_threshold_us=1000)
+        self.assertEqual(len(report['slow_events']), 1)
+        event = report['slow_events'][0]
+        self.assertEqual(event['classification'], 'delayed before receiver kernel-observable ingress')
+        self.assertAlmostEqual(event['irq_gap_us'], 1450, delta=5)
+
+
 if __name__=='__main__': unittest.main()
