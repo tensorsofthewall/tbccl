@@ -164,12 +164,20 @@ namespace
 
     // Staging thread's role for a Send request: acquire a slot, ask the
     // backend to fill it from the source tensor, publish it as ready.
+    //
+    // Optional per-chunk timeline timing (same
+    // TBCCL_ASYNC_TIMING gate as the direct path's instrumentation) --
+    // this is what lets a benchmark prove device-copy/network overlap
+    // from something other than aggregate throughput, item
+    // 73's explicit requirement ("do not claim pipeline overlap from
+    // throughput alone").
     void staging_produce_send(
         const TransferRequest &request,
         const std::vector<Chunk> &chunks,
         StagingPool &pool,
         ChunkProgress &progress)
     {
+        const bool timing = timing_enabled();
         for (std::size_t i = 0; i < chunks.size(); ++i)
         {
             std::size_t slot;
@@ -183,6 +191,12 @@ namespace
                 return;
             }
 
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=source_stage_start chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
+            }
             try
             {
                 request.backend->stage_source_chunk(chunks[i], pool.data(slot));
@@ -192,6 +206,12 @@ namespace
                 pool.release(slot);
                 mark_failed(progress, error.what());
                 return;
+            }
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=source_stage_end chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
             }
 
             {
@@ -216,6 +236,7 @@ namespace
         StagingPool &pool,
         ChunkProgress &progress)
     {
+        const bool timing = timing_enabled();
         for (std::size_t i = 0; i < chunks.size(); ++i)
         {
             std::size_t slot;
@@ -231,6 +252,12 @@ namespace
                 slot = progress.slot_for[i];
             }
 
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=network_start chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
+            }
             try
             {
                 request.transport->send(pool.data(slot), chunks[i].size);
@@ -240,6 +267,12 @@ namespace
                 pool.release(slot);
                 mark_failed(progress, error.what());
                 return;
+            }
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=network_end chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
             }
 
             pool.release(slot);
@@ -254,6 +287,7 @@ namespace
         StagingPool &pool,
         ChunkProgress &progress)
     {
+        const bool timing = timing_enabled();
         for (std::size_t i = 0; i < chunks.size(); ++i)
         {
             std::size_t slot;
@@ -267,6 +301,12 @@ namespace
                 return;
             }
 
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=network_start chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
+            }
             try
             {
                 request.transport->recv(pool.data(slot), chunks[i].size);
@@ -276,6 +316,12 @@ namespace
                 pool.release(slot);
                 mark_failed(progress, error.what());
                 return;
+            }
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=network_end chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
             }
 
             {
@@ -301,6 +347,7 @@ namespace
         StagingPool &pool,
         ChunkProgress &progress)
     {
+        const bool timing = timing_enabled();
         for (std::size_t i = 0; i < chunks.size(); ++i)
         {
             std::size_t slot;
@@ -316,6 +363,12 @@ namespace
                 slot = progress.slot_for[i];
             }
 
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=dest_stage_start chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
+            }
             try
             {
                 request.backend->commit_destination_chunk(chunks[i], pool.data(slot));
@@ -325,6 +378,12 @@ namespace
                 pool.release(slot);
                 mark_failed(progress, error.what());
                 return;
+            }
+            if (timing)
+            {
+                std::fprintf(stderr,
+                    "[tbccl_chunk_timing] stage=dest_stage_end chunk=%zu transfer_id=%llu t_us=%.1f\n",
+                    i, static_cast<unsigned long long>(request.transfer_id), now_us());
             }
 
             pool.release(slot);
