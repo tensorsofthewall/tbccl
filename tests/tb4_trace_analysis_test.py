@@ -804,4 +804,138 @@ class ReceivePathReportTests(unittest.TestCase):
         self.assertAlmostEqual(event['irq_gap_us'], 1450, delta=5)
 
 
+def ftrace_line(ts, event, rest):
+    return f"          <idle>-0       [013] ..s1. {ts:.6f}: {event}: {rest}"
+
+
+class PerVectorIrqTests(unittest.TestCase):
+    def test_separates_two_irq_streams_by_number(self):
+        text = "\n".join([
+            ftrace_line(1.0000, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_line(1.0002, 'irq_handler_entry', 'irq=178 name=thunderbolt'),
+            ftrace_line(1.0128, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_line(1.0130, 'irq_handler_entry', 'irq=178 name=thunderbolt'),
+        ])
+        events = analysis.parse_receive_path_trace(text)
+        gaps = analysis.per_vector_irq_gaps(events)
+        self.assertEqual(set(gaps.keys()), {177, 178})
+        self.assertEqual(len(gaps[177]), 1)
+        self.assertAlmostEqual(gaps[177][0][2], 12800, delta=1)
+        self.assertAlmostEqual(gaps[178][0][2], 12800, delta=1)
+
+    def test_missing_vector_mapping_when_irq_number_unparseable(self):
+        events = analysis.parse_receive_path_trace(
+            ftrace_line(1.0, 'irq_handler_entry', 'name=thunderbolt'))
+        # No irq=N in the line -- entry['irq'] is None, excluded from gaps.
+        gaps = analysis.per_vector_irq_gaps(events)
+        self.assertEqual(gaps, {})
+
+    def test_per_vector_baseline_independent_of_other_vector(self):
+        gaps = {177: [(0, 0, 60.0), (0, 0, 70.0)], 178: [(0, 0, 900.0)]}
+        baseline = analysis.per_vector_cadence_baseline(gaps)
+        self.assertEqual(baseline[177]['n'], 2)
+        self.assertEqual(baseline[178]['n'], 0)  # 900us excluded as anomalous
+
+    def test_simultaneous_silence_detected_across_both_vectors(self):
+        per_vector_gaps = {
+            177: [(10.0, 10.0011, 1100.0)],
+            178: [(10.0001, 10.0010, 900.0)],
+        }
+        result = analysis.simultaneous_vector_silence(10.0002, 10.0009, per_vector_gaps)
+        self.assertEqual(result[177], 1100.0)
+        self.assertEqual(result[178], 900.0)
+
+    def test_rx_only_silence_leaves_other_vector_none(self):
+        per_vector_gaps = {177: [(10.0, 10.0011, 1100.0)], 178: [(10.0, 10.00006, 60.0)]}
+        result = analysis.simultaneous_vector_silence(10.0002, 10.0009, per_vector_gaps)
+        self.assertEqual(result[177], 1100.0)
+        self.assertIsNone(result[178])
+
+
+class ThunderboltEventParsingTests(unittest.TestCase):
+    def test_parses_control_events(self):
+        text = "\n".join([
+            ftrace_line(1.0, 'tb_tx', 'type=TB_CFG_PKG_READ, size=12, domain=0'),
+            ftrace_line(1.0001, 'tb_event', 'type=TB_CFG_PKG_EVENT, size=4, domain=0'),
+        ])
+        events = analysis.parse_thunderbolt_control_trace(text)
+        self.assertEqual([e['event'] for e in events], ['tb_tx', 'tb_event'])
+
+    def test_parses_data_plane_fields(self):
+        text = ftrace_line(1.0, 'tbnet_rx_ip_frame', 'id=40059 size=98 index=0 count=1')
+        events = analysis.parse_tbnet_data_trace(text)
+        self.assertEqual(events[0]['id'], 40059)
+        self.assertEqual(events[0]['size'], 98)
+        self.assertEqual(events[0]['index'], 0)
+        self.assertEqual(events[0]['count'], 1)
+
+    def test_does_not_fabricate_missing_fields(self):
+        text = ftrace_line(1.0, 'tbnet_tx_skb', 'skb=0xdead len=98 data_len=0 nr_frags=0')
+        events = analysis.parse_tbnet_data_trace(text)
+        self.assertNotIn('id', events[0])
+        self.assertNotIn('count', events[0])
+        self.assertEqual(events[0]['len'], 98)
+
+
+class EventsNearWindowTests(unittest.TestCase):
+    def test_tags_before_inside_after(self):
+        events = [
+            {'ts': 9.9997, 'event': 'tb_event', 'raw': ''},
+            {'ts': 10.0005, 'event': 'tb_event', 'raw': ''},
+            {'ts': 10.0013, 'event': 'tb_event', 'raw': ''},
+            {'ts': 5.0, 'event': 'tb_event', 'raw': ''},  # too far -- excluded
+        ]
+        tagged = analysis.events_near_window(events, 10.0, 10.001, before_us=500, after_us=500)
+        self.assertEqual(len(tagged), 3)
+        positions = {e['ts']: e['position'] for e in tagged}
+        self.assertEqual(positions[9.9997], 'before')
+        self.assertEqual(positions[10.0005], 'inside')
+        self.assertEqual(positions[10.0013], 'after')
+
+
+class NhiCadenceReportTests(unittest.TestCase):
+    def test_end_to_end_both_vectors_silent_no_control_event(self):
+        app_trace = dict(entries=[
+            dict(iteration_index=1, recv_begin_ns=10_000_000_000,
+                 recv_end_ns=10_001_100_000),
+        ])
+        trace_lines = [
+            ftrace_line(9.9990, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_line(9.9991, 'irq_handler_entry', 'irq=178 name=thunderbolt'),
+            ftrace_line(10.00120, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_line(10.00121, 'irq_handler_entry', 'irq=178 name=thunderbolt'),
+        ]
+        sched_result = {'trace_text': "\n".join(trace_lines)}
+        report = analysis.nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000)
+        self.assertEqual(len(report['slow_events']), 1)
+        event = report['slow_events'][0]
+        self.assertTrue(event['both_vectors_silent'])
+        self.assertGreater(event['vector_gaps_us'][177], 1000)
+        self.assertGreater(event['vector_gaps_us'][178], 1000)
+        self.assertEqual(event['control_events_inside'], 0)
+        self.assertAlmostEqual(event['ratios'][177]['ratio_to_128us_reference'],
+                               event['vector_gaps_us'][177] / 128.0, places=3)
+
+    def test_control_event_inside_gap_is_flagged(self):
+        app_trace = dict(entries=[
+            dict(iteration_index=1, recv_begin_ns=10_000_000_000,
+                 recv_end_ns=10_001_100_000),
+        ])
+        trace_lines = [
+            ftrace_line(9.9990, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+            ftrace_line(10.0005, 'tb_event', 'type=TB_CFG_PKG_EVENT, size=4, domain=0'),
+            ftrace_line(10.0012, 'irq_handler_entry', 'irq=177 name=thunderbolt'),
+        ]
+        sched_result = {'trace_text': "\n".join(trace_lines)}
+        report = analysis.nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000)
+        self.assertEqual(report['slow_events'][0]['control_events_inside'], 1)
+
+    def test_no_vectors_present_yields_none_silent_flag(self):
+        app_trace = dict(entries=[
+            dict(iteration_index=1, recv_begin_ns=0, recv_end_ns=1_200_000),
+        ])
+        report = analysis.nhi_cadence_report(app_trace, {'trace_text': ''})
+        self.assertIsNone(report['slow_events'][0]['both_vectors_silent'])
+
+
 if __name__=='__main__': unittest.main()

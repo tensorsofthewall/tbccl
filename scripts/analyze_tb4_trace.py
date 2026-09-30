@@ -850,6 +850,7 @@ def sender_boundary_report(
 FTRACE_RECEIVE_LINE = re.compile(
     r'(?P<ts>\d+\.\d+):\s*(?P<event>irq_handler_entry|softirq_entry|napi_poll|'
     r'napi_gro_receive_entry|netif_receive_skb_entry|sk_data_ready):\s*(?P<rest>.*)')
+IRQ_NUMBER_LINE = re.compile(r'irq=(\d+)')
 
 
 def parse_receive_path_trace(trace_text, device='thunderbolt0'):
@@ -883,7 +884,11 @@ def parse_receive_path_trace(trace_text, device='thunderbolt0'):
             continue
         if event == 'sk_data_ready' and 'family=2' not in rest:
             continue
-        events.append({'ts': ts, 'event': event, 'raw': line.strip()})
+        entry = {'ts': ts, 'event': event, 'raw': line.strip()}
+        if event == 'irq_handler_entry':
+            irq_match = IRQ_NUMBER_LINE.search(rest)
+            entry['irq'] = int(irq_match.group(1)) if irq_match else None
+        events.append(entry)
     events.sort(key=lambda e: e['ts'])
     return events
 
@@ -1098,6 +1103,193 @@ def receive_path_report(app_trace, sched_result, slow_threshold_us=1000, normal_
     }
 
 
+# Phase 27 Part E/F/G/H: separate the aggregate irq_handler_entry cadence
+# (Phase 26 treated all `name=thunderbolt` IRQs as one stream) by MSI-X
+# vector (irq number), test whether each vector's own cadence is closer to
+# the driver's configured interrupt-moderation constant, and correlate
+# Thunderbolt control-plane (tb_tx/tb_rx/tb_event) and USB4NET data-plane
+# (tbnet_tx_ip_frame/tbnet_rx_ip_frame/tbnet_tx_skb/tbnet_rx_skb) events
+# against the silence windows. thunderbolt:tb_tx/tb_rx/tb_event are
+# confirmed (via their own format files, Part G item 32-34) to reference
+# TB_CFG_PKG_* symbols (READ/WRITE/ERROR/NOTIFY_ACK/EVENT/XDOMAIN_REQ/
+# XDOMAIN_RESP/OVERRIDE/RESET/ICM_EVENT/ICM_CMD/ICM_RESP on this kernel) --
+# Thunderbolt router configuration-space and ICM-firmware control traffic,
+# never USB4NET IP payload framing. tbnet_tx_ip_frame/tbnet_rx_ip_frame
+# carry id/size/index/count (a large IP packet's fragment sequence within
+# one ThunderboltIP frame) -- genuine data-plane granularity.
+THUNDERBOLT_CONTROL_LINE = re.compile(
+    r'(?P<ts>\d+\.\d+):\s*(?P<event>tb_tx|tb_rx|tb_event):\s*(?P<rest>.*)')
+TBNET_DATA_LINE = re.compile(
+    r'(?P<ts>\d+\.\d+):\s*(?P<event>tbnet_tx_skb|tbnet_tx_ip_frame|'
+    r'tbnet_rx_ip_frame|tbnet_rx_skb):\s*(?P<rest>.*)')
+TBNET_FIELD = {
+    'id': re.compile(r'\bid=(\d+)'), 'index': re.compile(r'\bindex=(\d+)'),
+    'count': re.compile(r'\bcount=(\d+)'), 'size': re.compile(r'\bsize=(\d+)'),
+    'len': re.compile(r'\blen=(\d+)'),
+}
+
+
+def parse_thunderbolt_control_trace(trace_text):
+    """Flat, time-sorted tb_tx/tb_rx/tb_event control-plane events."""
+    events = []
+    for line in (trace_text or '').splitlines():
+        match = THUNDERBOLT_CONTROL_LINE.search(line)
+        if not match:
+            continue
+        events.append({'ts': float(match.group('ts')), 'event': match.group('event'),
+                       'raw': line.strip()})
+    events.sort(key=lambda e: e['ts'])
+    return events
+
+
+def parse_tbnet_data_trace(trace_text):
+    """Flat, time-sorted tbnet_*_skb/tbnet_*_ip_frame data-plane events,
+    with id/index/count/size/len parsed where present (never fabricated
+    for events that don't carry a given field)."""
+    events = []
+    for line in (trace_text or '').splitlines():
+        match = TBNET_DATA_LINE.search(line)
+        if not match:
+            continue
+        entry = {'ts': float(match.group('ts')), 'event': match.group('event'),
+                  'raw': line.strip()}
+        rest = match.group('rest')
+        for field, pattern in TBNET_FIELD.items():
+            field_match = pattern.search(rest)
+            if field_match:
+                entry[field] = int(field_match.group(1))
+        events.append(entry)
+    events.sort(key=lambda e: e['ts'])
+    return events
+
+
+def per_vector_irq_gaps(events):
+    """irq_cadence_gaps(), computed separately per MSI-X vector (irq
+    number) instead of aggregated across all `name=thunderbolt` IRQs --
+    Phase 27's primary extension of Phase 26's single-stream analysis
+    (Part E item 21: 'do not aggregate all name=thunderbolt events into
+    one sequence'). Returns {irq_number: [(start, end, gap_us), ...]}."""
+    by_irq = {}
+    for event in events:
+        if event['event'] == 'irq_handler_entry' and event.get('irq') is not None:
+            by_irq.setdefault(event['irq'], []).append(event['ts'])
+    result = {}
+    for irq, timestamps in by_irq.items():
+        timestamps.sort()
+        result[irq] = [(timestamps[i], timestamps[i + 1],
+                        (timestamps[i + 1] - timestamps[i]) * 1e6)
+                       for i in range(len(timestamps) - 1)]
+    return result
+
+
+def per_vector_cadence_baseline(per_vector_gaps, anomaly_threshold_us=500):
+    """irq_cadence_baseline() applied independently to each vector's own
+    gap list -- tests Part F's 128us-per-vector hypothesis without
+    assuming it (item 28: 'do not fit the result to 128us by assumption')."""
+    return {irq: irq_cadence_baseline(gaps, anomaly_threshold_us)
+            for irq, gaps in per_vector_gaps.items()}
+
+
+def simultaneous_vector_silence(window_start_s, window_end_s, per_vector_gaps,
+                                 anomaly_threshold_us=500):
+    """For every vector, the largest anomalous gap (if any) overlapping
+    the window -- lets the caller determine whether multiple vectors go
+    silent together (Part F item 29-30) or only one does (Part S outcomes
+    D/E). Returns {irq: gap_us_or_None}."""
+    result = {}
+    for irq, gaps in per_vector_gaps.items():
+        overlap = irq_silence_overlap(window_start_s, window_end_s, gaps, anomaly_threshold_us)
+        result[irq] = overlap[2] if overlap else None
+    return result
+
+
+def events_near_window(events, window_start_s, window_end_s, before_us=500, after_us=500):
+    """Every event (from parse_thunderbolt_control_trace or
+    parse_tbnet_data_trace) within [window_start_s - before_us,
+    window_end_s + after_us], each tagged with its position relative to
+    the window (Part K item 56): 'before' (strictly before window_start,
+    within before_us), 'inside' (within the window itself), or 'after'
+    (strictly after window_end, within after_us)."""
+    lo = window_start_s - before_us / 1e6
+    hi = window_end_s + after_us / 1e6
+    tagged = []
+    for event in events:
+        if not (lo <= event['ts'] <= hi):
+            continue
+        if event['ts'] < window_start_s:
+            position = 'before'
+        elif event['ts'] > window_end_s:
+            position = 'after'
+        else:
+            position = 'inside'
+        tagged.append({**event, 'position': position})
+    return tagged
+
+
+def nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000,
+                        normal_threshold_us=800, control_window_us=500):
+    """Part Q: ties per-vector cadence, the 128us hypothesis, and
+    control/data-plane correlation together for every slow iteration.
+    Requires a sched_result captured with --include-receive-events
+    --include-thunderbolt-events (Phase 27 Part G item 36)."""
+    trace_text = (sched_result or {}).get('trace_text') or ''
+    events = parse_receive_path_trace(trace_text)
+    control_events = parse_thunderbolt_control_trace(trace_text)
+    tbnet_events = parse_tbnet_data_trace(trace_text)
+
+    per_vector_gaps = per_vector_irq_gaps(events)
+    vector_baseline = per_vector_cadence_baseline(per_vector_gaps)
+
+    slow_windows, normal_count = [], 0
+    for entry in app_trace['entries']:
+        if entry.get('recv_begin_ns') is None or entry.get('recv_end_ns') is None:
+            continue
+        recv_us = (entry['recv_end_ns'] - entry['recv_begin_ns']) / 1000.0
+        if recv_us >= slow_threshold_us:
+            slow_windows.append((entry['iteration_index'], entry['recv_begin_ns'] / 1e9,
+                                 entry['recv_end_ns'] / 1e9, recv_us))
+        elif recv_us < normal_threshold_us:
+            normal_count += 1
+
+    slow_events = []
+    for index, start_s, end_s, recv_us in slow_windows:
+        vector_gaps = simultaneous_vector_silence(start_s, end_s, per_vector_gaps)
+        silenced = {irq: gap for irq, gap in vector_gaps.items() if gap is not None}
+        both_vectors_silent = len(silenced) >= 2 if len(per_vector_gaps) >= 2 else None
+        nearby_control = events_near_window(control_events, start_s, end_s, control_window_us,
+                                             control_window_us)
+        nearby_data = events_near_window(tbnet_events, start_s, end_s, control_window_us,
+                                          control_window_us)
+        ratios = {}
+        for irq, gap_us in silenced.items():
+            median = vector_baseline.get(irq, {}).get('median_us')
+            ratios[irq] = {
+                'gap_us': gap_us,
+                'ratio_to_vector_median': (gap_us / median) if median else None,
+                'ratio_to_128us_reference': gap_us / 128.0,
+            }
+        slow_events.append({
+            'iteration': index, 'recv_us': recv_us,
+            'vector_gaps_us': vector_gaps,
+            'both_vectors_silent': both_vectors_silent,
+            'ratios': ratios,
+            'control_events_before': sum(1 for e in nearby_control if e['position'] == 'before'),
+            'control_events_inside': sum(1 for e in nearby_control if e['position'] == 'inside'),
+            'control_events_after': sum(1 for e in nearby_control if e['position'] == 'after'),
+            'data_events_before': sum(1 for e in nearby_data if e['position'] == 'before'),
+            'data_events_inside': sum(1 for e in nearby_data if e['position'] == 'inside'),
+            'data_events_after': sum(1 for e in nearby_data if e['position'] == 'after'),
+        })
+
+    return {
+        'per_vector_baseline': vector_baseline,
+        'slow_events': slow_events,
+        'total_control_events': len(control_events),
+        'total_data_events': len(tbnet_events),
+        'normal_iteration_count': normal_count,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -1126,6 +1318,14 @@ def main():
                             'classification of slow iterations, from '
                             '--application-trace and --sched-trace-json '
                             '(captured with --include-receive-events)')
+    group.add_argument('--nhi-cadence', action='store_true',
+                       help='Phase 27 Part Q: per-MSI-X-vector IRQ '
+                            'cadence, 128us-hypothesis ratios, and '
+                            'Thunderbolt control/data-plane correlation, '
+                            'from --application-trace and '
+                            '--sched-trace-json (captured with '
+                            '--include-receive-events '
+                            '--include-thunderbolt-events)')
     parser.add_argument('--application-trace', type=Path,
                         help='a rank stderr file containing a TBCCL_DIAGNOSTIC '
                              'transfer_trace line (--correlate/--sender-boundary mode)')
@@ -1200,6 +1400,13 @@ def main():
         app_trace = parse_diagnostic_file(args.application_trace)
         sched_result = load(args.sched_trace_json)
         result = receive_path_report(app_trace, sched_result, args.slow_threshold_us)
+    elif args.nhi_cadence:
+        if not args.application_trace or not args.sched_trace_json:
+            parser.error('--nhi-cadence requires --application-trace and '
+                          '--sched-trace-json')
+        app_trace = parse_diagnostic_file(args.application_trace)
+        sched_result = load(args.sched_trace_json)
+        result = nhi_cadence_report(app_trace, sched_result, args.slow_threshold_us)
     else:
         result = analyze_run(args.run_dir) if args.run_dir else {
             'incidents': historical_incidents(args.historical_root)}
