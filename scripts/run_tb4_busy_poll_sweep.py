@@ -112,6 +112,10 @@ def parser():
     p.add_argument('--repetitions', type=int, default=3)
     p.add_argument('--order', choices=['rotate', 'abba'], default='rotate')
     p.add_argument('--timing-scope', choices=['ready', 'produce'], default='ready')
+    p.add_argument('--trace', action='store_true', help='enable bounded per-iteration application trace')
+    p.add_argument('--source-gaps', type=lambda s: integer_list(s, 0, 10000000), default=[0])
+    p.add_argument('--stop-on-any-tb-timeout', action='store_true',
+                   help='stop the group after one new Thunderbolt bridge Timeout')
     p.add_argument('--timeout', type=float, default=45)
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--dry-run', action='store_true', help='write experiment plan only; no SSH or benchmarks')
@@ -143,7 +147,7 @@ def validate(args):
 def experiments(args):
     order_index = 0
     assignments = ['mac', 'linux'] if args.rank0 == 'both' else [args.rank0]
-    for rank0, size in itertools.product(assignments, args.sizes):
+    for rank0, size, source_gap in itertools.product(assignments, args.sizes, args.source_gaps):
         physical = [rank0, 'mac' if rank0 == 'linux' else 'linux']
         sources = ['linux', 'mac'] if args.source == 'both' else [args.source]
         if args.source_rank is not None:
@@ -160,7 +164,9 @@ def experiments(args):
                     yield dict(order=order_index, repetition=repetition, rank0=rank0, source=source,
                                source_rank=physical.index(source), payload_bytes=size, busy_poll_us=poll,
                                iterations=args.large_iterations if size >= 4194304 else args.iterations,
-                               warmup=args.warmup, backend_pair=args.backend_pair, timing_scope=args.timing_scope)
+                               warmup=args.warmup, backend_pair=args.backend_pair,
+                               timing_scope=args.timing_scope, source_gap_us=source_gap,
+                               trace=args.trace)
                     order_index += 1
 
 
@@ -295,6 +301,19 @@ def telemetry(text):
     return [json.loads(line[len(PREFIX):]) for line in text.splitlines() if line.startswith(PREFIX)]
 
 
+def preserve_traces(directory):
+    """Extract complete trace diagnostics even when a later run check fails."""
+    for path in sorted(directory.glob('rank*.stderr')):
+        try:
+            traces = [event for event in telemetry(path.read_text())
+                      if event.get('kind') == 'transfer_trace']
+        except (OSError, ValueError):
+            continue
+        if len(traces) == 1:
+            path.with_name(path.name.replace('.stderr', '.trace.json')).write_text(
+                json.dumps(traces[0], indent=2) + '\n')
+
+
 def parse_result(directory, config, loopback=False):
     csv_text = (directory / f"rank{config['source_rank']}.stdout").read_text()
     rows = list(csv.DictReader(io.StringIO(csv_text)))
@@ -342,6 +361,23 @@ def parse_result(directory, config, loopback=False):
             samples = [e for e in events if e['kind'] == 'samples' and e['metric'] == 'completion_confirmed' and e['payload_bytes'] == config['payload_bytes']]
             if len(samples) != 1 or len(samples[0]['values_us']) != config['iterations'] or any(not math.isfinite(x) or x < 0 for x in samples[0]['values_us']):
                 raise ValueError('missing or invalid raw completion samples')
+        traces = [e for e in events if e['kind'] == 'transfer_trace']
+        if config.get('trace'):
+            if len(traces) != 1 or traces[0].get('clock') != 'CLOCK_MONOTONIC':
+                raise ValueError('missing, duplicate, or unsupported transfer trace')
+            entries = traces[0].get('entries', [])
+            if traces[0].get('capacity') != config['iterations'] or len(entries) != config['iterations']:
+                raise ValueError('incomplete transfer trace')
+            if [e.get('iteration_index') for e in entries] != list(range(config['iterations'])):
+                raise ValueError('invalid transfer trace iteration identity')
+            if any(e.get('run_id') != f"run-{config['order']:04d}" or
+                   e.get('physical_machine') != machine or
+                   e.get('payload_bytes') != config['payload_bytes'] or
+                   e.get('source_gap_us') != config.get('source_gap_us', 0)
+                   for e in entries):
+                raise ValueError('transfer trace metadata mismatch')
+        elif traces:
+            raise ValueError('trace emitted while disabled')
     (directory / 'benchmark.csv').write_text(csv_text)
     return result
 
@@ -352,13 +388,15 @@ def aggregate(results):
     Baseline comparisons use the same repetition/size/direction/assignment/scope.
     ABBA duplicates are reduced inside each repetition before comparing.
     """
-    keys = ['backend_pair', 'timing_scope', 'rank0', 'source', 'payload_bytes']
+    keys = ['backend_pair', 'timing_scope', 'rank0', 'source', 'payload_bytes',
+            'source_gap_us', 'trace']
     metrics = ['min_us', 'median_us', 'p95_us', 'p99_us', 'max_us', 'effective_GBps',
                'linux_process_cpu_pct', 'mac_process_cpu_pct', 'linux_user_seconds',
                'linux_system_seconds', 'mac_user_seconds', 'mac_system_seconds']
     groups = {}
     for row in results:
-        key = tuple(row[k] for k in keys)
+        key = tuple(row.get(k, False if k == 'trace' else 0)
+                    if k in ('source_gap_us', 'trace') else row[k] for k in keys)
         groups.setdefault(key, {}).setdefault(row['busy_poll_us'], []).append(row)
     output = []
     for key, polls in groups.items():
@@ -398,8 +436,9 @@ def dump(path, obj):
 
 class LinkGuard:
     """Read-only live monitoring; post-run snapshots remain the authoritative delta."""
-    def __init__(self, directory, baseline):
+    def __init__(self, directory, baseline, stop_on_any_tb_timeout=False):
         self.baseline = baseline
+        self.stop_on_any_tb_timeout = stop_on_any_tb_timeout
         self.writer = (directory / 'kernel-live.jsonl').open('wb')
         self.reader = (directory / 'kernel-live.jsonl').open('r')
         self.errors = (directory / 'kernel-live.stderr').open('wb')
@@ -425,13 +464,18 @@ class LinkGuard:
             except ValueError:
                 continue
             message = entry.get('MESSAGE', '')
-            if not isinstance(message, str) or not health.ERROR.search(message):
+            if not isinstance(message, str):
                 continue
             bdfs = set(health.re.findall(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]', message))
+            if not health.ERROR.search(message) and not bdfs & self.relevant:
+                continue
             source = 'thunderbolt' if bdfs & self.relevant or 'thunderbolt' in message.lower() else ('other-pci' if bdfs else 'unattributed')
-            self.events.append({'cursor': entry.get('__CURSOR'), 'message': message, 'source': source})
+            self.events.append({'cursor': entry.get('__CURSOR'),
+                                'monotonic_us': entry.get('__MONOTONIC_TIMESTAMP'),
+                                'message': message, 'source': source})
         after = dict(self.baseline, kernel_events=self.events)
-        reasons = health.compare(dict(self.baseline, kernel_events=[]), after)['stop_reasons']
+        reasons = health.compare(dict(self.baseline, kernel_events=[]), after,
+                                 self.stop_on_any_tb_timeout)['stop_reasons']
         if reasons:
             raise RuntimeError('STOP: ' + '; '.join(reasons))
 
@@ -478,8 +522,9 @@ def run(args):
                 healthy(args, pre)
             finally:
                 dump(args.output / 'health-before.json', pre)
-            monitor = LinkGuard(args.output, pre['linux'])
+            monitor = LinkGuard(args.output, pre['linux'], args.stop_on_any_tb_timeout)
         for config in planned:
+            result = None
             directory = args.output / f"run-{config['order']:04d}"
             directory.mkdir()
             meta = {'configuration': config, 'start_utc': health.datetime.datetime.now(health.datetime.timezone.utc).isoformat()}
@@ -504,12 +549,17 @@ def run(args):
                             '--mode', 'end-to-end', '--local-backend', backend,
                             '--source-rank', str(config['source_rank']), '--sizes', str(config['payload_bytes']),
                             '--busy-poll', str(config['busy_poll_us']), '--warmup', str(config['warmup']),
-                            '--iterations', str(config['iterations']), '--timing-scope', config['timing_scope'], '--diagnostics']
+                            '--iterations', str(config['iterations']), '--timing-scope', config['timing_scope'],
+                            '--source-gap-us', str(config['source_gap_us']), '--diagnostics']
+                    if config['trace']:
+                        argv += ['--trace', '--run-id', f"run-{config['order']:04d}",
+                                 '--physical-machine', machine]
                     benchmark_commands.append(argv)
                     commands.append(endpoint_command(args, machine, WORKER, [json.dumps({'argv': argv, 'cwd': cwd, 'timeout': args.timeout})]))
                 meta.update(commands=benchmark_commands, launch_commands=commands, physical_ranks=physical)
                 dump(directory / 'metadata.json', meta)
                 outcome = run_processes(commands, directory, args.timeout, monitor.check if monitor else None)
+                preserve_traces(directory)
                 meta.update(outcome)
                 meta['machines'] = []
                 for rank in range(len(outcome['exit_codes'])):
@@ -527,8 +577,13 @@ def run(args):
                 if not args.loopback:
                     post = capture_health(args)
                     dump(directory / 'health-after.json', post)
-                    deltas = {p: health.compare(pre[p], post[p]) for p in pre}
+                    deltas = {p: health.compare(pre[p], post[p], args.stop_on_any_tb_timeout)
+                              for p in pre}
                     dump(directory / 'health-delta.json', deltas)
+                    if result is not None:
+                        result['linux_busy_poll_rx_packets_delta'] = (
+                            deltas.get('linux', {}).get('network_stat_deltas', {})
+                            .get('TcpExtBusyPollRxPackets'))
                     stop = [reason for delta in deltas.values() for reason in delta['stop_reasons']]
                     pre = post
                     if stop:

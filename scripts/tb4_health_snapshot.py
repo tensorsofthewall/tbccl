@@ -11,6 +11,7 @@ import subprocess
 
 PCI = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 ERROR = re.compile(r"AER|PCIe.*error|thunderbolt|controller.*recover", re.I)
+TB_TIMEOUT = re.compile(r"\[12\]\s+Timeout|correctable.*timeout|timeout.*correctable", re.I)
 
 
 def read(path):
@@ -28,6 +29,25 @@ def command(argv):
         return {"command": argv, "returncode": p.returncode, "stdout": p.stdout, "stderr": p.stderr}
     except (OSError, subprocess.TimeoutExpired) as error:
         return {"command": argv, "returncode": None, "stdout": "", "stderr": str(error)}
+
+
+def parse_nstat(text):
+    result = {}
+    for line in text.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1].isdigit():
+            result[fields[0]] = int(fields[1])
+    return result
+
+
+def aer_counts(text):
+    """Parse named sysfs AER counters without conflating error classes."""
+    result = {}
+    for line in (text or '').splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[1].isdigit():
+            result[fields[0]] = int(fields[1])
+    return result
 
 
 def pci_devices(sysroot):
@@ -91,8 +111,11 @@ def linux_snapshot(interface='thunderbolt0', sysroot='/sys', procroot='/proc'):
         'links': ['ip', '-br', 'link'], 'addresses': ['ip', '-br', 'addr'],
         'interface': ['ip', '-s', 'link', 'show', interface],
         'addresses_json': ['ip', '-j', 'addr', 'show', 'dev', interface],
+        'network_stats': ['nstat', '-az'],
         'kernel': ['journalctl', '-k', '-b', '--no-pager', '-o', 'json'],
     }.items()}
+    snapshot['network_stats'] = parse_nstat(
+        snapshot['commands']['network_stats']['stdout'])
     kernel = snapshot['commands']['kernel']
     snapshot['kernel_log_available'] = kernel['returncode'] == 0 and bool(kernel['stdout'].strip())
     events = []
@@ -156,10 +179,10 @@ def snapshot():
     return result
 
 
-def compare(before, after):
+def compare(before, after, stop_on_any_tb_timeout=False):
     result = {"same_boot": bool(before.get('boot_id')) and before.get('boot_id') == after.get('boot_id'),
               "stop_reasons": [], "new_kernel_events": [], "counter_deltas": {}, "power_changes": [],
-              "aer_counter_deltas": {}}
+              "aer_counter_deltas": {}, "new_tb_timeout": False}
     if not after.get('interface', {}).get('present'):
         result['stop_reasons'].append('TB4 interface missing')
     if not result['same_boot']:
@@ -168,6 +191,9 @@ def compare(before, after):
     old = {e['cursor'] for e in before.get('kernel_events', []) if e.get('cursor')}
     new = [e for e in after.get('kernel_events', []) if e.get('cursor') not in old]
     result['new_kernel_events'] = new
+    result['new_tb_timeout'] = any(
+        e.get('source') == 'thunderbolt' and TB_TIMEOUT.search(e.get('message', ''))
+        for e in new)
     if after.get('system') == 'Linux' and not after.get('kernel_log_available'):
         result['stop_reasons'].append('kernel log unavailable')
     tb_errors = [e for e in new if e['source'] == 'thunderbolt' and re.search(r'error|failed|failure', e['message'], re.I)]
@@ -186,6 +212,10 @@ def compare(before, after):
             result['counter_deltas'][name] = delta
             if delta < 0:
                 result['stop_reasons'].append('interface counters reset; establish a new baseline')
+    for name, value in after.get('network_stats', {}).items():
+        previous = before.get('network_stats', {}).get(name)
+        if previous is not None:
+            result.setdefault('network_stat_deltas', {})[name] = value - previous
     prior = {d['bdf']: d for d in before.get('pci_devices', [])}
     current = {d['bdf']: d for d in after.get('pci_devices', [])}
     if set(prior) != set(current):
@@ -212,8 +242,16 @@ def compare(before, after):
                         result['stop_reasons'].append('fatal/uncorrectable Thunderbolt AER counter increased')
                     if delta >= 10 and field == 'aer_dev_correctable':
                         result['stop_reasons'].append('rapid Thunderbolt correctable AER counter growth')
+                if field == 'aer_dev_correctable':
+                    old_timeout = aer_counts(p.get('aer', {}).get(field)).get('Timeout')
+                    new_timeout = aer_counts(d.get('aer', {}).get(field)).get('Timeout')
+                    if (old_timeout is not None and new_timeout is not None and
+                            new_timeout > old_timeout):
+                        result['new_tb_timeout'] = True
         if p and p['power'] != d['power']:
             result['power_changes'].append({'bdf': bdf, 'before': p['power'], 'after': d['power']})
+    if stop_on_any_tb_timeout and result['new_tb_timeout']:
+        result['stop_reasons'].append('new Thunderbolt bridge AER Timeout')
     return result
 
 
