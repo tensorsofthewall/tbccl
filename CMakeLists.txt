@@ -1092,7 +1092,9 @@ if(BUILD_TESTING)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_trace_analysis_test.py)
         add_test(NAME tb4_receive_trace_test
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_receive_trace_test.py)
-        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test
+        add_test(NAME tb4_runtime_state_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_runtime_state_test.py)
+        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test tb4_runtime_state_test
             PROPERTIES TIMEOUT 90)
     endif()
 
