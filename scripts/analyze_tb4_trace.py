@@ -636,6 +636,198 @@ def summarize_by_position(sweep_output):
     return rows
 
 
+# Decompose the Mac sender boundary preceding a slow Linux iteration, and
+# classify which sub-interval expands. Observed in captured
+# data that two genuinely distinct mechanisms exist among slow events:
+# (1) the completion-ack packet is visible on Mac's own bridge0 capture
+# promptly, but Mac's TCP-level ack / application ack_received lags far
+# behind it (implicates Mac-local processing); (2) nothing at all is
+# observed on Mac's bridge0 until near the very end of the wait
+# (implicates something upstream of Mac's local capture point -- Linux's
+# own emission or network/TB4 transit). Distinguishing these does not
+# require cross-host timestamps: both are computed purely from Mac's own
+# local capture and Mac's own application trace, in Mac's own clock.
+
+def mac_realtime_offset(mac_app_trace):
+    return mac_app_trace['clock_sample_realtime_ns'] - mac_app_trace['clock_sample_monotonic_ns']
+
+
+def first_application_ack_packet(mac_packets, window_start_s, window_end_s):
+    """First length==1 (application completion ACK) packet observed on
+    Mac's own capture within [window_start_s, window_end_s] realtime."""
+    candidates = [
+        p for p in mac_packets
+        if classify_packet(p, payload_min_length=1000) == 'application_ack'
+        and window_start_s <= p['ts'] <= window_end_s
+    ]
+    return min(candidates, key=lambda p: p['ts']) if candidates else None
+
+
+def classify_mac_sender_boundary(
+        linux_iteration_index, mac_entries_by_index, mac_packets, offset_ns,
+        gap_threshold_us=200):
+    """mac_entries_by_index: {iteration_index: entry} from the Mac's own
+    application trace. Returns None if the previous/current Mac entries
+    are unavailable (e.g. the very first measured iteration has no N-1).
+    """
+    previous = mac_entries_by_index.get(linux_iteration_index - 1)
+    current = mac_entries_by_index.get(linux_iteration_index)
+    if previous is None or current is None:
+        return {
+            'iteration_index': linux_iteration_index,
+            'classification': 'insufficient evidence',
+            'trace_quality': 'missing adjacent Mac trace entries',
+        }
+
+    ack_wait_us = (previous['ack_received_ns'] - previous['ack_wait_begin_ns']) / 1000.0
+    app_ack_to_next_iter_us = (current['iteration_begin_ns'] - previous['iteration_end_ns']) / 1000.0
+    iter_to_ready_us = (current['source_ready_ns'] - current['iteration_begin_ns']) / 1000.0
+    ready_to_send_us = (current['send_begin_ns'] - current['source_ready_ns']) / 1000.0
+    send_us = (current['send_end_ns'] - current['send_begin_ns']) / 1000.0
+
+    row = {
+        'iteration_index': linux_iteration_index,
+        'mac_ack_wait_us': ack_wait_us,
+        'mac_app_ack_to_next_iter_us': app_ack_to_next_iter_us,
+        'mac_iter_to_ready_us': iter_to_ready_us,
+        'mac_ready_to_send_us': ready_to_send_us,
+        'mac_send_us': send_us,
+        'mac_ack_packet_to_app_us': None,
+        'mac_send_to_packet_us': None,
+        'classification': 'insufficient evidence',
+        'trace_quality': 'application-only',
+    }
+
+    if mac_packets is None:
+        return row
+
+    row['trace_quality'] = 'application + packet'
+
+    # send_end -> this same iteration's own payload becoming visible on
+    # Mac's own capture.
+    # send() is synchronous, so the payload is often already (mostly or
+    # fully) visible on the wire microseconds BEFORE send_end is
+    # timestamped, not strictly after -- confirmed empirically in
+    # captured data (a payload's trailing segment observed ~1us
+    # before its iteration's app-level send_end). Searching only for
+    # packets with ts >= send_end therefore skips the current iteration's
+    # own (already-sent) payload and incorrectly finds the NEXT
+    # iteration's payload instead, which measures a completely different,
+    # much larger interval. Search a window that starts at send_begin
+    # (payload can start streaming while send() is still in progress)
+    # and take the payload packet closest to send_end, whichever side.
+    send_begin_s = current['send_begin_ns'] / 1e9 + offset_ns / 1e9
+    send_end_s = current['send_end_ns'] / 1e9 + offset_ns / 1e9
+    payload_candidates = [
+        p for p in mac_packets
+        if classify_packet(p, payload_min_length=1000) == 'tensor_payload'
+        and send_begin_s - 0.001 <= p['ts'] <= send_end_s + 0.003
+    ]
+    if payload_candidates:
+        payload_packet = min(payload_candidates, key=lambda p: abs(p['ts'] - send_end_s))
+        # Only report as a positive (post-send) delay; a packet observed
+        # at/before send_end means emission was already prompt.
+        row['mac_send_to_packet_us'] = max(0.0, (payload_packet['ts'] - send_end_s) * 1e6)
+
+    window_start_s = previous['ack_wait_begin_ns'] / 1e9 + offset_ns / 1e9
+    window_end_s = previous['ack_received_ns'] / 1e9 + offset_ns / 1e9
+    ack_packet = first_application_ack_packet(mac_packets, window_start_s, window_end_s)
+
+    if ack_packet is not None:
+        # mac_ack_packet_to_app_us = time from the packet's arrival on
+        # Mac's own capture to Mac's app-level ack_received. LARGE means
+        # the packet was visible early but Mac was slow to process it
+        # (Mac-local delay). SMALL means the packet only became visible
+        # shortly before ack_received -- most of the wait elapsed BEFORE
+        # the packet was even observable (delay upstream of Mac's
+        # capture point: Linux's own emission or network/TB4 transit).
+        mac_ack_packet_to_app_us = (window_end_s - ack_packet['ts']) * 1e6
+        row['mac_ack_packet_to_app_us'] = mac_ack_packet_to_app_us
+
+        if ack_wait_us < gap_threshold_us:
+            # The wait itself wasn't elevated -- look at the other
+            # sender-boundary sub-intervals instead.
+            if ready_to_send_us >= gap_threshold_us and iter_to_ready_us < gap_threshold_us:
+                row['classification'] = 'delayed send invocation'
+            elif iter_to_ready_us >= gap_threshold_us:
+                row['classification'] = 'delayed source preparation'
+            elif send_us >= gap_threshold_us:
+                row['classification'] = 'blocking send syscall'
+            elif app_ack_to_next_iter_us >= gap_threshold_us:
+                row['classification'] = 'delayed iteration start'
+            elif row['mac_send_to_packet_us'] is not None and row['mac_send_to_packet_us'] >= gap_threshold_us:
+                row['classification'] = 'delayed local packet emission after send'
+            elif row['mac_send_to_packet_us'] is not None and row['mac_send_to_packet_us'] < gap_threshold_us:
+                # Every Mac-local interval (ack_wait through post-send
+                # emission) was normal -- by elimination, the delay lies
+                # after Mac's own local packet observation (
+                # classification H): network/TB4 transit, or Linux-side
+                # processing before Linux's own capture point.
+                row['classification'] = 'delay after Mac local packet observation'
+            else:
+                row['classification'] = 'mixed/ambiguous'
+        elif mac_ack_packet_to_app_us >= ack_wait_us * 0.5:
+            row['classification'] = 'delayed Mac application ACK reception'
+        else:
+            row['classification'] = 'late completion ACK arrival at Mac'
+    else:
+        # No application-ack packet observed anywhere in the wait window
+        # at all -- the delay is upstream of Mac's own local capture
+        # point (Linux's own emission timing, or network/TB4 transit).
+        row['classification'] = 'late completion ACK arrival at Mac'
+
+    return row
+
+
+def sender_boundary_report(
+        linux_app_trace, mac_app_trace, mac_packets, slow_threshold_us=1000):
+    """Full per-slow-event table plus a same-run normal
+    baseline (excluding candidate tails, >=800us, from the baseline itself
+)."""
+    linux_entries_by_index = {e['iteration_index']: e for e in linux_app_trace['entries']}
+    mac_entries_by_index = {e['iteration_index']: e for e in mac_app_trace['entries']}
+    offset_ns = mac_realtime_offset(mac_app_trace)
+
+    slow_rows = []
+    normal_ack_wait, normal_send_to_packet = [], []
+    for index, entry in linux_entries_by_index.items():
+        if entry.get('recv_begin_ns') is None or entry.get('recv_end_ns') is None:
+            continue
+        recv_us = (entry['recv_end_ns'] - entry['recv_begin_ns']) / 1000.0
+        if recv_us >= slow_threshold_us:
+            row = classify_mac_sender_boundary(
+                index, mac_entries_by_index, mac_packets, offset_ns)
+            row['linux_recv_us'] = recv_us
+            slow_rows.append(row)
+        elif recv_us < 800:
+            # Same-run normal baseline, excluding candidate
+            # tails.
+            row = classify_mac_sender_boundary(
+                index, mac_entries_by_index, mac_packets, offset_ns)
+            if row.get('mac_ack_wait_us') is not None:
+                normal_ack_wait.append(row['mac_ack_wait_us'])
+            if row.get('mac_send_to_packet_us') is not None:
+                normal_send_to_packet.append(row['mac_send_to_packet_us'])
+
+    def stats(values):
+        if not values:
+            return {'median_us': None, 'p95_us': None, 'max_us': None}
+        return {'median_us': statistics.median(values), 'p95_us': percentile(values, .95),
+                'max_us': max(values)}
+
+    from collections import Counter
+    classification_counts = dict(Counter(row['classification'] for row in slow_rows))
+
+    return {
+        'slow_events': slow_rows,
+        'classification_counts': classification_counts,
+        'same_run_normal_baseline': {
+            'mac_ack_wait_us': stats(normal_ack_wait),
+            'mac_send_to_packet_us': stats(normal_send_to_packet),
+        },
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -653,9 +845,17 @@ def main():
                        help='condition-level and '
                             'position-in-burst summary of a '
                             'run_tb4_tail_trigger_sweep.py output JSON file')
+    group.add_argument('--sender-boundary', action='store_true',
+                       help='Mac sender-boundary '
+                            'decomposition and classification of slow '
+                            'Linux iterations, from --application-trace '
+                            '(Linux), --mac-application-trace, --mac-pcap')
     parser.add_argument('--application-trace', type=Path,
                         help='a rank stderr file containing a TBCCL_DIAGNOSTIC '
-                             'transfer_trace line (--correlate mode)')
+                             'transfer_trace line (--correlate/--sender-boundary mode)')
+    parser.add_argument('--mac-application-trace', type=Path,
+                        help='--sender-boundary mode: the Mac source rank\'s '
+                             'stderr file')
     parser.add_argument('--sched-trace-json', type=Path,
                         help='output of capture_tb4_scheduler_trace.py (--correlate mode)')
     parser.add_argument('--packet-pcap', type=Path,
@@ -708,6 +908,15 @@ def main():
             'by_condition': summarize_by_condition(sweep_output),
             'by_position': summarize_by_position(sweep_output),
         }
+    elif args.sender_boundary:
+        if not args.application_trace or not args.mac_application_trace:
+            parser.error('--sender-boundary requires --application-trace '
+                          '(Linux) and --mac-application-trace')
+        linux_trace = parse_diagnostic_file(args.application_trace)
+        mac_trace = parse_diagnostic_file(args.mac_application_trace)
+        mac_packets = run_tcpdump(args.mac_pcap) if args.mac_pcap else None
+        result = sender_boundary_report(
+            linux_trace, mac_trace, mac_packets, args.slow_threshold_us)
     else:
         result = analyze_run(args.run_dir) if args.run_dir else {
             'incidents': historical_incidents(args.historical_root)}

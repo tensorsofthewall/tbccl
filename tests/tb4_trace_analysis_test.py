@@ -367,4 +367,162 @@ class TriggerSweepRunnerTests(unittest.TestCase):
         self.assertTrue(max(first_occurrence_positions)<min(second_occurrence_positions))
 
 
+def mac_entry(index,ack_wait_begin,ack_received,iteration_begin,source_ready,
+              send_begin,send_end):
+    return dict(iteration_index=index,ack_wait_begin_ns=ack_wait_begin,
+                ack_received_ns=ack_received,iteration_end_ns=ack_received,
+                iteration_begin_ns=iteration_begin,source_ready_ns=source_ready,
+                send_begin_ns=send_begin,send_end_ns=send_end)
+
+
+def mac_packet(ts,application_ack=False,tensor_payload=False):
+    length = 1 if application_ack else (2900 if tensor_payload else 0)
+    return dict(ts=ts,src='a',dst='b',flags='.',length=length)
+
+
+# All synthetic timestamps use whole seconds for iteration_index*10 + ns
+# offsets, with offset_ns=0 (mono realtime == mac's own monotonic here),
+# to keep the arithmetic easy to read.
+BASE_S = 1000.0
+
+
+class SenderBoundaryTests(unittest.TestCase):
+    def entries_for(self,ack_wait_begin_s,ack_received_s,iter_begin_s,
+                     source_ready_s,send_begin_s,send_end_s):
+        # index 9 is "previous" (N-1), index 10 is "current" (N) -- the
+        # slow Linux iteration under test is always index 10.
+        previous=mac_entry(9,int(ack_wait_begin_s*1e9),int(ack_received_s*1e9),
+                            0,0,0,0)
+        current=mac_entry(10,0,0,int(iter_begin_s*1e9),int(source_ready_s*1e9),
+                           int(send_begin_s*1e9),int(send_end_s*1e9))
+        return {9:previous,10:current}
+
+    def test_delayed_mac_application_ack_reception(self):
+        # ack_wait elevated (1.2ms); the ack packet WAS visible on Mac's
+        # capture near the start of the wait (1.0ms before ack_received)
+        # -- Mac itself was slow to process an already-arrived packet.
+        entries=self.entries_for(BASE_S,BASE_S+0.0012,BASE_S+0.0012,
+                                  BASE_S+0.00121,BASE_S+0.00121,BASE_S+0.00122)
+        packets=[mac_packet(BASE_S+0.0001,application_ack=True),
+                 mac_packet(BASE_S+0.00122,tensor_payload=True)]
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'delayed Mac application ACK reception')
+
+    def test_late_completion_ack_arrival_no_packet_in_window(self):
+        # ack_wait elevated; no application-ack packet observed anywhere
+        # in the wait window at all.
+        entries=self.entries_for(BASE_S,BASE_S+0.0012,BASE_S+0.0012,
+                                  BASE_S+0.00121,BASE_S+0.00121,BASE_S+0.00122)
+        packets=[mac_packet(BASE_S+0.00122,tensor_payload=True)]
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'late completion ACK arrival at Mac')
+
+    def test_late_completion_ack_arrival_packet_near_window_end(self):
+        # ack_wait elevated; the ack packet only becomes visible right
+        # before ack_received -- most of the wait elapsed BEFORE it was
+        # even observable.
+        entries=self.entries_for(BASE_S,BASE_S+0.0012,BASE_S+0.0012,
+                                  BASE_S+0.00121,BASE_S+0.00121,BASE_S+0.00122)
+        packets=[mac_packet(BASE_S+0.00119,application_ack=True),
+                 mac_packet(BASE_S+0.00122,tensor_payload=True)]
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'late completion ACK arrival at Mac')
+
+    def test_delayed_source_preparation(self):
+        # ack_wait normal; iteration_begin -> source_ready elevated.
+        entries=self.entries_for(BASE_S,BASE_S+0.00015,BASE_S+0.00015,
+                                  BASE_S+0.0015,BASE_S+0.0015,BASE_S+0.00151)
+        packets=[mac_packet(BASE_S+0.0001,application_ack=True),
+                 mac_packet(BASE_S+0.00151,tensor_payload=True)]
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'delayed source preparation')
+
+    def test_delayed_send_invocation(self):
+        # ack_wait/iter_to_ready normal; source_ready -> send_begin elevated.
+        entries=self.entries_for(BASE_S,BASE_S+0.00015,BASE_S+0.00015,
+                                  BASE_S+0.00016,BASE_S+0.0016,BASE_S+0.00161)
+        packets=[mac_packet(BASE_S+0.0001,application_ack=True),
+                 mac_packet(BASE_S+0.00161,tensor_payload=True)]
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'delayed send invocation')
+
+    def test_blocking_send_syscall(self):
+        # everything normal until send_begin -> send_end.
+        entries=self.entries_for(BASE_S,BASE_S+0.00015,BASE_S+0.00015,
+                                  BASE_S+0.00016,BASE_S+0.00017,BASE_S+0.0017)
+        packets=[mac_packet(BASE_S+0.0001,application_ack=True),
+                 mac_packet(BASE_S+0.0017,tensor_payload=True)]
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'blocking send syscall')
+
+    def test_delay_after_mac_local_packet_observation(self):
+        # Every Mac-local interval normal, including a prompt post-send
+        # emission -- by elimination (this function is only ever called
+        # for a Linux iteration already known to be slow), the delay is
+        # upstream of Mac's own local capture point.
+        entries=self.entries_for(BASE_S,BASE_S+0.00015,BASE_S+0.00015,
+                                  BASE_S+0.00016,BASE_S+0.00017,BASE_S+0.00019)
+        packets=[mac_packet(BASE_S+0.0001,application_ack=True),
+                 mac_packet(BASE_S+0.00019,tensor_payload=True)]  # at send_end
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['classification'],'delay after Mac local packet observation')
+
+    def test_send_to_packet_matches_own_payload_not_next_iteration(self):
+        # Regression test for an earlier bug: the payload
+        # segment for the CURRENT iteration can appear on the capture
+        # microseconds BEFORE send_end is timestamped (send() is
+        # synchronous). Searching only for packets strictly after
+        # send_end would skip past it and incorrectly match against the
+        # NEXT iteration's payload instead, hugely inflating the measured
+        # interval.
+        send_end_s=BASE_S+0.00019
+        entries=self.entries_for(BASE_S,BASE_S+0.00015,BASE_S+0.00015,
+                                  BASE_S+0.00016,BASE_S+0.00017,send_end_s)
+        packets=[mac_packet(BASE_S+0.0001,application_ack=True),
+                 mac_packet(send_end_s-0.000001,tensor_payload=True),  # this iteration's own payload, just before send_end
+                 mac_packet(send_end_s+0.0012,tensor_payload=True)]    # NEXT iteration's payload, much later
+        row=analysis.classify_mac_sender_boundary(10,entries,packets,offset_ns=0)
+        self.assertEqual(row['mac_send_to_packet_us'],0.0)
+        self.assertEqual(row['classification'],'delay after Mac local packet observation')
+
+    def test_insufficient_evidence_missing_adjacent_entries(self):
+        row=analysis.classify_mac_sender_boundary(10,{},[],offset_ns=0)
+        self.assertEqual(row['classification'],'insufficient evidence')
+
+    def test_insufficient_evidence_without_packets(self):
+        entries=self.entries_for(BASE_S,BASE_S+0.0012,BASE_S+0.0012,
+                                  BASE_S+0.00121,BASE_S+0.00121,BASE_S+0.00122)
+        row=analysis.classify_mac_sender_boundary(10,entries,None,offset_ns=0)
+        self.assertEqual(row['classification'],'insufficient evidence')
+        self.assertEqual(row['trace_quality'],'application-only')
+
+    def test_sender_boundary_report_counts_and_excludes_tails_from_baseline(self):
+        # One slow (>=1000us) iteration and one normal (<800us) iteration;
+        # the slow one's own ack_wait must not pollute the normal baseline.
+        linux_trace=dict(entries=[
+            dict(iteration_index=9,recv_begin_ns=0,recv_end_ns=200_000),   # 200us, normal
+            dict(iteration_index=10,recv_begin_ns=0,recv_end_ns=1_200_000),# 1200us, slow
+        ])
+        mac_trace=dict(
+            clock_sample_monotonic_ns=0,clock_sample_realtime_ns=int(BASE_S*1e9),
+            entries=[
+                mac_entry(8,int((BASE_S-0.001)*1e9),int((BASE_S-0.0008)*1e9),
+                          0,0,0,0),
+                mac_entry(9,int((BASE_S-0.0008)*1e9),int((BASE_S-0.00065)*1e9),
+                          int((BASE_S-0.00065)*1e9),int((BASE_S-0.00064)*1e9),
+                          int((BASE_S-0.00063)*1e9),int((BASE_S-0.00061)*1e9)),
+                mac_entry(10,int((BASE_S-0.00061)*1e9),int(BASE_S*1e9),
+                          int(BASE_S*1e9),int((BASE_S+0.00001)*1e9),
+                          int((BASE_S+0.00002)*1e9),int((BASE_S+0.00003)*1e9)),
+            ])
+        packets=[mac_packet(BASE_S-0.0007,application_ack=True),
+                 mac_packet(BASE_S-0.00061,tensor_payload=True),
+                 mac_packet(BASE_S-0.0001,application_ack=True),
+                 mac_packet(BASE_S+0.00003,tensor_payload=True)]
+        report=analysis.sender_boundary_report(linux_trace,mac_trace,packets)
+        self.assertEqual(len(report['slow_events']),1)
+        self.assertEqual(report['slow_events'][0]['iteration_index'],10)
+        self.assertIn(sum(report['classification_counts'].values()),(1,))
+
+
 if __name__=='__main__': unittest.main()
