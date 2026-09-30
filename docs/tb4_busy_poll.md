@@ -37,10 +37,21 @@ observe exactly one matching value rejects a Linux sweep result. macOS records
 `unsupported`, an empty socket list and an unavailable effective value.
 
 The observed socket value is **configuration, not proof of active driver
-polling**. Linux documents that busy polling depends on the receiving device's
-support; this phase does not instrument NAPI to prove that execution path.
+polling**. Phase 21 additionally samples Linux's system-wide
+`TcpExtBusyPollRxPackets` before and after each run. It stayed unchanged in the
+poll-0 controls and increased in matching positive-poll runs, providing kernel
+counter evidence that busy-poll receive work occurred. The counter is not
+socket-attributed and does not expose time spent in NAPI, so it remains separate
+from requested/effective socket configuration and latency.
 See [socket(7)](https://man7.org/linux/man-pages/man7/socket.7.html) and
 [Linux NAPI documentation](https://docs.kernel.org/networking/napi.html).
+
+Phase 21 also showed that the 64 KiB result depends on arrival cadence. With
+Mac→Linux host transfers, poll 200 improved the zero-gap median from 226.6 to
+192.1 µs in traced controls, but the benefit disappeared with requested gaps of
+100–500 µs. CUDA→Metal retained a poll-200 median benefit at gaps 0 and 500 µs;
+Metal→CUDA did not. Treat a busy-poll setting as workload-specific. The default
+remains zero.
 
 ## Instrumentation and timing
 
@@ -154,6 +165,10 @@ Correctable growth of at least ten error-bearing journal records in a run or
 monitored sweep is a conservative stop threshold (one incident can produce
 several records). A same-boot increase of ten in a device correctable AER
 counter also stops; any increase in its fatal/nonfatal counters stops.
+For Phase 21, `--stop-on-any-tb-timeout` applies a stricter group rule: one new
+Timeout continuation record or one same-boot increase in the named sysfs
+`Timeout` counter stops the group. Other correctable classes are not mislabeled
+as Timeout.
 Snapshots retain controller-specific continuation records such as `[12] Timeout`
 and raw per-device AER counters where available. macOS `netstat` link-layer
 error/drop counters are also recorded; address-specific duplicate rows are ignored. The tool never writes PCI power
