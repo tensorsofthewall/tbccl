@@ -828,6 +828,276 @@ def sender_boundary_report(
     }
 
 
+# Phase 26 Part F/H/P: Linux receive-path decomposition (irq -> softirq ->
+# napi/skb-receive -> socket-wakeup), from capture_tb4_scheduler_trace.py's
+# --include-receive-events trace_text. trace_clock=mono means these
+# timestamps are already in the same seconds-since-boot CLOCK_MONOTONIC
+# domain as the application trace's nanosecond timestamps (divided by 1e9)
+# -- no calibration needed, same as the existing sched_cycles_for_pid path.
+#
+# This kernel exposes irq_handler_entry, softirq_entry (vec=3 == NET_RX),
+# napi_poll, napi_gro_receive_entry, netif_receive_skb_entry, and
+# sk_data_ready (confirmed via a live smoke test against real thunderbolt0
+# traffic -- Part F item 19-20; see docs/phase26_report.md for the full
+# available_events table). It does NOT expose a separate NAPI poll *entry*
+# tracepoint (only one combined post-poll napi_poll event), so "NAPI
+# processing" and "capture/skb-receive visibility" cannot be independently
+# timed on this kernel -- napi_gro_receive_entry (GRO is active per `ethtool
+# -k thunderbolt0`, so netif_receive_skb_entry does not fire for this
+# device) is used as the single proxy for both, and this collapsing is
+# documented rather than silently implied (Part P item 62: never infer a
+# stage that was not traced).
+FTRACE_RECEIVE_LINE = re.compile(
+    r'(?P<ts>\d+\.\d+):\s*(?P<event>irq_handler_entry|softirq_entry|napi_poll|'
+    r'napi_gro_receive_entry|netif_receive_skb_entry|sk_data_ready):\s*(?P<rest>.*)')
+
+
+def parse_receive_path_trace(trace_text, device='thunderbolt0'):
+    """Flat, time-sorted list of receive-path kernel events relevant to
+    `device`, extracted from raw ftrace trace text. These tracepoints are
+    system-wide (no per-PID filter applies to them, Part G item 26) --
+    filtering by name=thunderbolt / dev=<device> narrows to the interface
+    of interest for irq_handler_entry/napi_gro_receive_entry/napi_poll.
+    sk_data_ready carries no per-device field at all; it is included
+    unfiltered here and attributed to a specific iteration only by the
+    caller's time-window correlation (receive_path_events_in_window), never
+    claimed to belong uniquely to TBCCL without that correlation."""
+    events = []
+    for line in (trace_text or '').splitlines():
+        if not line or line.startswith('#'):
+            continue
+        match = FTRACE_RECEIVE_LINE.search(line)
+        if not match:
+            continue
+        ts = float(match.group('ts'))
+        event = match.group('event')
+        rest = match.group('rest')
+        if event == 'irq_handler_entry' and 'name=thunderbolt' not in rest:
+            continue
+        if event == 'softirq_entry' and 'action=NET_RX' not in rest:
+            continue
+        if event == 'napi_poll' and f'device {device}' not in rest:
+            continue
+        if event in ('napi_gro_receive_entry', 'netif_receive_skb_entry') \
+                and f'dev={device}' not in rest:
+            continue
+        if event == 'sk_data_ready' and 'family=2' not in rest:
+            continue
+        events.append({'ts': ts, 'event': event, 'raw': line.strip()})
+    events.sort(key=lambda e: e['ts'])
+    return events
+
+
+def receive_path_events_in_window(events, window_start_s, window_end_s, margin_s=0.0005):
+    """LAST occurrence of each event kind within [window_start_s - margin_s,
+    window_end_s + margin_s] -- i.e. the receive-path cycle closest to
+    when the window actually ended (closest to the recv() call's actual
+    return). Deliberately not the first occurrence: this device's
+    irq_handler_entry/softirq/napi/wakeup events fire in a continuous
+    background cadence roughly every 60-90us regardless of real TCP
+    traffic (Phase 26 finding -- this is the thunderbolt-net driver's own
+    RX ring polling substrate), so "first in window" would pick up an
+    unrelated earlier cycle rather than the one that actually gated this
+    iteration's data delivery. The margin allows a little slack since the
+    window boundary (from the application trace) and these kernel-event
+    timestamps come from different measurement points not expected to
+    align to the microsecond. In practice this fallback path is rarely
+    reached: every slow event in this phase's live capture was resolved
+    by the irq-gap check in classify_receive_path_event before reaching
+    here (see receive_path_report)."""
+    lo = window_start_s - margin_s
+    hi = window_end_s + margin_s
+    by_kind = {}
+    for event in events:
+        if lo <= event['ts'] <= hi:
+            by_kind[event['event']] = event['ts']
+    return by_kind
+
+
+def irq_cadence_gaps(events, event_kind='irq_handler_entry'):
+    """Consecutive-timestamp gaps (seconds, sorted) for one event kind --
+    the basis for irq_silence_overlap(). Discovered in Phase 26 live
+    capture: this driver's irq_handler_entry (and the softirq/napi/skb
+    events that follow each one within a few microseconds) fires in a
+    tight, continuous ~60-90us cadence throughout the run, REGARDLESS of
+    whether a given cycle carries real TBCCL TCP payload -- i.e. this is
+    the thunderbolt-net driver's own RX ring polling substrate, not a
+    per-TCP-segment signal. A slow iteration's window reliably overlaps a
+    single anomalous ~1ms gap in this cadence (9/9 events, this phase's
+    live run) -- a far stronger and more direct signal than checking
+    "first event after window_start" (which always finds a normal-cadence
+    event just before window_start regardless of what happens later
+    inside the window, since the cadence is continuous)."""
+    ts = sorted(e['ts'] for e in events if e['event'] == event_kind)
+    return [(ts[i], ts[i + 1], (ts[i + 1] - ts[i]) * 1e6) for i in range(len(ts) - 1)]
+
+
+def irq_cadence_baseline(gaps, anomaly_threshold_us=500):
+    """Same-run normal irq-to-irq cadence stats (Part Q), excluding gaps
+    already >= anomaly_threshold_us so a real silence event doesn't
+    inflate its own baseline."""
+    normal = [g[2] for g in gaps if g[2] < anomaly_threshold_us]
+    if not normal:
+        return {'median_us': None, 'p95_us': None, 'max_us': None, 'n': 0}
+    return {'median_us': statistics.median(normal), 'p95_us': percentile(normal, .95),
+            'max_us': max(normal), 'n': len(normal)}
+
+
+def irq_silence_overlap(window_start_s, window_end_s, gaps, anomaly_threshold_us=500):
+    """The largest cadence gap (if any) that overlaps [window_start_s,
+    window_end_s], among gaps >= anomaly_threshold_us. Returns None if no
+    anomalous gap overlaps the window (i.e. the irq cadence continued
+    normally throughout)."""
+    overlapping = [g for g in gaps
+                   if g[2] >= anomaly_threshold_us and g[0] <= window_end_s and g[1] >= window_start_s]
+    if not overlapping:
+        return None
+    return max(overlapping, key=lambda g: g[2])
+
+
+def classify_receive_path_event(
+        window_start_s, window_end_s, receive_events, irq_gaps=None,
+        baseline=None, prompt_threshold_us=150, irq_anomaly_threshold_us=500):
+    """Part R items 66-72's decision tree for one slow iteration.
+
+    Primary signal (Part R item 66, Part H classification A): does an
+    anomalous gap in the continuous irq_handler_entry cadence overlap this
+    iteration's window? If so, the delay is upstream of all traced
+    receiver network processing -- softirq/NAPI/socket-wakeup are never
+    even reached during the gap, so checking their timing is moot. Only
+    when no such gap overlaps the window does the finer irq->softirq->
+    skb->wakeup decomposition (Part R items 67-71) apply, using the FIRST
+    receive-path event cycle actually inside the window (not "nearest to
+    window_start", since the cadence is continuous and unrelated cycles
+    would otherwise be picked up -- see irq_cadence_gaps' docstring).
+
+    window_start_s/window_end_s must be in the same clock domain as
+    receive_events and irq_gaps (this receiving host's own mono/
+    CLOCK_MONOTONIC timeline)."""
+    detail = {'irq_gap_us': None, 'irq_us': None, 'softirq_us': None,
+              'skb_us': None, 'wakeup_us': None}
+
+    if irq_gaps is not None:
+        overlap = irq_silence_overlap(window_start_s, window_end_s, irq_gaps,
+                                       irq_anomaly_threshold_us)
+        if overlap is not None:
+            detail['irq_gap_us'] = overlap[2]
+            return 'delayed before receiver kernel-observable ingress', detail
+
+    irq_ts = receive_events.get('irq_handler_entry')
+    softirq_ts = receive_events.get('softirq_entry')
+    skb_ts = (receive_events.get('napi_gro_receive_entry')
+              or receive_events.get('netif_receive_skb_entry'))
+    wakeup_ts = receive_events.get('sk_data_ready')
+
+    def prompt(value_us, key):
+        if baseline and baseline.get(key, {}).get('p95_us') is not None:
+            return value_us <= max(baseline[key]['p95_us'] * 2, prompt_threshold_us)
+        return value_us <= prompt_threshold_us
+
+    if irq_ts is None:
+        return 'delayed before receiver kernel-observable ingress', detail
+    detail['irq_us'] = (irq_ts - window_start_s) * 1e6
+
+    if softirq_ts is None:
+        return 'insufficient evidence', detail
+    detail['softirq_us'] = (softirq_ts - irq_ts) * 1e6
+    if not prompt(detail['softirq_us'], 'softirq_us'):
+        return 'delayed softirq scheduling', detail
+
+    if skb_ts is None:
+        return 'insufficient evidence', detail
+    detail['skb_us'] = (skb_ts - softirq_ts) * 1e6
+    if not prompt(detail['skb_us'], 'skb_us'):
+        return 'prolonged NAPI processing', detail
+
+    if wakeup_ts is None:
+        return 'insufficient evidence', detail
+    detail['wakeup_us'] = (wakeup_ts - skb_ts) * 1e6
+    if not prompt(detail['wakeup_us'], 'wakeup_us'):
+        return 'delayed socket delivery', detail
+
+    return 'receiver path normal / delay upstream', detail
+
+
+def receive_path_baseline(events, normal_windows, device='thunderbolt0'):
+    """Part Q: same-run normal irq/softirq/skb/wakeup sub-interval
+    distributions, computed from normal_windows -- a list of
+    (window_start_s, window_end_s) pairs for NON-slow iterations on this
+    same receiving host in this same run. Never uses another phase's
+    historical numbers as the reference (item 65)."""
+    irq_us, softirq_us, skb_us, wakeup_us = [], [], [], []
+    for start, end in normal_windows:
+        found = receive_path_events_in_window(events, start, end)
+        irq_ts = found.get('irq_handler_entry')
+        softirq_ts = found.get('softirq_entry')
+        skb_ts = found.get('napi_gro_receive_entry') or found.get('netif_receive_skb_entry')
+        wakeup_ts = found.get('sk_data_ready')
+        if irq_ts is not None:
+            irq_us.append((irq_ts - start) * 1e6)
+        if irq_ts is not None and softirq_ts is not None:
+            softirq_us.append((softirq_ts - irq_ts) * 1e6)
+        if softirq_ts is not None and skb_ts is not None:
+            skb_us.append((skb_ts - softirq_ts) * 1e6)
+        if skb_ts is not None and wakeup_ts is not None:
+            wakeup_us.append((wakeup_ts - skb_ts) * 1e6)
+
+    def stats(values):
+        if not values:
+            return {'median_us': None, 'p95_us': None, 'max_us': None, 'n': 0}
+        return {'median_us': statistics.median(values), 'p95_us': percentile(values, .95),
+                'max_us': max(values), 'n': len(values)}
+
+    return {'irq_us': stats(irq_us), 'softirq_us': stats(softirq_us),
+            'skb_us': stats(skb_us), 'wakeup_us': stats(wakeup_us)}
+
+
+def receive_path_report(app_trace, sched_result, slow_threshold_us=1000, normal_threshold_us=800):
+    """Part P: per-slow-iteration receive-path classification for one
+    receiving host, from its own application trace (recv_begin_ns/
+    recv_end_ns bracket the blocking recv() call -- exactly the window a
+    slow iteration's delay must fall within) and a
+    capture_tb4_scheduler_trace.py --include-receive-events result.
+    Same-run baseline (Part Q) is computed from this run's own
+    recv_us < normal_threshold_us iterations, never from another phase's
+    historical numbers (item 65)."""
+    events = parse_receive_path_trace((sched_result or {}).get('trace_text') or '')
+    slow_windows, normal_windows = [], []
+    for entry in app_trace['entries']:
+        if entry.get('recv_begin_ns') is None or entry.get('recv_end_ns') is None:
+            continue
+        recv_us = (entry['recv_end_ns'] - entry['recv_begin_ns']) / 1000.0
+        window = (entry['iteration_index'], entry['recv_begin_ns'] / 1e9,
+                  entry['recv_end_ns'] / 1e9, recv_us)
+        if recv_us >= slow_threshold_us:
+            slow_windows.append(window)
+        elif recv_us < normal_threshold_us:
+            normal_windows.append(window)
+
+    baseline = receive_path_baseline(events, [(s, e) for _, s, e, _ in normal_windows])
+    irq_gaps = irq_cadence_gaps(events)
+    irq_baseline = irq_cadence_baseline(irq_gaps)
+
+    slow_events = []
+    for index, start_s, end_s, recv_us in slow_windows:
+        found = receive_path_events_in_window(events, start_s, end_s)
+        classification, detail = classify_receive_path_event(
+            start_s, end_s, found, irq_gaps, baseline)
+        slow_events.append({
+            'iteration': index, 'recv_us': recv_us, 'classification': classification,
+            **detail,
+        })
+
+    from collections import Counter
+    return {
+        'slow_events': slow_events,
+        'classification_counts': dict(Counter(e['classification'] for e in slow_events)),
+        'same_run_baseline': baseline,
+        'irq_cadence_baseline': irq_baseline,
+        'normal_iteration_count': len(normal_windows),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
@@ -850,6 +1120,12 @@ def main():
                             'decomposition and classification of slow '
                             'Linux iterations, from --application-trace '
                             '(Linux), --mac-application-trace, --mac-pcap')
+    group.add_argument('--receive-path', action='store_true',
+                       help='Phase 26 Part P: Linux receive-path (irq -> '
+                            'softirq -> napi/skb -> socket-wakeup) '
+                            'classification of slow iterations, from '
+                            '--application-trace and --sched-trace-json '
+                            '(captured with --include-receive-events)')
     parser.add_argument('--application-trace', type=Path,
                         help='a rank stderr file containing a TBCCL_DIAGNOSTIC '
                              'transfer_trace line (--correlate/--sender-boundary mode)')
@@ -917,6 +1193,13 @@ def main():
         mac_packets = run_tcpdump(args.mac_pcap) if args.mac_pcap else None
         result = sender_boundary_report(
             linux_trace, mac_trace, mac_packets, args.slow_threshold_us)
+    elif args.receive_path:
+        if not args.application_trace or not args.sched_trace_json:
+            parser.error('--receive-path requires --application-trace and '
+                          '--sched-trace-json')
+        app_trace = parse_diagnostic_file(args.application_trace)
+        sched_result = load(args.sched_trace_json)
+        result = receive_path_report(app_trace, sched_result, args.slow_threshold_us)
     else:
         result = analyze_run(args.run_dir) if args.run_dir else {
             'incidents': historical_incidents(args.historical_root)}
