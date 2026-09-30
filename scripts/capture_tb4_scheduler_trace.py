@@ -59,10 +59,45 @@ RECEIVE_EVENTS = [
     "sock/sk_data_ready",
 ]
 
+# Phase 27 Part G/H: this running kernel exposes both a Thunderbolt
+# control-plane group and a thunderbolt_net (USB4NET) data-plane group
+# (confirmed via --list-available-events, not assumed). Per Part G item 33,
+# thunderbolt:tb_tx/tb_rx/tb_event are treated as control/configuration-
+# plane events, not USB4NET data payload traces, unless the running
+# kernel's own event format proves otherwise (see --dump-event-format).
+THUNDERBOLT_CONTROL_EVENTS = [
+    "thunderbolt/tb_tx",
+    "thunderbolt/tb_rx",
+    "thunderbolt/tb_event",
+]
+
+THUNDERBOLT_DATA_EVENTS = [
+    "thunderbolt_net/tbnet_tx_skb",
+    "thunderbolt_net/tbnet_tx_ip_frame",
+    "thunderbolt_net/tbnet_rx_ip_frame",
+    "thunderbolt_net/tbnet_rx_skb",
+]
+
+# Present but deliberately not enabled by default (Part H item 42: "avoid
+# allocation/free traces unless necessary") -- alloc/free/invalid-frame
+# traces are high-frequency and not needed to answer Phase 27's question.
+THUNDERBOLT_DATA_EVENTS_EXTRA = [
+    "thunderbolt_net/tbnet_alloc_rx_frame",
+    "thunderbolt_net/tbnet_alloc_tx_frame",
+    "thunderbolt_net/tbnet_free_frame",
+    "thunderbolt_net/tbnet_invalid_rx_ip_frame",
+    "thunderbolt_net/tbnet_consume_skb",
+]
+
+# None of the Thunderbolt control/data events carry a task-identifying
+# field either (confirmed via their format files -- see
+# --dump-event-format) -- system-wide for the same reason RECEIVE_EVENTS
+# are (Part G item 26).
 # Events with no task-identifying field to filter on -- system-wide even
 # when a PID filter is requested for the rest of the session (documented,
 # not silently pretended to be scoped; Part G item 26).
-SYSTEM_WIDE_EVENTS = set(RECEIVE_EVENTS)
+SYSTEM_WIDE_EVENTS = set(RECEIVE_EVENTS) | set(THUNDERBOLT_CONTROL_EVENTS) \
+    | set(THUNDERBOLT_DATA_EVENTS) | set(THUNDERBOLT_DATA_EVENTS_EXTRA)
 
 
 class TracefsUnavailable(RuntimeError):
@@ -330,6 +365,26 @@ def list_available_events(output_path):
     print(f"wrote {output_path} ({len(all_events)} events across {len(by_group)} groups)")
 
 
+def event_format_path(event):
+    group, name = event.split("/", 1)
+    return TRACEFS / "events" / group / name / "format"
+
+
+def dump_event_formats(events, output_path):
+    """Read-only: dump each event's format file (field names/types/offsets
+    as the running kernel actually defines them) -- Phase 27 Part G item
+    32/Part H item 41's explicit requirement to document tracepoint fields
+    from the running kernel before interpreting captures, since no
+    matching .c source is available for this build (see
+    docs/phase27_report.md item 7)."""
+    result = {}
+    for event in events:
+        path = event_format_path(event)
+        result[event] = read_text(path) if path.exists() else None
+    Path(output_path).write_text(json.dumps(result, indent=2))
+    print(json.dumps(result, indent=2))
+
+
 def dump_state(events, output_path):
     """Read-only: print tracing_on/trace_clock/set_ftrace_pid and each
     event's current enable/filter content, without touching anything.
@@ -435,6 +490,17 @@ def main():
              "to --events -- these are system-wide (no PID filter applies "
              "to them) even when the scheduler events are scoped to one pid")
     parser.add_argument(
+        "--include-thunderbolt-events", action="store_true",
+        help="append THUNDERBOLT_CONTROL_EVENTS (tb_tx/tb_rx/tb_event) and "
+             "THUNDERBOLT_DATA_EVENTS (tbnet_tx_skb/tbnet_tx_ip_frame/"
+             "tbnet_rx_ip_frame/tbnet_rx_skb) to --events -- system-wide, "
+             "same reasoning as --include-receive-events")
+    parser.add_argument(
+        "--dump-event-format", action="store_true",
+        help="read-only: print each --events entry's format file (field "
+             "names/types as the running kernel defines them) and exit -- "
+             "no capture is performed")
+    parser.add_argument(
         "--dump-state", action="store_true",
         help="read-only: print current tracing_on/trace_clock/"
              "set_ftrace_pid and each --events entry's enable/filter "
@@ -466,6 +532,14 @@ def main():
         for event in RECEIVE_EVENTS:
             if event not in requested_events:
                 requested_events.append(event)
+    if args.include_thunderbolt_events:
+        for event in THUNDERBOLT_CONTROL_EVENTS + THUNDERBOLT_DATA_EVENTS:
+            if event not in requested_events:
+                requested_events.append(event)
+
+    if args.dump_event_format:
+        dump_event_formats(requested_events, args.output)
+        return
 
     if args.dump_state:
         dump_state(requested_events, args.output)
