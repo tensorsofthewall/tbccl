@@ -4,7 +4,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -13,6 +16,32 @@
 
 namespace tbccl
 {
+
+namespace
+{
+
+    // Phase 33 Part F: optional per-stage timing, disabled by default
+    // (a single getenv() at first use, cached -- Part F item 27's
+    // "disabled by default or compiled/activated only under benchmark
+    // flag" requirement). Prints directly to stderr rather than
+    // threading a diagnostic return value through TransferWork's public
+    // API, since this is a one-sided producer of timing data for
+    // humans/scripts reading a captured log, not a value any caller
+    // consumes programmatically.
+    bool timing_enabled()
+    {
+        static const bool enabled = (std::getenv("TBCCL_ASYNC_TIMING") != nullptr);
+        return enabled;
+    }
+
+    double now_us()
+    {
+        return std::chrono::duration<double, std::micro>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+
+} // namespace
 
 // ---------------------------------------------------------------------
 // TransferWork
@@ -314,6 +343,24 @@ struct TensorCommWorker::Impl
     std::mutex stats_mutex;
     TensorCommWorker::Stats stats;
 
+    // Phase 33 Part O/P: a fresh StagingPool per request was measured
+    // to cost an order of magnitude more than a reused one for large
+    // buffers -- first-touch page faults on freshly allocated memory,
+    // not the memcpy bandwidth itself (see docs/phase33_report.md:
+    // ~14ms fresh-alloc+memcpy vs. ~4.5ms reused, for a 64MiB buffer,
+    // on the Linux test machine). Only network_loop's single thread
+    // (via process_request) ever touches this cache, so it needs no
+    // separate lock -- it is not shared with staging_loop/job_ handoff
+    // state. A request whose (chunk_capacity, depth) doesn't match the
+    // cached pool still pays a fresh allocation (unavoidable -- the
+    // pool's buffers are sized to a specific chunk_capacity), but the
+    // common case of repeated same-shape transfers (the normal
+    // steady-state loop a caller runs) now reuses one already-touched
+    // pool instead of re-paying page-fault cost every single time.
+    std::unique_ptr<StagingPool> cached_pool;
+    std::size_t cached_chunk_capacity = 0;
+    std::size_t cached_depth = 0;
+
     // Declared last: both threads' functions touch every member above
     // this point, and std::thread launches immediately -- see
     // ring_executor.hpp's identical reasoning for why worker_ (here,
@@ -428,7 +475,61 @@ struct TensorCommWorker::Impl
             }
             queue_cv.notify_all(); // wakes an enqueue() blocked on capacity
 
+            if (timing_enabled())
+            {
+                std::fprintf(stderr, "[tbccl_timing] dequeued_us=%.1f transfer_id=%llu\n",
+                             now_us(), static_cast<unsigned long long>(item.first.transfer_id));
+            }
+
             process_request(item.first, item.second);
+        }
+    }
+
+    // Phase 33 Part H/N/U: the direct path. Runs entirely on the
+    // network thread (the caller of process_request, i.e.
+    // network_loop) -- no staging thread involvement, no StagingPool,
+    // no TBCCL-owned memcpy. Measured to remove the two-thread
+    // handoff/synchronization cost that dominated the staged path's
+    // regression for host<->host transfers (docs/phase33_report.md).
+    void process_request_direct(
+        const TransferRequest &request,
+        const std::shared_ptr<TransferWork::State> &state)
+    {
+        try
+        {
+            const bool timing = timing_enabled();
+            if (timing)
+            {
+                std::fprintf(stderr, "[tbccl_timing] transport_call_start_us=%.1f transfer_id=%llu\n",
+                             now_us(), static_cast<unsigned long long>(request.transfer_id));
+            }
+            if (request.direction == TransferDirection::Send)
+            {
+                const void *source = request.backend->direct_source_data();
+                request.transport->send(source, request.total_bytes);
+            }
+            else
+            {
+                void *destination = request.backend->direct_destination_data();
+                request.transport->recv(destination, request.total_bytes);
+            }
+            if (timing)
+            {
+                std::fprintf(stderr, "[tbccl_timing] transport_call_end_us=%.1f transfer_id=%llu\n",
+                             now_us(), static_cast<unsigned long long>(request.transfer_id));
+            }
+            detail::TransferWorkAccess::complete_ok(state);
+            if (timing)
+            {
+                std::fprintf(stderr, "[tbccl_timing] complete_ok_returned_us=%.1f transfer_id=%llu\n",
+                             now_us(), static_cast<unsigned long long>(request.transfer_id));
+            }
+            record_stat(true);
+        }
+        catch (const std::exception &error)
+        {
+            detail::TransferWorkAccess::complete_error(state, error.what());
+            record_stat(false);
         }
     }
 
@@ -436,6 +537,20 @@ struct TensorCommWorker::Impl
         const TransferRequest &request,
         const std::shared_ptr<TransferWork::State> &state)
     {
+        // Part H pseudocode, exactly: direct path only when the memory
+        // is directly transport-accessible AND the caller has not
+        // explicitly asked for chunking/pipelining (chunk_hint == 0).
+        // A caller that explicitly sets chunk_hint (wanting pipelined
+        // overlap even for host memory, e.g. to hide compute behind
+        // transfer -- see async_overlap_bench.cpp) still gets the
+        // staged path, matching Phase 32's existing chunk/depth
+        // semantics exactly.
+        if (request.chunk_hint == 0 && request.backend->supports_direct_transport_access())
+        {
+            process_request_direct(request, state);
+            return;
+        }
+
         try
         {
             const auto chunks =
@@ -457,7 +572,13 @@ struct TensorCommWorker::Impl
             const std::size_t depth =
                 std::max<std::size_t>(1, std::min(pipeline_depth, chunks.size()));
 
-            StagingPool pool(chunk_capacity, depth);
+            if (!cached_pool || cached_chunk_capacity != chunk_capacity || cached_depth != depth)
+            {
+                cached_pool = std::make_unique<StagingPool>(chunk_capacity, depth);
+                cached_chunk_capacity = chunk_capacity;
+                cached_depth = depth;
+            }
+            StagingPool &pool = *cached_pool;
             ChunkProgress progress(chunks.size());
 
             if (request.direction == TransferDirection::Send)
@@ -520,6 +641,12 @@ TensorCommWorker::~TensorCommWorker() = default;
 TransferWork TensorCommWorker::enqueue(TransferRequest request)
 {
     TransferWork work;
+
+    if (timing_enabled())
+    {
+        std::fprintf(stderr, "[tbccl_timing] enqueue_start_us=%.1f transfer_id=%llu\n",
+                     now_us(), static_cast<unsigned long long>(request.transfer_id));
+    }
 
     {
         std::unique_lock<std::mutex> lock(impl_->queue_mutex);

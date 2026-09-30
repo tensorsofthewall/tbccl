@@ -8,6 +8,7 @@
 #include <tbccl/tcp.hpp>
 #include <tbccl/transport.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -64,6 +65,14 @@ namespace
         {
             std::memcpy(buffer_.data() + chunk.offset, staging, chunk.size);
         }
+
+        // Phase 33: plain host memory is directly transport-accessible
+        // -- exercises TensorCommWorker's direct path (chunk_hint == 0)
+        // in these tests, not just the staged path via
+        // stage_source_chunk()/commit_destination_chunk() above.
+        bool supports_direct_transport_access() const noexcept override { return true; }
+        const void *direct_source_data() const noexcept override { return buffer_.data(); }
+        void *direct_destination_data() noexcept override { return buffer_.data(); }
 
     private:
         std::vector<std::uint8_t> &buffer_;
@@ -308,7 +317,19 @@ namespace
             {150, 64, 4},         // non-divisible, depth > chunk count (3 chunks, depth 4)
             {1 << 20, 65536, 2},  // large multi-chunk
             {1 << 20, 65536, 4},  // large multi-chunk, depth 4
-            {4096, 0, 1},         // whole-payload single chunk
+            {4096, 0, 1},         // whole-payload single chunk (staged, depth > 1 irrelevant since chunk_hint==0)
+            // Phase 33 Part AI item 134: direct path (chunk_hint == 0,
+            // HostAsyncBackend/VectorAsyncBackend both report
+            // supports_direct_transport_access()==true) at the sizes
+            // the plan explicitly asks for. depth is irrelevant here --
+            // the direct path bypasses StagingPool/pipeline_depth
+            // entirely -- included anyway to prove that's true (a
+            // mismatched depth would only matter if this secretly fell
+            // through to the staged path).
+            {1, 0, 1},            // 1 byte, direct path
+            {4096, 0, 4},         // 4 KiB, direct path
+            {256 * 1024, 0, 1},   // 256 KiB, direct path
+            {1 << 20, 0, 2},      // 1 MiB, direct path
         };
 
         std::uint16_t port = kBasePort;
@@ -614,6 +635,90 @@ namespace
         std::cout << "[PASS] test_worker_stats_reflect_submitted_completed_failed\n";
     }
 
+    // Phase 33 Part AJ item 137-139: direct-path buffer lifetime
+    // contract. The SAME source/destination buffers are reused across
+    // 3 rounds with distinct content each round, only being
+    // overwritten AFTER the previous round's TransferWork::wait() has
+    // returned -- proves the direct path (which hands the caller's own
+    // buffer straight to Transport::send/recv, no TBCCL-owned copy)
+    // never reads/writes stale content and never needs a hidden
+    // defensive copy to stay correct.
+    void test_direct_path_buffer_reused_only_after_wait()
+    {
+        const std::uint16_t port = kBasePort + 500;
+        constexpr std::size_t kBytes = 65536;
+        constexpr int kRounds = 3;
+
+        auto listener = tbccl::tcp_listen("127.0.0.1", port, {});
+
+        std::vector<std::uint8_t> destination(kBytes, 0);
+        VectorAsyncBackend dest_backend(destination);
+        std::vector<bool> receiver_ok(kRounds, false);
+
+        std::thread receiver(
+            [&]()
+            {
+                Endpoint server(listener->accept(), 2);
+                for (int round = 0; round < kRounds; ++round)
+                {
+                    tbccl::TransferRequest request;
+                    request.transfer_id = static_cast<std::uint64_t>(round);
+                    request.direction = tbccl::TransferDirection::Recv;
+                    request.backend = &dest_backend;
+                    request.transport = server.transport.get();
+                    request.total_bytes = kBytes;
+                    request.chunk_hint = 0; // direct path
+
+                    auto work = server.worker.enqueue(request);
+                    work.wait();
+                    if (work.has_error())
+                    {
+                        receiver_ok[static_cast<std::size_t>(round)] = false;
+                        continue;
+                    }
+                    const std::uint8_t expected = pattern_byte(static_cast<std::uint64_t>(round), 0);
+                    receiver_ok[static_cast<std::size_t>(round)] =
+                        std::all_of(destination.begin(), destination.end(),
+                                    [&](std::uint8_t b) { return b == expected; });
+                }
+            });
+
+        std::vector<std::uint8_t> source(kBytes, 0);
+        VectorAsyncBackend source_backend(source);
+        Endpoint client(tbccl::tcp_connect("127.0.0.1", port, {}), 2);
+
+        for (int round = 0; round < kRounds; ++round)
+        {
+            // Overwritten here, AFTER the previous round's wait()
+            // returned (or, for round 0, before any transfer) -- never
+            // while a transfer referencing this buffer is outstanding.
+            std::fill(source.begin(), source.end(), pattern_byte(static_cast<std::uint64_t>(round), 0));
+
+            tbccl::TransferRequest request;
+            request.transfer_id = static_cast<std::uint64_t>(round);
+            request.direction = tbccl::TransferDirection::Send;
+            request.backend = &source_backend;
+            request.transport = client.transport.get();
+            request.total_bytes = kBytes;
+            request.chunk_hint = 0; // direct path
+
+            auto work = client.worker.enqueue(request);
+            work.wait();
+            expect(!work.has_error(), "round " + std::to_string(round) + " sender must not error");
+        }
+
+        receiver.join();
+
+        for (int round = 0; round < kRounds; ++round)
+        {
+            expect(receiver_ok[static_cast<std::size_t>(round)],
+                   "round " + std::to_string(round) +
+                       " destination must match that round's own pattern, not a stale/reused one");
+        }
+
+        std::cout << "[PASS] test_direct_path_buffer_reused_only_after_wait\n";
+    }
+
 } // namespace
 
 int main()
@@ -628,6 +733,7 @@ int main()
         test_source_backend_error_propagates_to_work();
         test_enqueue_backpressure_blocks_when_queue_full();
         test_worker_shutdown_does_not_deadlock();
+        test_direct_path_buffer_reused_only_after_wait();
         test_worker_stats_reflect_submitted_completed_failed();
     }
     catch (const std::exception &error)
