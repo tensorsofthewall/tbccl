@@ -19,6 +19,8 @@
 #include <tbccl/transport.hpp>
 
 #include "tensor/host_async_backend.hpp"
+#include "tensor/tensor_backend.hpp"
+#include "tensor/tensor_backend_async_adapter.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -82,6 +84,7 @@ namespace
         std::size_t iterations = 20;
         std::string output;
         std::string label; // free-form tag echoed into output, for sweep bookkeeping
+        std::string backend = "host"; // host, cuda-pageable, cuda-pinned, metal-shared, metal-private-staged
     };
 
     std::string require_value(const std::string &flag, int &i, int argc, char **argv)
@@ -109,6 +112,7 @@ namespace
             else if (arg == "--iterations") options.iterations = std::stoull(require_value(arg, i, argc, argv));
             else if (arg == "--output") options.output = require_value(arg, i, argc, argv);
             else if (arg == "--label") options.label = require_value(arg, i, argc, argv);
+            else if (arg == "--backend") options.backend = require_value(arg, i, argc, argv);
             else throw std::runtime_error("unknown argument: " + arg);
         }
         if (options.peers.size() != 2)
@@ -177,26 +181,68 @@ int main(int argc, char **argv)
 
         tbccl::TcpTransport transport(std::move(connection));
 
-        std::vector<std::uint8_t> buffer(options.bytes);
-        if (is_sender)
+        const bool use_device_backend = (options.backend != "host");
+
+        // Host path: a plain buffer + HostAsyncBackend.
+        std::vector<std::uint8_t> buffer;
+        std::unique_ptr<tbccl_bench::tensor::HostAsyncBackend> host_backend;
+
+        // Device path: a real TensorBackend (CUDA/Metal) wrapped by
+        // TensorBackendAsyncAdapter (Commit 4) -- exercises the actual
+        // device staging cost, not a host memcpy stand-in.
+        std::unique_ptr<tbccl_bench::tensor::TensorBackend> device_backend;
+        std::unique_ptr<tbccl_bench::tensor::TensorBackendAsyncAdapter> device_adapter;
+
+        tbccl::AsyncMemoryBackend *backend = nullptr;
+
+        if (use_device_backend)
         {
-            for (std::size_t i = 0; i < options.bytes; ++i)
+            const auto kind = tbccl_bench::tensor::parse_backend_kind(options.backend);
+            if (!tbccl_bench::tensor::backend_kind_available(kind))
             {
-                buffer[i] = pattern_byte(i, 0xA5A5A5A5u);
+                throw std::runtime_error("backend not available in this build: " + options.backend);
             }
+            device_backend = tbccl_bench::tensor::make_backend(kind);
+            device_backend->allocate(options.bytes);
+            device_adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*device_backend);
+            backend = device_adapter.get();
+        }
+        else
+        {
+            buffer.resize(options.bytes);
+            if (is_sender)
+            {
+                for (std::size_t i = 0; i < options.bytes; ++i)
+                {
+                    buffer[i] = pattern_byte(i, 0xA5A5A5A5u);
+                }
+            }
+            host_backend = std::make_unique<tbccl_bench::tensor::HostAsyncBackend>(buffer.data(), buffer.size());
+            backend = host_backend.get();
         }
 
-        tbccl_bench::tensor::HostAsyncBackend backend(buffer.data(), buffer.size());
         tbccl::TensorCommWorker worker(options.pipeline_depth, /*queue_depth=*/2);
 
         std::vector<double> enqueue_us;
         std::vector<double> completion_us;
         bool verify_ok = true;
 
+        const auto chunk_plan = tbccl::plan_chunks(options.bytes, options.chunk_bytes, 1);
+        const std::size_t chunk_count = chunk_plan.empty() ? 1 : chunk_plan.size();
+
         const std::size_t total_rounds = options.warmup + options.iterations;
         for (std::size_t round = 0; round < total_rounds; ++round)
         {
-            if (!is_sender)
+            if (use_device_backend)
+            {
+                if (is_sender)
+                {
+                    device_backend->initialize_source(0xA5A5A5A5u);
+                    device_backend->prepare_source();
+                }
+                device_adapter->begin_transfer(chunk_count);
+            }
+            else if (!is_sender)
             {
                 std::fill(buffer.begin(), buffer.end(), 0);
             }
@@ -205,7 +251,7 @@ int main(int argc, char **argv)
             request.transfer_id = static_cast<std::uint64_t>(round);
             request.direction = is_sender ? tbccl::TransferDirection::Send
                                            : tbccl::TransferDirection::Recv;
-            request.backend = &backend;
+            request.backend = backend;
             request.transport = &transport;
             request.total_bytes = options.bytes;
             request.chunk_hint = options.chunk_bytes;
@@ -232,12 +278,22 @@ int main(int argc, char **argv)
 
             if (!is_sender)
             {
-                for (std::size_t i = 0; i < options.bytes; ++i)
+                if (use_device_backend)
                 {
-                    if (buffer[i] != pattern_byte(i, 0xA5A5A5A5u))
+                    if (!device_backend->verify_destination(0xA5A5A5A5u))
                     {
                         verify_ok = false;
-                        break;
+                    }
+                }
+                else
+                {
+                    for (std::size_t i = 0; i < options.bytes; ++i)
+                    {
+                        if (buffer[i] != pattern_byte(i, 0xA5A5A5A5u))
+                        {
+                            verify_ok = false;
+                            break;
+                        }
                     }
                 }
             }

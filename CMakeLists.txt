@@ -452,6 +452,7 @@ add_executable(tbccl_async_transfer_bench
 
 target_link_libraries(tbccl_async_transfer_bench
     PRIVATE
+        tbccl_tensor_backend
         tbccl
 )
 
@@ -464,6 +465,30 @@ if(MSVC)
     target_compile_options(tbccl_async_transfer_bench PRIVATE /W4)
 else()
     target_compile_options(tbccl_async_transfer_bench PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
+add_executable(tbccl_async_overlap_bench
+    benchmarks/async_overlap_bench.cpp
+)
+
+target_link_libraries(tbccl_async_overlap_bench
+    PRIVATE
+        tbccl
+)
+
+target_include_directories(tbccl_async_overlap_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+)
+
+if(MSVC)
+    target_compile_options(tbccl_async_overlap_bench PRIVATE /W4)
+else()
+    target_compile_options(tbccl_async_overlap_bench PRIVATE
         -Wall
         -Wextra
         -Wpedantic
