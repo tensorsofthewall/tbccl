@@ -198,6 +198,119 @@ class DiffSnapshotsTests(unittest.TestCase):
         self.assertNotIn("timestamp_utc", result["unavailable"])
 
 
+class GpuStateTests(unittest.TestCase):
+    """Phase 31 Part AA/106: GPU/workload capture must degrade gracefully
+    (None, not an exception) when nvidia-smi is absent, and must not treat
+    an unsupported field or an empty compute-process list as a failure."""
+
+    def test_nvidia_smi_absent_returns_none(self):
+        with patch.object(rt.shutil, "which", return_value=None):
+            self.assertIsNone(rt.gpu_state())
+            self.assertIsNone(rt.active_compute_processes())
+            self.assertIsNone(rt.gpu_graphics_processes())
+
+    def test_gpu_state_parses_full_row(self):
+        csv_line = ("2026/09/30 15:56:10.462, NVIDIA GeForce RTX 3070 Ti Laptop GPU, P8, "
+                     "5 %, 3 %, 680 MiB, 8192 MiB, 18.17 W, 61, 1, 8")
+        fake = {"command": [], "returncode": 0, "stdout": csv_line, "stderr": ""}
+        with patch.object(rt, "shutil") as fake_shutil, patch.object(rt, "command", return_value=fake):
+            fake_shutil.which.return_value = "/usr/bin/nvidia-smi"
+            result = rt.gpu_state()
+        self.assertTrue(result["available"])
+        self.assertEqual(result["fields"]["pstate"], "P8")
+        self.assertEqual(result["fields"]["pcie.link.width.current"], "8")
+
+    def test_gpu_state_unsupported_field_does_not_crash(self):
+        # nvidia-smi prints "[Not Supported]" for a field this driver/GPU
+        # doesn't expose -- still 11 comma-separated values, just parses as
+        # a literal string rather than a clean number.
+        csv_line = "2026/09/30 00:00:00.000, GPU, P0, 0 %, 0 %, 0 MiB, 0 MiB, [Not Supported], 0, 0, 0"
+        fake = {"command": [], "returncode": 0, "stdout": csv_line, "stderr": ""}
+        with patch.object(rt, "shutil") as fake_shutil, patch.object(rt, "command", return_value=fake):
+            fake_shutil.which.return_value = "/usr/bin/nvidia-smi"
+            result = rt.gpu_state()
+        self.assertTrue(result["available"])
+        self.assertEqual(result["fields"]["power.draw"], "[Not Supported]")
+
+    def test_active_compute_processes_empty_is_not_an_error(self):
+        fake = {"command": [], "returncode": 0, "stdout": "", "stderr": ""}
+        with patch.object(rt, "shutil") as fake_shutil, patch.object(rt, "command", return_value=fake):
+            fake_shutil.which.return_value = "/usr/bin/nvidia-smi"
+            result = rt.active_compute_processes()
+        self.assertTrue(result["available"])
+        self.assertEqual(result["processes"], [])
+
+    def test_active_compute_processes_lists_multiple(self):
+        stdout = "1234, python3, 4096 MiB\n5678, python3, 2048 MiB\n"
+        fake = {"command": [], "returncode": 0, "stdout": stdout, "stderr": ""}
+        with patch.object(rt, "shutil") as fake_shutil, patch.object(rt, "command", return_value=fake):
+            fake_shutil.which.return_value = "/usr/bin/nvidia-smi"
+            result = rt.active_compute_processes()
+        self.assertEqual(len(result["processes"]), 2)
+        self.assertEqual(result["processes"][0]["pid"], "1234")
+
+    def test_gpu_graphics_processes_multiple_unrelated_clients(self):
+        full_text = (
+            "Processes:\n"
+            "|    0   N/A  N/A            1887      G   /usr/lib/Xorg           487MiB |\n"
+            "|    0   N/A  N/A            6343      G   /usr/lib/firefox/firefox 10MiB |\n"
+        )
+        fake = {"command": [], "returncode": 0, "stdout": full_text, "stderr": ""}
+        with patch.object(rt, "shutil") as fake_shutil, patch.object(rt, "command", return_value=fake):
+            fake_shutil.which.return_value = "/usr/bin/nvidia-smi"
+            result = rt.gpu_graphics_processes()
+        self.assertEqual(result["returncode"], 0)
+        self.assertIn("Xorg", result["full_text"])
+        self.assertIn("firefox", result["full_text"])
+
+
+class DiscoverIrqsTests(unittest.TestCase):
+    def test_finds_nvidia_and_nvme_irqs_without_assuming_numbers(self):
+        text = (
+            " 211:      0  446841  IR-PCI-MSI-0000:01:00.0    0-edge      nvidia\n"
+            " 150:  16166       0  IR-PCI-MSIX-0000:04:00.0    1-edge      nvme0q1\n"
+            "   9:      1       0  IO-APIC    9-fasteoi   acpi\n"
+        )
+        with patch.object(rt, "read", return_value=text):
+            nvidia = rt.discover_irqs(rt.re.compile(r"\bnvidia\b", rt.re.I))
+            nvme = rt.discover_irqs(rt.re.compile(r"\bnvme\d+q\d+\b", rt.re.I))
+        self.assertEqual(set(nvidia), {"211"})
+        self.assertEqual(nvidia["211"]["total_count"], 446841)
+        self.assertEqual(set(nvme), {"150"})
+        self.assertNotIn("9", nvidia)
+        self.assertNotIn("9", nvme)
+
+
+class DiskstatsMeminfoPsiTests(unittest.TestCase):
+    def test_diskstats_filters_to_nvme_only(self):
+        text = (
+            " 259       0 nvme0n1 166668 0 16212321 0 50688 0 6743674 0 0 0 0 0 0 0 0\n"
+            "   8       0 sda 100 0 200 0 50 0 300 0 0 0 0 0 0 0 0\n"
+        )
+        with patch.object(rt, "read", return_value=text):
+            result = rt.diskstats_snapshot()
+        self.assertEqual(set(result), {"nvme0n1"})
+        self.assertEqual(result["nvme0n1"]["reads_completed"], 166668)
+
+    def test_meminfo_selected_fields_only(self):
+        text = "MemTotal:       32000000 kB\nMemAvailable:   23982104 kB\nCached:          7745388 kB\n"
+        with patch.object(rt, "read", return_value=text):
+            result = rt.meminfo_snapshot()
+        self.assertEqual(result, {"MemAvailable": "23982104 kB", "Cached": "7745388 kB"})
+        self.assertNotIn("MemTotal", result)
+
+    def test_psi_reads_all_three_pressure_files(self):
+        with patch.object(rt, "read", side_effect=lambda p: f"fixture:{p}"):
+            result = rt.psi_snapshot()
+        self.assertEqual(set(result), {"cpu", "io", "memory"})
+        self.assertIn("/proc/pressure/cpu", result["cpu"])
+
+    def test_psi_missing_file_is_none_not_error(self):
+        with patch.object(rt, "read", return_value=None):
+            result = rt.psi_snapshot()
+        self.assertIsNone(result["cpu"])
+
+
 class CliSmokeTests(unittest.TestCase):
     def test_compare_cli_writes_output(self):
         with tempfile.TemporaryDirectory() as tmp:
