@@ -586,6 +586,58 @@ if(BUILD_TESTING)
     )
     set_tests_properties(async_transfer_test PROPERTIES TIMEOUT 60)
 
+    add_executable(raw_io_worker_test
+        tests/raw_io_worker_test.cpp
+    )
+
+    target_link_libraries(raw_io_worker_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(raw_io_worker_test PRIVATE /W4)
+    else()
+        target_compile_options(raw_io_worker_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME raw_io_worker_test
+        COMMAND raw_io_worker_test
+    )
+    set_tests_properties(raw_io_worker_test PROPERTIES TIMEOUT 60)
+
+    add_executable(tensor_comm_worker_no_staging_test
+        tests/tensor_comm_worker_no_staging_test.cpp
+    )
+
+    target_link_libraries(tensor_comm_worker_no_staging_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(tensor_comm_worker_no_staging_test PRIVATE /W4)
+    else()
+        target_compile_options(tensor_comm_worker_no_staging_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME tensor_comm_worker_no_staging_test
+        COMMAND tensor_comm_worker_no_staging_test
+    )
+    set_tests_properties(tensor_comm_worker_no_staging_test PROPERTIES TIMEOUT 60)
+
     add_executable(world_test
         tests/world_test.cpp
     )
