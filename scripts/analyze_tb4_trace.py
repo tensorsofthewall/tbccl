@@ -354,6 +354,115 @@ def sched_cycles_for_pid(sched_result, pid):
     return cycles
 
 
+# Classify packets in a capture (application-level
+# completion ACK vs. plain TCP ACK vs. tensor payload) and compute, from
+# ONE machine's own local capture clock only, the interval between a prior
+# completion ACK and the next tensor payload -- never comparing timestamps
+# from two different machines' captures directly.
+#
+# Classification is by observed payload length only (confirmed against
+# real captures): the benchmark's completion ACK is always a
+# single application byte (TCP payload length 1); a bare TCP ACK carries no
+# payload (length 0); a tensor payload segment is large (length >= 1000,
+# comfortably above the connection handshake's small control messages of
+# 24/40 bytes and far below a real 64 KiB tensor's segments of ~2900/62636
+# bytes after GRO coalescing).
+TCPDUMP_LINE = re.compile(
+    r'^(?P<ts>\d+\.\d+)\s+IP\s+(?P<src>\S+)\s+>\s+(?P<dst>\S+):\s+'
+    r'Flags\s+\[(?P<flags>[^\]]*)\].*?length\s+(?P<length>\d+)')
+
+
+def parse_tcpdump_text(text):
+    """Pure function over tcpdump -tt output text -- kept separate from
+    run_tcpdump so it can be unit tested without invoking tcpdump."""
+    packets = []
+    for line in text.splitlines():
+        match = TCPDUMP_LINE.match(line)
+        if not match:
+            continue
+        packets.append({
+            'ts': float(match.group('ts')),
+            'src': match.group('src'),
+            'dst': match.group('dst'),
+            'flags': match.group('flags'),
+            'length': int(match.group('length')),
+        })
+    return packets
+
+
+def run_tcpdump(pcap_path):
+    import subprocess
+    proc = subprocess.run(
+        ['tcpdump', '-tt', '-r', str(pcap_path)],
+        capture_output=True, text=True, timeout=30)
+    return parse_tcpdump_text(proc.stdout)
+
+
+def classify_packet(packet, payload_min_length=1000):
+    if packet['length'] == 0:
+        return 'tcp_ack_only'
+    if packet['length'] == 1:
+        return 'application_ack'
+    if packet['length'] >= payload_min_length:
+        return 'tensor_payload'
+    return 'other'  # e.g. connection-handshake control messages
+
+
+def ack_to_payload_intervals(
+        packets, payload_min_length=1000, max_gap_us=5000, expected_count=None):
+    """For each application-completion-ack packet, the local-capture-clock
+    gap until the next tensor-payload packet on the SAME capture. Both
+    timestamps come from one machine's own capture -- comparing the
+    resulting distributions between two machines' captures (rather than
+    subtracting their timestamps) is the dual-end method.
+
+    The final measured iteration's completion ack has no legitimate next
+    payload (the run ends after it) -- without a bound, it would pair with
+    whatever unrelated packet happens to appear later in the capture
+    (observed in a real capture: a ~2ms "interval" that was actually the last
+    iteration's ack spuriously matched against post-run traffic). max_gap_us
+    (default 5000, well above any interval this investigation is chasing)
+    excludes such pairings; every dropped ack is still reported, in
+    unmatched_ack_timestamps, rather than silently discarded, since a
+    genuinely large real delay must never be hidden by this bound.
+
+    expected_count, when given (the caller's known measured-iteration
+    count), truncates the returned intervals to the first expected_count
+    temporally-ordered pairs. This excludes the benchmark's own untimed
+    post-loop verification round (tensor_transfer_bench.cpp resends one
+    full, explicitly untimed tensor for byte verification after the
+    measured loop) -- discovered when that round's payload
+    was found spuriously paired with the last measured iteration's ack,
+    producing a ~2ms "interval" that was not a real measurement. Anything
+    beyond expected_count is reported in extra_beyond_expected, never
+    silently dropped."""
+    classified = sorted(
+        (p['ts'], classify_packet(p, payload_min_length)) for p in packets)
+    intervals = []
+    unmatched = []
+    pending_ack_ts = None
+    for ts, kind in classified:
+        if kind == 'application_ack':
+            if pending_ack_ts is not None:
+                unmatched.append(pending_ack_ts)
+            pending_ack_ts = ts
+        elif kind == 'tensor_payload' and pending_ack_ts is not None:
+            gap_us = (ts - pending_ack_ts) * 1e6
+            if gap_us <= max_gap_us:
+                intervals.append({
+                    'ack_ts': pending_ack_ts, 'payload_ts': ts, 'gap_us': gap_us})
+                pending_ack_ts = None
+            # else: leave pending_ack_ts set -- a later, closer payload
+            # (if any) is preferred over this distant one.
+    if pending_ack_ts is not None:
+        unmatched.append(pending_ack_ts)
+    extra = []
+    if expected_count is not None and len(intervals) > expected_count:
+        extra = intervals[expected_count:]
+        intervals = intervals[:expected_count]
+    return intervals, unmatched, extra
+
+
 def packet_silence_gaps(pcap_path, min_gap_us=200):
     """Shells out to tcpdump -tt to list inter-packet gaps on the capture
     above min_gap_us. Timestamps are CLOCK_REALTIME (unix epoch seconds,
@@ -471,6 +580,11 @@ def main():
     group.add_argument('--correlate', action='store_true',
                        help='classify slow iterations from --application-trace, '
                             'optionally with --sched-trace-json / --packet-pcap')
+    group.add_argument('--boundary', action='store_true',
+                       help='dual-end completion-ack-to-'
+                            'next-payload local interval distributions from '
+                            '--linux-pcap and/or --mac-pcap (each analyzed '
+                            'using only its own capture clock)')
     parser.add_argument('--application-trace', type=Path,
                         help='a rank stderr file containing a TBCCL_DIAGNOSTIC '
                              'transfer_trace line (--correlate mode)')
@@ -478,6 +592,18 @@ def main():
                         help='output of capture_tb4_scheduler_trace.py (--correlate mode)')
     parser.add_argument('--packet-pcap', type=Path,
                         help='tcpdump/tshark-readable capture (--correlate mode)')
+    parser.add_argument('--linux-pcap', type=Path, help='--boundary mode')
+    parser.add_argument('--mac-pcap', type=Path, help='--boundary mode')
+    parser.add_argument('--payload-min-length', type=int, default=1000,
+                        help='--boundary mode: minimum TCP payload length '
+                             'classified as tensor data rather than control '
+                             'traffic (default 1000; observed real tensor '
+                             'segments are ~2900/62636 bytes, observed '
+                             'control/handshake messages are 24/40 bytes)')
+    parser.add_argument('--expected-count', type=int, default=None,
+                        help='--boundary mode: total warmup+measured '
+                             'iterations, to exclude the untimed post-loop '
+                             'verification round from the tail')
     parser.add_argument('--slow-threshold-us', type=float, default=500)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
@@ -488,6 +614,26 @@ def main():
         sched_result = load(args.sched_trace_json) if args.sched_trace_json else None
         result = {'slow_iterations': classify_slow_iterations(
             app_trace, sched_result, args.packet_pcap, args.slow_threshold_us)}
+    elif args.boundary:
+        if not args.linux_pcap and not args.mac_pcap:
+            parser.error('--boundary requires --linux-pcap and/or --mac-pcap')
+        result = {}
+        for label, pcap_path in (('linux', args.linux_pcap), ('mac', args.mac_pcap)):
+            if pcap_path is None:
+                continue
+            intervals, unmatched, extra = ack_to_payload_intervals(
+                run_tcpdump(pcap_path), args.payload_min_length,
+                expected_count=args.expected_count)
+            gaps_us = [i['gap_us'] for i in intervals]
+            result[f'{label}_ack_to_payload'] = {
+                'samples': len(gaps_us),
+                'median_us': statistics.median(gaps_us) if gaps_us else None,
+                'p95_us': percentile(gaps_us, .95) if gaps_us else None,
+                'max_us': max(gaps_us) if gaps_us else None,
+                'unmatched_ack_count': len(unmatched),
+                'excluded_beyond_expected_count': len(extra),
+                'intervals': intervals,
+            }
     else:
         result = analyze_run(args.run_dir) if args.run_dir else {
             'incidents': historical_incidents(args.historical_root)}
