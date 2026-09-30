@@ -57,11 +57,14 @@ class HealthTests(unittest.TestCase):
 
     def test_deltas_and_reboot(self):
         before=self.base();after=copy.deepcopy(before)
+        before['network_stats']={'TcpExtBusyPollRxPackets':10}
+        after['network_stats']={'TcpExtBusyPollRxPackets':13}
         after['interface']['counters']['rx_errors']='3'
         after['kernel_events']=[dict(cursor='1',source='other-pci',message='0000:00:1b.4 AER: Corrected error'),
                                 dict(cursor='2',source='thunderbolt',message='0000:42:00.0 AER: Uncorrectable (Fatal)')]
         result=health.compare(before,after)
         self.assertEqual(result['counter_deltas']['rx_errors'],2)
+        self.assertEqual(result['network_stat_deltas']['TcpExtBusyPollRxPackets'],3)
         self.assertEqual(len(result['stop_reasons']),1)
         after['boot_id']='new'
         result=health.compare(before,after)
@@ -95,6 +98,23 @@ class HealthTests(unittest.TestCase):
                 result=health.linux_snapshot(sysroot=tmp,procroot=tmp)
             self.assertEqual(result['kernel_events'][0]['source'],'thunderbolt')
             self.assertIn('[12] Timeout',result['kernel_events'][0]['message'])
+
+    def test_strict_timeout_and_nstat(self):
+        self.assertEqual(health.parse_nstat('TcpExtBusyPollRxPackets 42 0.0\n'),
+                         {'TcpExtBusyPollRxPackets':42})
+        before=self.base()
+        before['pci_devices']=[dict(bdf='0000:42:00.0',vendor='0x8086',device='0x1136',
+                                    power={},aer={'aer_dev_correctable':'Timeout 5\nTOTAL_ERR_COR 5'})]
+        after=copy.deepcopy(before)
+        after['pci_devices'][0]['aer']['aer_dev_correctable']='Timeout 6\nTOTAL_ERR_COR 6'
+        strict=health.compare(before,after,True)
+        self.assertTrue(strict['new_tb_timeout'])
+        self.assertIn('new Thunderbolt bridge AER Timeout',strict['stop_reasons'])
+        self.assertFalse(health.compare(before,after,False)['stop_reasons'])
+        after=copy.deepcopy(before)
+        after['kernel_events']=[dict(cursor='t',source='thunderbolt',
+                                     message='pcieport 0000:42:00.0: [12] Timeout')]
+        self.assertTrue(health.compare(before,after,True)['stop_reasons'])
 
     def test_mac_link_counters_ignore_address_duplicates(self):
         text='Name Mtu Network Address Ipkts Ierrs Ibytes Opkts Oerrs Obytes Coll Drop\n'

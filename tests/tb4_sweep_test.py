@@ -44,6 +44,9 @@ class SweepTests(unittest.TestCase):
         runs = list(sweep.experiments(args))
         self.assertNotEqual([r['busy_poll_us'] for r in runs[:5]], [r['busy_poll_us'] for r in runs[5:10]])
         self.assertEqual(sorted(r['busy_poll_us'] for r in runs[5:10]), args.busy_poll)
+        paced=list(sweep.experiments(self.args('--sizes','64','--busy-poll','0',
+                                              '--source-gaps','0,500','--repetitions','1')))
+        self.assertEqual({r['source_gap_us'] for r in paced},{0,500})
 
     def test_aggregation_pairs_repetitions(self):
         rows = []
@@ -140,11 +143,20 @@ class SweepTests(unittest.TestCase):
             result=sweep.run_processes([['/no/such/benchmark']],Path(tmp),1)
             self.assertFalse(result['success'])
 
+    def test_trace_preservation_on_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp)
+            trace={'kind':'transfer_trace','clock':'CLOCK_MONOTONIC','entries':[]}
+            (directory/'rank0.stderr').write_text(sweep.PREFIX+json.dumps(trace)+'\n')
+            sweep.preserve_traces(directory)
+            self.assertEqual(json.loads((directory/'rank0.trace.json').read_text()),trace)
+
     def test_live_guard_stops_on_fatal_and_carrier_loss(self):
         guard=sweep.LinkGuard.__new__(sweep.LinkGuard)
         guard.baseline=dict(system='Linux',boot_id='abc',interface={'present':True},
                             kernel_log_available=True,pci_devices=[],kernel_events=[])
         guard.relevant={'0000:42:00.0'}
+        guard.stop_on_any_tb_timeout=True
         guard.process=Mock();guard.process.poll.return_value=None
         guard.pending='';guard.events=[]
         guard.reader=io.StringIO(json.dumps({'__CURSOR':'new','MESSAGE':'pcieport 0000:42:00.0 AER: Uncorrectable (Fatal)'})+'\n')
@@ -152,6 +164,11 @@ class SweepTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'fatal/uncorrectable'): guard.check()
         with patch.object(Path,'exists',return_value=True), patch.object(sweep.health,'read',return_value='0'):
             with self.assertRaisesRegex(RuntimeError,'carrier lost'): guard.check()
+        guard.pending='';guard.events=[]
+        guard.reader=io.StringIO(json.dumps({'__CURSOR':'timeout','__MONOTONIC_TIMESTAMP':'10',
+                                             'MESSAGE':'pcieport 0000:42:00.0: [12] Timeout'})+'\n')
+        with patch.object(Path,'exists',return_value=True), patch.object(sweep.health,'read',return_value='1'):
+            with self.assertRaisesRegex(RuntimeError,'AER Timeout'): guard.check()
 
     def test_health_failure_excludes_completed_measurement(self):
         with tempfile.TemporaryDirectory() as tmp:
