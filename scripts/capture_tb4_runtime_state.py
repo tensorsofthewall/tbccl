@@ -180,6 +180,126 @@ def relevant_sysctls():
     return result
 
 
+GPU_QUERY_FIELDS = [
+    "timestamp", "name", "pstate", "utilization.gpu", "utilization.memory",
+    "memory.used", "memory.total", "power.draw", "temperature.gpu",
+    "pcie.link.gen.current", "pcie.link.width.current",
+]
+
+
+def gpu_state():
+    """Read-only nvidia-smi telemetry. Returns None (not
+    an error) when nvidia-smi is unavailable -- e.g. on the Mac, or a Linux
+    machine with no NVIDIA GPU -- so callers never treat "no GPU" as a
+    capture failure. A field nvidia-smi itself doesn't support on this
+    driver/GPU comes back as the literal string it prints ("[N/A]" or
+    similar) rather than being silently dropped, so it is still visible in
+    the raw csv text even though it can't be parsed as a number."""
+    if not shutil.which("nvidia-smi"):
+        return None
+    fields = ",".join(GPU_QUERY_FIELDS)
+    out = command(["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader"])
+    if out["returncode"] != 0:
+        return {"available": False, "error": out["stderr"]}
+    values = [v.strip() for v in out["stdout"].strip().split(",")]
+    parsed = dict(zip(GPU_QUERY_FIELDS, values)) if len(values) == len(GPU_QUERY_FIELDS) else None
+    return {"available": True, "raw_csv": out["stdout"].strip(), "fields": parsed}
+
+
+def active_compute_processes():
+    """nvidia-smi's own compute-app listing -- empty (not None) means no
+    CUDA compute process is currently running, which is the actual signal
+    the capture needs (a graphics-only client like Xorg/Firefox does not show
+    up here at all)."""
+    if not shutil.which("nvidia-smi"):
+        return None
+    out = command(["nvidia-smi", "--query-compute-apps=pid,process_name,used_memory",
+                    "--format=csv,noheader"])
+    if out["returncode"] != 0:
+        return {"available": False, "error": out["stderr"]}
+    processes = []
+    for line in out["stdout"].splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) == 3:
+            processes.append({"pid": parts[0], "process_name": parts[1], "used_memory": parts[2]})
+    return {"available": True, "processes": processes}
+
+
+def gpu_graphics_processes():
+    """nvidia-smi's default full-text listing (compute + graphics clients),
+    for context on what is actually using the GPU/VRAM when
+    active_compute_processes() is empty."""
+    if not shutil.which("nvidia-smi"):
+        return None
+    full = command(["nvidia-smi"])
+    return {"returncode": full["returncode"], "full_text": full["stdout"]}
+
+
+def discover_irqs(descriptor_pattern):
+    """Live-discover IRQ numbers from /proc/interrupts whose descriptor
+    column matches descriptor_pattern (a compiled regex) -- never assumes
+    a fixed IRQ number, since NVMe in particular allocates one MSI-X
+    vector per queue and the exact numbers vary by boot/topology."""
+    result = {}
+    for line in (read(PROC_INTERRUPTS) or "").splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        label = fields[0].rstrip(":")
+        if not label.isdigit():
+            continue
+        rest = " ".join(f for f in fields[1:] if not f.isdigit())
+        if descriptor_pattern.search(rest):
+            counts = [int(f) for f in fields[1:] if f.isdigit()]
+            result[label] = {"total_count": sum(counts), "descriptor": rest}
+    return result
+
+
+def workload_irq_counters():
+    return {
+        "nvidia": discover_irqs(re.compile(r"\bnvidia\b", re.I)),
+        "nvme": discover_irqs(re.compile(r"\bnvme\d+q\d+\b", re.I)),
+    }
+
+
+def diskstats_snapshot():
+    """Selected /proc/diskstats fields for NVMe devices only (reads, read
+    sectors, writes, write sectors) -- read-only, no active disk I/O is
+    triggered by this capture."""
+    result = {}
+    for line in (read("/proc/diskstats") or "").splitlines():
+        fields = line.split()
+        if len(fields) < 14:
+            continue
+        name = fields[2]
+        if not name.startswith("nvme"):
+            continue
+        result[name] = {
+            "reads_completed": int(fields[3]),
+            "sectors_read": int(fields[5]),
+            "writes_completed": int(fields[7]),
+            "sectors_written": int(fields[9]),
+        }
+    return result
+
+
+def meminfo_snapshot():
+    fields = {"MemAvailable", "Cached", "Dirty", "Writeback", "SwapFree"}
+    result = {}
+    for line in (read("/proc/meminfo") or "").splitlines():
+        parts = line.split(":")
+        if len(parts) == 2 and parts[0].strip() in fields:
+            result[parts[0].strip()] = parts[1].strip()
+    return result
+
+
+def psi_snapshot():
+    result = {}
+    for name in ("cpu", "io", "memory"):
+        result[name] = read(f"/proc/pressure/{name}")
+    return result
+
+
 def linux_runtime_state(interface="thunderbolt0", irq_numbers=(177, 178)):
     base = health.snapshot()
     interrupts_text = read(PROC_INTERRUPTS) or ""
@@ -213,6 +333,13 @@ def linux_runtime_state(interface="thunderbolt0", irq_numbers=(177, 178)):
     base["queue_masks"] = net_queue_masks(interface)
     base["thermal"] = thermal_state()
     base["sysctls"] = relevant_sysctls()
+    base["gpu"] = gpu_state()
+    base["active_compute_processes"] = active_compute_processes()
+    base["gpu_processes"] = gpu_graphics_processes()
+    base["workload_irq_counters"] = workload_irq_counters()
+    base["diskstats"] = diskstats_snapshot()
+    base["meminfo"] = meminfo_snapshot()
+    base["psi"] = psi_snapshot()
     return base
 
 
