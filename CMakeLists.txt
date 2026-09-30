@@ -24,6 +24,9 @@ add_library(tbccl STATIC
     src/core/world.cpp
     src/core/tcp_world.cpp
     src/core/peer_capabilities.cpp
+    src/core/chunk_plan.cpp
+    src/core/staging_pool.cpp
+    src/core/tensor_comm_worker.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -496,6 +499,32 @@ if(BUILD_TESTING)
         NAME peer_capabilities_test
         COMMAND peer_capabilities_test
     )
+
+    add_executable(async_transfer_test
+        tests/async_transfer_test.cpp
+    )
+
+    target_link_libraries(async_transfer_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(async_transfer_test PRIVATE /W4)
+    else()
+        target_compile_options(async_transfer_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME async_transfer_test
+        COMMAND async_transfer_test
+    )
+    set_tests_properties(async_transfer_test PROPERTIES TIMEOUT 60)
 
     add_executable(world_test
         tests/world_test.cpp
