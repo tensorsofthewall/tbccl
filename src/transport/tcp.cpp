@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 
 namespace tbccl
 {
@@ -439,6 +440,53 @@ bool busy_poll_supported()
 #else
     return false;
 #endif
+}
+
+// Thin Transport adapter over an existing Connection. See
+// transport.hpp for why this exists as a separate seam rather than
+// treating Connection itself as "the" transport abstraction.
+TcpTransport::TcpTransport(std::unique_ptr<Connection> connection)
+    : connection_(std::move(connection))
+{
+    if (!connection_)
+    {
+        throw std::invalid_argument(
+            "TcpTransport requires a non-null Connection");
+    }
+}
+
+void TcpTransport::send(const void *data, std::size_t bytes)
+{
+    connection_->send(data, bytes);
+}
+
+void TcpTransport::recv(void *data, std::size_t bytes)
+{
+    connection_->recv(data, bytes);
+}
+
+TransportCapabilities TcpTransport::capabilities() const noexcept
+{
+    TransportCapabilities caps;
+    caps.reliable = true;
+    caps.ordered = true;
+    caps.supports_zero_copy = false;
+    caps.supports_registered_memory = false;
+    caps.supports_direct_device_memory = false;
+    // TCP itself has no alignment requirement; 1 means "no preference",
+    // not "must be byte-aligned only" -- higher layers are free to
+    // choose any alignment they like when a transport reports 1.
+    caps.preferred_chunk_alignment = 1;
+    // One TCP stream has no notion of independently-outstanding
+    // in-flight transfers at this layer -- send()/recv() calls on it
+    // are serialized by the connection itself.
+    caps.max_in_flight = 1;
+    return caps;
+}
+
+std::string TcpTransport::peer_name() const
+{
+    return connection_->peer_name();
 }
 
 } // namespace tbccl
