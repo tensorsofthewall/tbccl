@@ -56,6 +56,7 @@
 
 #include "tensor/tensor_backend.hpp"
 #include "tensor/transfer_diagnostics.hpp"
+#include "tensor/transfer_trace.hpp"
 
 #include <tbccl/tcp_world.hpp>
 #include <tbccl/world.hpp>
@@ -70,6 +71,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -92,6 +94,10 @@ namespace
         std::string bind_address;
         int busy_poll_us = 0;
         bool diagnostics = false;
+        bool trace = false;
+        std::string run_id = "unspecified";
+        std::string physical_machine = "unspecified";
+        int source_gap_us = 0;
 
         std::string mode; // required
         BackendKind local_backend = BackendKind::Host;
@@ -120,7 +126,8 @@ namespace
                "metal-shared|metal-private-staged] "
             << "[--source-rank N] [--sizes BYTES[,BYTES...]] "
             << "[--warmup N] [--iterations N] "
-            << "[--timing-scope ready|produce] [--diagnostics]\n\n"
+            << "[--timing-scope ready|produce] [--diagnostics] [--trace] "
+               "[--run-id ID] [--physical-machine NAME] [--source-gap-us N]\n\n"
             << "staging-only needs no --rank/--peers (single process, no "
                "networking). Every other mode requires exactly 2 --peers. "
                "network-only and latency-floor always use the host "
@@ -336,6 +343,26 @@ namespace
             {
                 options.diagnostics = true;
             }
+            else if (argument == "--trace")
+            {
+                options.trace = true;
+            }
+            else if (argument == "--run-id")
+            {
+                options.run_id = require_value(argument);
+            }
+            else if (argument == "--physical-machine")
+            {
+                options.physical_machine = require_value(argument);
+            }
+            else if (argument == "--source-gap-us")
+            {
+                const unsigned long value =
+                    parse_unsigned(argument, require_value(argument));
+                if (value > 10000000)
+                    throw std::runtime_error("--source-gap-us must be <= 10000000");
+                options.source_gap_us = static_cast<int>(value);
+            }
             else if (argument == "--mode")
             {
                 options.mode = require_value(argument);
@@ -453,6 +480,16 @@ namespace
         if (options.diagnostics && options.mode != "end-to-end" &&
             options.mode != "ack-calibration")
             throw std::runtime_error("--diagnostics requires end-to-end or ack-calibration mode");
+
+        if ((options.trace || options.source_gap_us != 0) &&
+            options.mode != "end-to-end" && options.mode != "ack-calibration")
+            throw std::runtime_error(
+                "--trace/--source-gap-us require end-to-end or ack-calibration mode");
+
+        if (options.trace &&
+            (options.run_id == "unspecified" || options.physical_machine == "unspecified"))
+            throw std::runtime_error(
+                "--trace requires --run-id and --physical-machine");
 
         return options;
     }
@@ -663,7 +700,7 @@ namespace
         return hton64(value);
     }
 
-    constexpr std::uint32_t kControlProtocolVersion = 1;
+    constexpr std::uint32_t kControlProtocolVersion = 2;
     constexpr std::uint32_t kTransferModeEndToEnd = 1;
     constexpr std::uint32_t kTransferModeAckCalibration = 2;
 
@@ -677,6 +714,7 @@ namespace
         std::uint32_t iterations = 0;
         std::uint32_t warmup = 0;
         std::uint32_t verify_enabled = 1;
+        std::uint32_t source_gap_us = 0;
     };
 
     struct WireControlMessage
@@ -689,6 +727,7 @@ namespace
         std::uint32_t iterations;
         std::uint32_t warmup;
         std::uint32_t verify_enabled;
+        std::uint32_t source_gap_us;
     };
 
     WireControlMessage to_wire(const ControlMessage &message)
@@ -702,6 +741,7 @@ namespace
         wire.iterations = htonl(message.iterations);
         wire.warmup = htonl(message.warmup);
         wire.verify_enabled = htonl(message.verify_enabled);
+        wire.source_gap_us = htonl(message.source_gap_us);
         return wire;
     }
 
@@ -716,6 +756,7 @@ namespace
         message.iterations = ntohl(wire.iterations);
         message.warmup = ntohl(wire.warmup);
         message.verify_enabled = ntohl(wire.verify_enabled);
+        message.source_gap_us = ntohl(wire.source_gap_us);
         return message;
     }
 
@@ -775,6 +816,7 @@ namespace
         require_equal("warmup", mine.warmup, peer_message.warmup);
         require_equal(
             "verify_enabled", mine.verify_enabled, peer_message.verify_enabled);
+        require_equal("source_gap_us", mine.source_gap_us, peer_message.source_gap_us);
     }
 
     // -----------------------------------------------------------------------------
@@ -1206,6 +1248,7 @@ namespace
             mine.iterations = static_cast<std::uint32_t>(options.iterations);
             mine.warmup = static_cast<std::uint32_t>(options.warmup);
             mine.verify_enabled = 1;
+            mine.source_gap_us = static_cast<std::uint32_t>(options.source_gap_us);
 
             const ControlMessage peer_message =
                 exchange_control(world, options.rank, peer, mine);
@@ -1220,6 +1263,22 @@ namespace
                 static_cast<std::size_t>(options.iterations);
 
             tbccl_bench::diagnostics::CpuWindow cpu(options.diagnostics);
+            const std::string direction =
+                is_source
+                    ? local_backend_name + "->" + peer_backend_name
+                    : peer_backend_name + "->" + local_backend_name;
+            tbccl_bench::trace::Batch trace(
+                options.trace,
+                reserve_n,
+                options.run_id,
+                options.physical_machine,
+                options.rank,
+                options.source_rank,
+                direction,
+                size,
+                options.busy_poll_us,
+                options.timing_scope,
+                options.source_gap_us);
 
             if (is_source)
             {
@@ -1235,9 +1294,23 @@ namespace
                 sync_samples.reserve(reserve_n);
                 enqueue_samples.reserve(reserve_n);
                 send_samples.reserve(reserve_n);
+                std::int64_t previous_iteration_end_ns = -1;
 
                 for (int i = 0; i < total; ++i)
                 {
+                    if (i > 0 && options.source_gap_us > 0)
+                        std::this_thread::sleep_for(
+                            std::chrono::microseconds(options.source_gap_us));
+                    tbccl_bench::trace::Entry trace_entry;
+                    const std::int64_t iteration_begin_ns = trace.now();
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.iteration_index = i - options.warmup;
+                        trace_entry.iteration_begin_ns = iteration_begin_ns;
+                        if (previous_iteration_end_ns >= 0)
+                            trace_entry.observed_source_gap_ns =
+                                iteration_begin_ns - previous_iteration_end_ns;
+                    }
                     if (i == options.warmup) cpu.begin();
                     const std::uint32_t seed = static_cast<std::uint32_t>(0x3000 + i);
 
@@ -1288,15 +1361,32 @@ namespace
                         interval_start = sync_end;
                     }
 
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.source_ready_ns = trace.now();
+                        trace_entry.staging_begin_ns = trace.now();
+                    }
                     backend->stage_device_to_host();
                     const auto staging_end = std::chrono::steady_clock::now();
 
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.staging_end_ns = trace.now();
+                        trace_entry.send_begin_ns = trace.now();
+                    }
                     backend->host_send_data(world, peer);
                     const auto send_end = std::chrono::steady_clock::now();
 
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.send_end_ns = trace.now();
+                        trace_entry.ack_wait_begin_ns = trace.now();
+                    }
                     std::uint8_t ack = 0;
                     world.recv(peer, &ack, sizeof(ack));
                     const auto ack_observed = std::chrono::steady_clock::now();
+                    const std::int64_t iteration_end_ns = trace.now();
+                    previous_iteration_end_ns = iteration_end_ns;
 
                     // Part 22's per-iteration invariant: in "produce"
                     // scope, the timer starts at/before the producer's
@@ -1333,10 +1423,14 @@ namespace
                         staging_samples.push_back(microseconds_between(sync_end, staging_end));
                         send_samples.push_back(microseconds_between(staging_end, send_end));
                         completion_samples.push_back(microseconds_between(interval_start, ack_observed));
+                        trace_entry.ack_received_ns = iteration_end_ns;
+                        trace_entry.iteration_end_ns = iteration_end_ns;
+                        trace.add(trace_entry);
                     }
                 }
 
                 cpu.end();
+                trace.flush();
                 cpu.report(options.rank, size);
                 tbccl_bench::diagnostics::samples(options.diagnostics, options.rank, size,
                                                 "completion_confirmed", completion_samples);
@@ -1414,13 +1508,32 @@ namespace
                 for (int i = 0; i < total; ++i)
                 {
                     if (i == options.warmup) cpu.begin();
+                    tbccl_bench::trace::Entry trace_entry;
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.iteration_index = i - options.warmup;
+                        trace_entry.iteration_begin_ns = trace.now();
+                        trace_entry.recv_begin_ns = trace.now();
+                    }
                     const auto recv_start = std::chrono::steady_clock::now();
                     backend->host_recv_data(world, peer);
                     const auto recv_end = std::chrono::steady_clock::now();
 
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.recv_end_ns = trace.now();
+                        trace_entry.destination_staging_begin_ns = trace.now();
+                    }
                     backend->stage_host_to_device();
                     const auto stage_end = std::chrono::steady_clock::now();
 
+                    if (i >= options.warmup)
+                    {
+                        trace_entry.destination_staging_end_ns = trace.now();
+                        trace_entry.destination_sync_end_ns =
+                            trace_entry.destination_staging_end_ns;
+                        trace_entry.ack_send_begin_ns = trace.now();
+                    }
                     const std::uint8_t ack = 1;
                     world.send(peer, &ack, sizeof(ack));
 
@@ -1428,10 +1541,14 @@ namespace
                     {
                         recv_samples.push_back(microseconds_between(recv_start, recv_end));
                         staging_samples.push_back(microseconds_between(recv_end, stage_end));
+                        trace_entry.ack_send_end_ns = trace.now();
+                        trace_entry.iteration_end_ns = trace_entry.ack_send_end_ns;
+                        trace.add(trace_entry);
                     }
                 }
 
                 cpu.end();
+                trace.flush();
                 cpu.report(options.rank, size);
 
                 StageSummary summary;
