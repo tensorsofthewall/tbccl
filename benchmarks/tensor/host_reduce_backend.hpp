@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <type_traits>
 
 namespace tbccl_bench::tensor
 {
@@ -59,7 +60,25 @@ private:
         const auto *src = static_cast<const T *>(peer_);
         for (std::size_t i = 0; i < count; ++i)
         {
-            dst[i] = dst[i] + src[i];
+            if constexpr (std::is_integral_v<T>)
+            {
+                // Phase 39 Part AC: bucketed AllReduce sums arbitrary
+                // CUDA-compute-kernel output bytes reinterpreted as
+                // Int32 words, which overflows routinely -- go through
+                // the matching unsigned type so wraparound is
+                // well-defined two's-complement modular arithmetic,
+                // never signed-overflow UB (same convention as
+                // src/collectives/reduction_internal.hpp's
+                // wrapping_add, which this isn't allowed to depend on
+                // directly since that header is private to the tbccl
+                // library target).
+                using U = std::make_unsigned_t<T>;
+                dst[i] = static_cast<T>(static_cast<U>(dst[i]) + static_cast<U>(src[i]));
+            }
+            else
+            {
+                dst[i] = dst[i] + src[i];
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 namespace tbccl_bench::tensor
 {
@@ -25,7 +26,20 @@ namespace
     {
         const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
         if (i >= count) return;
-        dst[i] = dst[i] + src[i];
+        if constexpr (std::is_integral_v<T>)
+        {
+            // Phase 39: bucketed AllReduce sums arbitrary CUDA-compute
+            // output reinterpreted as Int32, which overflows routinely
+            // -- wrap via the unsigned type, matching
+            // host_reduce_backend.hpp's identical fix, so CPU and GPU
+            // produce byte-identical wraparound results.
+            using U = std::make_unsigned_t<T>;
+            dst[i] = static_cast<T>(static_cast<U>(dst[i]) + static_cast<U>(src[i]));
+        }
+        else
+        {
+            dst[i] = dst[i] + src[i];
+        }
     }
 
     template <typename T>
