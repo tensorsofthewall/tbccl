@@ -137,6 +137,8 @@ if(TBCCL_ENABLE_CUDA)
         benchmarks/tensor/cuda_chunked_async_backend.cu
         benchmarks/tensor/cuda_bucket_compute.cu
         benchmarks/tensor/cuda_reduce_backend.cu
+        benchmarks/tensor/cuda_external_async_backend.cu
+        benchmarks/tensor/cuda_memory_provider.cu
     )
 endif()
 
@@ -1466,6 +1468,33 @@ if(BUILD_TESTING)
             NAME cuda_bucket_compute_test
             COMMAND cuda_bucket_compute_test
         )
+
+        add_executable(communicator_cuda_test
+            tests/communicator_cuda_test.cpp
+        )
+
+        target_link_libraries(communicator_cuda_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        if(MSVC)
+            target_compile_options(communicator_cuda_test PRIVATE /W4)
+        else()
+            target_compile_options(communicator_cuda_test PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+            )
+        endif()
+
+        add_test(
+            NAME communicator_cuda_test
+            COMMAND communicator_cuda_test
+        )
+        set_tests_properties(communicator_cuda_test PROPERTIES TIMEOUT 180)
 
         add_executable(cuda_reduce_backend_test
             tests/cuda_reduce_backend_test.cpp
