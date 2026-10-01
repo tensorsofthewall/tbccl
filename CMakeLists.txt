@@ -43,6 +43,7 @@ add_library(tbccl STATIC
     src/collectives/reduce_scatter_pipelined.cpp
     src/collectives/all_reduce_pipelined.cpp
     src/collectives/algorithm_selector.cpp
+    src/collectives/hetero_allreduce.cpp
 )
 
 if(TBCCL_ENABLE_RING_TRACE)
@@ -617,6 +618,33 @@ if(BUILD_TESTING)
         COMMAND async_transfer_test
     )
     set_tests_properties(async_transfer_test PROPERTIES TIMEOUT 60)
+
+    add_executable(hetero_allreduce_test
+        tests/hetero_allreduce_test.cpp
+    )
+
+    target_link_libraries(hetero_allreduce_test
+        PRIVATE
+            tbccl_tensor_backend
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(hetero_allreduce_test PRIVATE /W4)
+    else()
+        target_compile_options(hetero_allreduce_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME hetero_allreduce_test
+        COMMAND hetero_allreduce_test
+    )
+    set_tests_properties(hetero_allreduce_test PROPERTIES TIMEOUT 60)
 
     add_executable(raw_io_worker_test
         tests/raw_io_worker_test.cpp
