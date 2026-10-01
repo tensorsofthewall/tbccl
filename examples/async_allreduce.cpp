@@ -30,6 +30,7 @@
 #import <Metal/Metal.h>
 #endif
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -76,6 +77,11 @@ struct Options
     std::vector<PeerEndpoint> peers;
     std::string backend = "host"; // host, cuda, metal-shared
     std::size_t count = 1 << 20;  // float32 elements, ~4MiB
+    std::size_t rounds = 1;       // Part AZ/BD: >1 reuses the same Communicator
+                                   // and buffer for a steady-state timing
+                                   // comparison against the old benchmark path
+                                   // (round 1 is a cold first-call, not
+                                   // representative -- see docs/phase41_report.md).
 };
 
 Options parse_args(int argc, char **argv)
@@ -92,6 +98,7 @@ Options parse_args(int argc, char **argv)
         else if (arg == "--peers") o.peers = parse_peers(next());
         else if (arg == "--backend") o.backend = next();
         else if (arg == "--count") o.count = std::stoull(next());
+        else if (arg == "--rounds") o.rounds = std::stoull(next());
         else throw std::runtime_error("unknown argument: " + arg);
     }
     return o;
@@ -133,14 +140,29 @@ int main(int argc, char **argv)
 
         std::optional<tbccl::Work> work;
         bool verify_ok = false;
+        auto submit_time = std::chrono::steady_clock::now();
+        std::chrono::steady_clock::time_point complete_time;
 
         if (options.backend == "host")
         {
-            std::vector<float> data(options.count, local_value);
+            std::vector<float> data(options.count);
             tbccl::BufferView view{tbccl::MemoryKind::Host, data.data(), bytes, 0};
-            work = comm->all_reduce(view, view, options.count, tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
-            do_other_work(); // overlapped with the in-flight collective
-            work->wait();
+            for (std::size_t round = 0; round < options.rounds; ++round)
+            {
+                data.assign(options.count, local_value);
+                const auto round_start = std::chrono::steady_clock::now();
+                work = comm->all_reduce(view, view, options.count, tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
+                if (round == 0) do_other_work(); // overlapped with the in-flight collective
+                work->wait();
+                const auto round_end = std::chrono::steady_clock::now();
+                if (options.rounds > 1)
+                {
+                    std::cout << "[async_allreduce] rank=" << comm->rank() << " round=" << round
+                              << " round_us=" << std::chrono::duration<double, std::micro>(round_end - round_start).count() << "\n";
+                }
+                if (round == 0) submit_time = round_start;
+            }
+            complete_time = std::chrono::steady_clock::now();
             verify_ok = !work->has_error() && data[0] == 3.0f; // rank0(1.0) + rank1(2.0)
         }
 #if defined(TBCCL_EXAMPLE_ENABLE_CUDA)
@@ -150,15 +172,33 @@ int main(int argc, char **argv)
             cudaMalloc(&device_ptr, bytes);
             std::vector<float> host_init(options.count, local_value);
             cudaMemcpy(device_ptr, host_init.data(), bytes, cudaMemcpyHostToDevice);
-
             tbccl::BufferView view{tbccl::MemoryKind::Cuda, device_ptr, bytes, 0};
-            work = comm->all_reduce(view, view, options.count, tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
-            do_other_work();
-            work->wait();
+
+            for (std::size_t round = 0; round < options.rounds; ++round)
+            {
+                const auto round_start = std::chrono::steady_clock::now();
+                work = comm->all_reduce(view, view, options.count, tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
+                if (round == 0) do_other_work(); // demonstrate overlap on the first round only
+                work->wait();
+                const auto round_end = std::chrono::steady_clock::now();
+                std::cout << "[async_allreduce] rank=" << comm->rank() << " round=" << round
+                          << " round_us=" << std::chrono::duration<double, std::micro>(round_end - round_start).count() << "\n";
+                if (round == 0) { submit_time = round_start; }
+                // Re-seed local input before the NEXT round only (not
+                // after the last one) -- all_reduce left the reduced
+                // result in device_ptr, and the final verification below
+                // must check that actual last-round result, not a
+                // re-seeded value.
+                if (round + 1 < options.rounds)
+                {
+                    cudaMemcpy(device_ptr, host_init.data(), bytes, cudaMemcpyHostToDevice);
+                }
+            }
 
             std::vector<float> result(options.count);
             cudaMemcpy(result.data(), device_ptr, bytes, cudaMemcpyDeviceToHost);
-            verify_ok = !work->has_error() && result[0] == 3.0f;
+            complete_time = std::chrono::steady_clock::now();
+            verify_ok = !work->has_error() && result[0] == 3.0f; // rank0(1.0) + rank1(2.0)
             cudaFree(device_ptr);
         }
 #endif
@@ -169,12 +209,24 @@ int main(int argc, char **argv)
             if (!device) throw std::runtime_error("no Metal device available");
             id<MTLBuffer> buffer = [device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
             auto *floats = static_cast<float *>(buffer.contents);
-            for (std::size_t i = 0; i < options.count; ++i) floats[i] = local_value;
-
             tbccl::BufferView view{tbccl::MemoryKind::MetalShared, buffer.contents, bytes, 0};
-            work = comm->all_reduce(view, view, options.count, tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
-            do_other_work();
-            work->wait();
+
+            for (std::size_t round = 0; round < options.rounds; ++round)
+            {
+                for (std::size_t i = 0; i < options.count; ++i) floats[i] = local_value;
+                const auto round_start = std::chrono::steady_clock::now();
+                work = comm->all_reduce(view, view, options.count, tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
+                if (round == 0) do_other_work();
+                work->wait();
+                const auto round_end = std::chrono::steady_clock::now();
+                if (options.rounds > 1)
+                {
+                    std::cout << "[async_allreduce] rank=" << comm->rank() << " round=" << round
+                              << " round_us=" << std::chrono::duration<double, std::micro>(round_end - round_start).count() << "\n";
+                }
+                if (round == 0) submit_time = round_start;
+            }
+            complete_time = std::chrono::steady_clock::now();
             verify_ok = !work->has_error() && floats[0] == 3.0f;
         }
 #endif
@@ -183,9 +235,11 @@ int main(int argc, char **argv)
             throw std::runtime_error("unsupported or not-compiled-in --backend: " + options.backend);
         }
 
+        const double elapsed_us = std::chrono::duration<double, std::micro>(complete_time - submit_time).count();
         std::cout << "[async_allreduce] rank=" << comm->rank()
                   << " has_error=" << (work ? work->has_error() : true)
-                  << " verify_ok=" << verify_ok << "\n";
+                  << " verify_ok=" << verify_ok
+                  << " elapsed_us=" << elapsed_us << "\n";
 
         // comm destructor (end of scope) performs clean shutdown: stops
         // workers, joins threads, releases the transport -- never
