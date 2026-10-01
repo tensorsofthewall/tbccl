@@ -5,4 +5,15 @@ find_dependency(Threads)
 
 include("${CMAKE_CURRENT_LIST_DIR}/TBCCLTargets.cmake")
 
+# Optional CUDA memory-provider component (TBCCL::tbccl_cuda). Present only
+# when TBCCL was installed from a TBCCL_ENABLE_CUDA=ON build; a host-only
+# install remains fully valid without it.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/TBCCLCudaTargets.cmake")
+    find_dependency(CUDAToolkit)
+    include("${CMAKE_CURRENT_LIST_DIR}/TBCCLCudaTargets.cmake")
+    set(TBCCL_cuda_FOUND TRUE)
+else()
+    set(TBCCL_cuda_FOUND FALSE)
+endif()
+
 check_required_components(TBCCL)

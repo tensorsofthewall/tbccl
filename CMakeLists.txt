@@ -90,6 +90,10 @@ target_compile_features(tbccl
         cxx_std_17
 )
 
+# The installed static library may be linked into shared objects (e.g.
+# out-of-tree framework adapters), so it must be position-independent.
+set_target_properties(tbccl PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 if(MSVC)
     target_compile_options(tbccl PRIVATE /W4)
 else()
@@ -143,9 +147,34 @@ if(TBCCL_ENABLE_CUDA)
         benchmarks/tensor/cuda_chunked_async_backend.cu
         benchmarks/tensor/cuda_bucket_compute.cu
         benchmarks/tensor/cuda_reduce_backend.cu
+    )
+endif()
+
+if(TBCCL_ENABLE_CUDA)
+    # Optional installable CUDA memory-provider component. Contains only
+    # what tbccl::register_cuda_support() needs and depends solely on the
+    # public tbccl headers; core `tbccl` stays CUDA-free. The private
+    # header cuda_external_async_backend.hpp is NOT installed.
+    add_library(tbccl_cuda STATIC
         benchmarks/tensor/cuda_external_async_backend.cu
         benchmarks/tensor/cuda_memory_provider.cu
     )
+    target_include_directories(tbccl_cuda PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/tensor
+    )
+    target_link_libraries(tbccl_cuda
+        PUBLIC tbccl
+        PRIVATE CUDA::cudart
+    )
+    set_target_properties(tbccl_cuda PROPERTIES
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON
+    )
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set_target_properties(tbccl_cuda PROPERTIES CUDA_ARCHITECTURES native)
+    endif()
+    target_link_libraries(tbccl_tensor_backend PUBLIC tbccl_cuda)
 endif()
 
 if(TBCCL_ENABLE_METAL)
@@ -1711,6 +1740,18 @@ install(TARGETS tbccl
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+if(TBCCL_ENABLE_CUDA)
+    install(TARGETS tbccl_cuda
+        EXPORT TBCCLCudaTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+    install(EXPORT TBCCLCudaTargets
+        FILE TBCCLCudaTargets.cmake
+        NAMESPACE TBCCL::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TBCCL
+    )
+endif()
 
 install(DIRECTORY include/tbccl
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}

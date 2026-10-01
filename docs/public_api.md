@@ -22,18 +22,23 @@ This installs the core library and `include/tbccl/*.hpp` only. It
 requires nothing beyond a C++17 compiler and Threads to build and link
 against for `MemoryKind::Host`/`MemoryKind::MetalShared` buffers.
 
-**CUDA support is a separate, source-tree-only step this phase.** The
-optional CUDA device component (`benchmarks/tensor/cuda_external_async_backend.*`,
-`benchmarks/tensor/cuda_memory_provider.cu`, built as part of
-`tbccl_tensor_backend` when configured with `-DTBCCL_ENABLE_CUDA=ON`)
-is **not** part of the installed package yet -- an application that
-needs `MemoryKind::Cuda` support currently builds against this
-repository directly (not an installed prefix) and links
-`tbccl_tensor_backend`, then calls `tbccl::register_cuda_support()`
-(declared in the public `<tbccl/cuda_support.hpp>`) once before
-constructing any `Communicator` that will move CUDA buffers. Packaging
-this as an installable, optional CMake component is recommended Phase
-42 follow-up work (see Section "Known limitations" below).
+**CUDA support is an optional installable component.** Configure with
+`-DTBCCL_ENABLE_CUDA=ON` and the install additionally contains
+`libtbccl_cuda.a` and `TBCCLCudaTargets.cmake`; a host-only configure
+installs neither and stays fully valid. Core `tbccl` never depends on CUDA.
+
+```cmake
+find_package(TBCCL CONFIG REQUIRED)
+if(TBCCL_cuda_FOUND)
+    target_link_libraries(your_app PRIVATE TBCCL::tbccl_cuda)  # pulls CUDA::cudart
+endif()
+```
+
+then call `tbccl::register_cuda_support()` (declared in the public
+`<tbccl/cuda_support.hpp>`, idempotent) once before constructing any
+`Communicator` that will move CUDA buffers. The consuming project does not
+need to enable the CUDA language. Both `tbccl` and `tbccl_cuda` are built
+position-independent so they can be linked into shared objects.
 
 Metal-shared support needs **no separate step at all** -- see "Memory
 kinds" below.
