@@ -248,6 +248,16 @@ public:
     static void complete_error(
         const std::shared_ptr<TransferWork::State> &state,
         const std::string &message);
+
+    // Constructs a fresh, live TransferWork whose state is not tied to
+    // any TensorCommWorker request -- used by the Communicator's
+    // collective executor (which drives n2_all_reduce_tensor() on its
+    // own background thread, not via TensorCommWorker::enqueue) to
+    // return a standalone Work handle for an AllReduce. The returned
+    // TransferWork and the shared_ptr<State> obtained via state_of() on
+    // it refer to the same state, so complete_ok()/complete_error() on
+    // that state correctly completes the Work the caller is holding.
+    static TransferWork make();
 };
 
 } // namespace detail

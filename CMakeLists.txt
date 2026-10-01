@@ -27,6 +27,9 @@ add_library(tbccl STATIC
     src/core/chunk_plan.cpp
     src/core/staging_pool.cpp
     src/core/tensor_comm_worker.cpp
+    src/core/types.cpp
+    src/core/buffer.cpp
+    src/core/communicator.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -1299,6 +1302,32 @@ if(BUILD_TESTING)
         COMMAND tensor_backend_async_adapter_test
     )
     set_tests_properties(tensor_backend_async_adapter_test PROPERTIES TIMEOUT 60)
+
+    add_executable(communicator_test
+        tests/communicator_test.cpp
+    )
+
+    target_link_libraries(communicator_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(communicator_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME communicator_test
+        COMMAND communicator_test
+    )
+    set_tests_properties(communicator_test PROPERTIES TIMEOUT 60)
 
     add_executable(metal_shared_direct_async_backend_test
         tests/metal_shared_direct_async_backend_test.cpp
