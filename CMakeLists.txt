@@ -674,6 +674,38 @@ if(BUILD_TESTING)
     )
     set_tests_properties(hetero_allreduce_test PROPERTIES TIMEOUT 60)
 
+    add_executable(bucket_allreduce_worker_test
+        tests/bucket_allreduce_worker_test.cpp
+    )
+
+    target_link_libraries(bucket_allreduce_worker_test
+        PRIVATE
+            tbccl_tensor_backend
+            tbccl
+            Threads::Threads
+    )
+
+    target_include_directories(bucket_allreduce_worker_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+    )
+
+    if(MSVC)
+        target_compile_options(bucket_allreduce_worker_test PRIVATE /W4)
+    else()
+        target_compile_options(bucket_allreduce_worker_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME bucket_allreduce_worker_test
+        COMMAND bucket_allreduce_worker_test
+    )
+    set_tests_properties(bucket_allreduce_worker_test PROPERTIES TIMEOUT 60)
+
     add_executable(raw_io_worker_test
         tests/raw_io_worker_test.cpp
     )
