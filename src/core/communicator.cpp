@@ -1,0 +1,600 @@
+#include <tbccl/communicator.hpp>
+
+#include <tbccl/collectives.hpp>
+#include <tbccl/hetero_allreduce.hpp>
+#include <tbccl/tcp.hpp>
+#include <tbccl/tcp_world.hpp>
+#include <tbccl/transport.hpp>
+
+#include <algorithm>
+#include <atomic>
+#include <condition_variable>
+#include <cstring>
+#include <deque>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+#include <type_traits>
+#include <vector>
+
+namespace tbccl
+{
+
+namespace
+{
+
+// ---------------------------------------------------------------------
+// Built-in Host / MetalShared provider.
+//
+// A deliberately minimal, internal duplicate of
+// benchmarks/tensor/host_async_backend.hpp's and host_reduce_backend.hpp's
+// logic, rather than including those benchmark-only headers from core
+// tbccl (Part AE: public installed headers -- and, by the same
+// reasoning, core's own internal implementation -- must not depend on
+// benchmarks/, which is structurally built ON TOP of core, never the
+// reverse). Both pieces are small and proven; this is a deliberate,
+// documented duplication, not a design gap.
+// ---------------------------------------------------------------------
+
+class HostPointerAsyncBackend final : public AsyncMemoryBackend
+{
+public:
+    HostPointerAsyncBackend(void *buffer, std::size_t capacity)
+        : buffer_(static_cast<std::byte *>(buffer)), capacity_(capacity)
+    {
+    }
+
+    void stage_source_chunk(const Chunk &chunk, void *staging) override
+    {
+        std::memcpy(staging, buffer_ + chunk.offset, chunk.size);
+    }
+
+    void commit_destination_chunk(const Chunk &chunk, const void *staging) override
+    {
+        std::memcpy(buffer_ + chunk.offset, staging, chunk.size);
+    }
+
+    bool supports_direct_transport_access() const noexcept override { return true; }
+    const void *direct_source_data() const noexcept override { return buffer_; }
+    void *direct_destination_data() noexcept override { return buffer_; }
+
+    void *data() const noexcept { return buffer_; }
+    std::size_t capacity() const noexcept { return capacity_; }
+
+private:
+    std::byte *buffer_;
+    std::size_t capacity_;
+};
+
+class HostPointerReduceBackend final : public LocalReduceBackend
+{
+public:
+    HostPointerReduceBackend(void *local_and_output, const void *peer)
+        : local_and_output_(local_and_output), peer_(peer)
+    {
+    }
+
+    void reduce_sum(std::size_t count, DataType datatype) override
+    {
+        switch (datatype)
+        {
+        case DataType::Float32: sum_typed<float>(count); return;
+        case DataType::Float64: sum_typed<double>(count); return;
+        case DataType::Int32: sum_typed<std::int32_t>(count); return;
+        case DataType::Int64: sum_typed<std::int64_t>(count); return;
+        }
+        throw std::runtime_error("HostPointerReduceBackend: unrecognized DataType");
+    }
+
+private:
+    template <typename T>
+    void sum_typed(std::size_t count)
+    {
+        auto *dst = static_cast<T *>(local_and_output_);
+        const auto *src = static_cast<const T *>(peer_);
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if constexpr (std::is_integral_v<T>)
+            {
+                using U = std::make_unsigned_t<T>;
+                dst[i] = static_cast<T>(static_cast<U>(dst[i]) + static_cast<U>(src[i]));
+            }
+            else
+            {
+                dst[i] = dst[i] + src[i];
+            }
+        }
+    }
+
+    void *local_and_output_;
+    const void *peer_;
+};
+
+class HostMemoryProvider final : public ExternalMemoryProvider
+{
+public:
+    HostMemoryProvider(const BufferView &buffer, const ExecutionContext & /*context*/)
+        : primary_(buffer.data, buffer.bytes), bytes_(buffer.bytes)
+    {
+    }
+
+    AsyncMemoryBackend &primary_backend() override { return primary_; }
+
+    AsyncMemoryBackend &scratch_backend() override
+    {
+        if (!scratch_)
+        {
+            scratch_storage_.assign(bytes_, std::byte{0});
+            scratch_ = std::make_unique<HostPointerAsyncBackend>(scratch_storage_.data(), bytes_);
+        }
+        return *scratch_;
+    }
+
+    LocalReduceBackend &reduce_backend() override
+    {
+        // Force scratch_ to exist first so reduce_ can safely point at it.
+        scratch_backend();
+        if (!reduce_)
+        {
+            reduce_ = std::make_unique<HostPointerReduceBackend>(primary_.data(), scratch_->data());
+        }
+        return *reduce_;
+    }
+
+private:
+    HostPointerAsyncBackend primary_;
+    std::size_t bytes_;
+    std::vector<std::byte> scratch_storage_;
+    std::unique_ptr<HostPointerAsyncBackend> scratch_;
+    std::unique_ptr<HostPointerReduceBackend> reduce_;
+};
+
+// ---------------------------------------------------------------------
+// Provider factory registry (Part P/N extension point).
+// ---------------------------------------------------------------------
+
+std::mutex &registry_mutex()
+{
+    static std::mutex m;
+    return m;
+}
+
+std::map<MemoryKind, MemoryProviderFactory> &registry()
+{
+    static std::map<MemoryKind, MemoryProviderFactory> r = {
+        {MemoryKind::Host, [](const BufferView &b, const ExecutionContext &c) -> std::unique_ptr<ExternalMemoryProvider> {
+             return std::make_unique<HostMemoryProvider>(b, c);
+         }},
+        {MemoryKind::MetalShared, [](const BufferView &b, const ExecutionContext &c) -> std::unique_ptr<ExternalMemoryProvider> {
+             return std::make_unique<HostMemoryProvider>(b, c);
+         }},
+    };
+    return r;
+}
+
+} // namespace
+
+void register_memory_provider_factory(MemoryKind kind, MemoryProviderFactory factory)
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    registry()[kind] = std::move(factory);
+}
+
+bool memory_kind_registered(MemoryKind kind)
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    return registry().count(kind) != 0;
+}
+
+namespace
+{
+
+std::unique_ptr<ExternalMemoryProvider> make_provider(const BufferView &buffer, const ExecutionContext &context)
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    auto it = registry().find(buffer.memory_kind);
+    if (it == registry().end())
+    {
+        throw std::runtime_error(
+            "unsupported: no memory provider registered for kind=" + memory_kind_name(buffer.memory_kind) +
+            " (call tbccl::register_memory_provider_factory() first)");
+    }
+    return it->second(buffer, context);
+}
+
+// ---------------------------------------------------------------------
+// Collective executor: a generalized, promoted BucketAllReduceWorker
+// (Phase 39) -- one persistent thread driving n2_all_reduce_tensor()
+// jobs one at a time (matching that function's own "at most one
+// AllReduce-related transfer in flight" contract), returning a Work per
+// job immediately. Unlike BucketAllReduceWorker, a job failure does NOT
+// poison all subsequently queued jobs -- each job's failure is isolated
+// to its own Work (Part Q: communicator-owned Work semantics should not
+// silently wedge unrelated future operations). A communicator-level
+// transport/protocol failure is still tracked separately (failed_) and
+// does deliberately fail all future operations (Part BJ).
+// ---------------------------------------------------------------------
+
+struct CollectiveJob
+{
+    std::function<void()> run; // throws on failure
+    // Holds the public Work handle itself (copyable, shared state)
+    // rather than naming the private TransferWork::State type directly
+    // -- only detail::TransferWorkAccess (a friend of TransferWork) may
+    // name that type; non-friend code like this file can only obtain it
+    // via state_of() used inline as a function-call argument (see run()
+    // below), never stored in a variable with an explicit type.
+    Work work;
+};
+
+class CollectiveExecutor
+{
+public:
+    CollectiveExecutor() : thread_([this] { run(); }) {}
+
+    ~CollectiveExecutor()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_ = true;
+        }
+        cv_.notify_all();
+        thread_.join();
+    }
+
+    CollectiveExecutor(const CollectiveExecutor &) = delete;
+    CollectiveExecutor &operator=(const CollectiveExecutor &) = delete;
+
+    Work submit(std::function<void()> run)
+    {
+        Work work = detail::TransferWorkAccess::make();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push_back(CollectiveJob{std::move(run), work});
+        }
+        cv_.notify_all();
+        return work;
+    }
+
+private:
+    void run()
+    {
+        for (;;)
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cv_.wait(lock, [&] { return stop_ || !queue_.empty(); });
+            if (stop_ && queue_.empty()) return;
+            CollectiveJob job = std::move(queue_.front());
+            queue_.pop_front();
+            lock.unlock();
+            try
+            {
+                job.run();
+                detail::TransferWorkAccess::complete_ok(detail::TransferWorkAccess::state_of(job.work));
+            }
+            catch (const std::exception &e)
+            {
+                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
+            }
+            catch (...)
+            {
+                detail::TransferWorkAccess::complete_error(
+                    detail::TransferWorkAccess::state_of(job.work), "unknown error in collective executor");
+            }
+        }
+    }
+
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::deque<CollectiveJob> queue_;
+    bool stop_ = false;
+    std::thread thread_;
+};
+
+} // namespace
+
+// ---------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------
+
+bool Capabilities::supports_memory_kind(MemoryKind kind) const noexcept
+{
+    const auto remote_name = [&]() -> MemoryBackendKind {
+        switch (kind)
+        {
+        case MemoryKind::Host: return MemoryBackendKind::Host;
+        case MemoryKind::Cuda: return MemoryBackendKind::CudaPinned;
+        case MemoryKind::MetalShared: return MemoryBackendKind::MetalShared;
+        }
+        return MemoryBackendKind::Host;
+    }();
+    for (auto k : negotiation_.common_memory_backends)
+    {
+        if (k == remote_name) return true;
+    }
+    // Host is always valid locally even if not explicitly negotiated
+    // (every peer always advertises it -- peer_capabilities.hpp).
+    return kind == MemoryKind::Host;
+}
+
+bool Capabilities::supports_collective_all_reduce(MemoryKind /*kind*/, DataType datatype, ReduceOp op) const noexcept
+{
+    if (op != ReduceOp::Sum) return false;
+    switch (datatype)
+    {
+    case DataType::Int32:
+    case DataType::Int64:
+    case DataType::Float32:
+    case DataType::Float64:
+        return negotiation_.ok;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------
+// Communicator::Impl
+// ---------------------------------------------------------------------
+
+struct Communicator::Impl
+{
+    std::size_t rank = 0;
+    std::size_t world_size = 0;
+    std::size_t other_peer = 0; // the only valid P2P peer index (world_size==2)
+
+    std::unique_ptr<TcpTransport> transport;
+    std::unique_ptr<TensorCommWorker> comm_worker;
+    std::unique_ptr<CollectiveExecutor> collective_executor;
+    Capabilities caps;
+
+    std::atomic<bool> failed{false};
+
+    void mark_failed(const std::string & /*reason*/)
+    {
+        failed.store(true, std::memory_order_relaxed);
+    }
+
+    // P2P send()/recv() enqueue onto TensorCommWorker, which is
+    // asynchronous: enqueue() returns immediately, and the actual
+    // backend->stage_source_chunk()/commit_destination_chunk() (or
+    // direct_source_data()/direct_destination_data()) calls happen later
+    // on TensorCommWorker's own internal threads. The per-call
+    // ExternalMemoryProvider (which owns the AsyncMemoryBackend those
+    // calls run against) must therefore outlive completion, not just the
+    // call to send()/recv() itself -- tracked here and pruned lazily
+    // (amortized, no per-call thread, matching Part BB/BC) rather than
+    // spawning a dedicated thread per operation just to keep it alive.
+    std::mutex outstanding_mutex;
+    std::vector<std::pair<Work, std::shared_ptr<ExternalMemoryProvider>>> outstanding;
+
+    Work track(Work work, std::shared_ptr<ExternalMemoryProvider> provider)
+    {
+        std::lock_guard<std::mutex> lock(outstanding_mutex);
+        outstanding.erase(
+            std::remove_if(
+                outstanding.begin(), outstanding.end(),
+                [](const auto &entry) { return entry.first.is_completed(); }),
+            outstanding.end());
+        outstanding.emplace_back(work, std::move(provider));
+        return work;
+    }
+};
+
+Communicator::Communicator() : impl_(std::make_unique<Impl>()) {}
+Communicator::~Communicator() = default;
+
+std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
+{
+    if (options.peers.size() != 2)
+    {
+        throw std::runtime_error(
+            "unsupported: Communicator::create() requires exactly 2 peers this phase (world_size=" +
+            std::to_string(options.peers.size()) + "); see docs/framework_integration_architecture.md");
+    }
+    if (options.rank >= options.peers.size())
+    {
+        throw std::runtime_error("invalid_argument: options.rank out of range for peers.size()");
+    }
+
+    auto comm = std::unique_ptr<Communicator>(new Communicator());
+    auto &impl = *comm->impl_;
+    impl.rank = options.rank;
+    impl.world_size = options.peers.size();
+    impl.other_peer = 1 - options.rank;
+
+    // Readiness barrier via TcpWorld, then a separate data-path
+    // connection -- the exact pattern established in Phase 38 to avoid
+    // the sleep-based startup race, reused unchanged for every benchmark
+    // since (tbccl_hetero_allreduce_bench.cpp, tbccl_bucketed_allreduce_bench.cpp).
+    TcpWorldOptions world_opts;
+    world_opts.rank = options.rank;
+    world_opts.bootstrap_timeout = options.bootstrap_timeout;
+    for (const auto &p : options.peers) world_opts.peers.push_back({p.host, p.port});
+    auto world = create_tcp_world(world_opts);
+
+    std::unique_ptr<Connection> connection;
+    std::unique_ptr<Listener> listener;
+    const auto data_port = static_cast<std::uint16_t>(options.peers[0].port + 1000);
+    if (options.rank == 0) listener = tcp_listen(options.peers[0].host, data_port, {});
+    barrier(*world);
+    if (options.rank == 0) connection = listener->accept();
+    else connection = tcp_connect(options.peers[0].host, data_port, {});
+
+    impl.caps.local_ = local_capabilities();
+    impl.caps.remote_ = exchange_capabilities(*connection, impl.caps.local_);
+    impl.caps.negotiation_ = negotiate(impl.caps.local_, impl.caps.remote_);
+    if (!impl.caps.negotiation_.ok)
+    {
+        throw std::runtime_error("transport_error: capability negotiation failed: " + impl.caps.negotiation_.failure_reason);
+    }
+
+    impl.transport = std::make_unique<TcpTransport>(std::move(connection));
+    impl.comm_worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, /*queue_depth=*/8);
+    impl.collective_executor = std::make_unique<CollectiveExecutor>();
+
+    return comm;
+}
+
+std::size_t Communicator::rank() const noexcept { return impl_->rank; }
+std::size_t Communicator::world_size() const noexcept { return impl_->world_size; }
+const Capabilities &Communicator::capabilities() const noexcept { return impl_->caps; }
+bool Communicator::failed() const noexcept { return impl_->failed.load(std::memory_order_relaxed); }
+
+namespace
+{
+void require_not_failed(const Communicator &comm)
+{
+    if (comm.failed())
+    {
+        throw std::runtime_error("peer_failure: communicator is in a failed state (a prior operation hit a transport/protocol error)");
+    }
+}
+} // namespace
+
+Work Communicator::send(
+    const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer, const ExecutionContext &context)
+{
+    require_not_failed(*this);
+    if (peer != impl_->other_peer)
+    {
+        throw std::runtime_error("invalid_argument: peer must be this communicator's single other rank");
+    }
+    validate_buffer_view(buffer, count, datatype);
+
+    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context);
+    auto &backend = provider->primary_backend();
+
+    TransferRequest request;
+    request.direction = TransferDirection::Send;
+    request.backend = &backend;
+    request.transport = impl_->transport.get();
+    request.total_bytes = buffer.bytes;
+    request.chunk_hint = 0;
+
+    try
+    {
+        Work work = impl_->comm_worker->enqueue(request);
+        return impl_->track(work, std::move(provider));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("send enqueue failed");
+        throw;
+    }
+}
+
+Work Communicator::recv(
+    const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer, const ExecutionContext &context)
+{
+    require_not_failed(*this);
+    if (peer != impl_->other_peer)
+    {
+        throw std::runtime_error("invalid_argument: peer must be this communicator's single other rank");
+    }
+    validate_buffer_view(buffer, count, datatype);
+
+    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context);
+    auto &backend = provider->primary_backend();
+
+    TransferRequest request;
+    request.direction = TransferDirection::Recv;
+    request.backend = &backend;
+    request.transport = impl_->transport.get();
+    request.total_bytes = buffer.bytes;
+    request.chunk_hint = 0;
+
+    try
+    {
+        Work work = impl_->comm_worker->enqueue(request);
+        return impl_->track(work, std::move(provider));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("recv enqueue failed");
+        throw;
+    }
+}
+
+Work Communicator::all_reduce(
+    const BufferView &send_buf,
+    const BufferView &recv_buf,
+    std::size_t count,
+    DataType datatype,
+    ReduceOp op,
+    const ExecutionContext &context)
+{
+    require_not_failed(*this);
+
+    if (impl_->world_size != 2)
+    {
+        throw std::runtime_error("unsupported: all_reduce requires world_size==2 (heterogeneous N=2 engine)");
+    }
+    if (op != ReduceOp::Sum)
+    {
+        throw std::runtime_error("unsupported: all_reduce only supports ReduceOp::Sum this phase");
+    }
+    validate_buffer_view(send_buf, count, datatype);
+    validate_buffer_view(recv_buf, count, datatype);
+
+    constexpr std::size_t kRoot = 0; // Part X: fixed internal policy, never exposed.
+    const std::size_t rank = impl_->rank;
+    const std::size_t total_bytes = recv_buf.bytes;
+
+    // Keep the provider alive for the duration of the collective by
+    // capturing it (shared_ptr) into the executor job's lambda.
+    auto provider = std::shared_ptr<ExternalMemoryProvider>(make_provider(recv_buf, context));
+
+    if (send_buf.data != recv_buf.data && count > 0)
+    {
+        // Out-of-place: stage send_buf's content into recv_buf's location
+        // before the collective, so both root and non-root logic can
+        // uniformly treat recv_buf as "holds the local input, ends up
+        // holding the result" (Part AB). Host-only memcpy is correct
+        // here because MemoryKind::MetalShared's data is CPU-visible by
+        // contract and MemoryKind::Cuda providers are expected to
+        // perform device-side copies before returning from their own
+        // factory if they need this -- Phase 41 does not implement an
+        // out-of-place external-CUDA AllReduce; call with send_buf.data
+        // == recv_buf.data (in-place) for Cuda buffers.
+        if (recv_buf.memory_kind == MemoryKind::Cuda)
+        {
+            throw std::runtime_error(
+                "unsupported: out-of-place all_reduce (send_buf.data != recv_buf.data) is not supported for MemoryKind::Cuda; pass the same BufferView for send_buf and recv_buf");
+        }
+        std::memcpy(recv_buf.data, send_buf.data, recv_buf.bytes);
+    }
+
+    Transport *transport = impl_->transport.get();
+    TensorCommWorker *worker = impl_->comm_worker.get();
+
+    auto run = [transport, worker, provider, rank, total_bytes, count, datatype]() {
+        AsyncMemoryBackend &primary = provider->primary_backend();
+        if (rank == kRoot)
+        {
+            AsyncMemoryBackend &scratch = provider->scratch_backend();
+            LocalReduceBackend &reduce = provider->reduce_backend();
+            n2_all_reduce_tensor(
+                *transport, *worker, scratch, primary, &reduce,
+                rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+        }
+        else
+        {
+            n2_all_reduce_tensor(
+                *transport, *worker, primary, primary, nullptr,
+                rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+        }
+    };
+
+    try
+    {
+        return impl_->collective_executor->submit(std::move(run));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("all_reduce submit failed");
+        throw;
+    }
+}
+
+} // namespace tbccl

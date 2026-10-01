@@ -122,6 +122,11 @@ namespace detail
         state->cv.notify_all();
     }
 
+    TransferWork TransferWorkAccess::make()
+    {
+        return TransferWork();
+    }
+
 } // namespace detail
 
 namespace
