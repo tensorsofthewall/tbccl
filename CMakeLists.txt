@@ -1298,6 +1298,33 @@ if(BUILD_TESTING)
     )
     set_tests_properties(tensor_backend_async_adapter_test PROPERTIES TIMEOUT 60)
 
+    add_executable(metal_shared_direct_async_backend_test
+        tests/metal_shared_direct_async_backend_test.cpp
+    )
+
+    target_link_libraries(metal_shared_direct_async_backend_test
+        PRIVATE
+            tbccl_tensor_backend
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(metal_shared_direct_async_backend_test PRIVATE /W4)
+    else()
+        target_compile_options(metal_shared_direct_async_backend_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME metal_shared_direct_async_backend_test
+        COMMAND metal_shared_direct_async_backend_test
+    )
+    set_tests_properties(metal_shared_direct_async_backend_test PROPERTIES TIMEOUT 60)
+
     # Phase 18 (Part H): exercises tbccl_tensor_transfer_bench's
     # --timing-scope ready/produce CLI behavior by spawning the actual
     # compiled binary -- its logic lives in that .cpp's anonymous
