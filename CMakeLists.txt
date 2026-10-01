@@ -133,6 +133,7 @@ if(TBCCL_ENABLE_CUDA)
         benchmarks/tensor/cuda_backend.cu
         benchmarks/tensor/cuda_chunked_async_backend.cu
         benchmarks/tensor/cuda_bucket_compute.cu
+        benchmarks/tensor/cuda_reduce_backend.cu
     )
 endif()
 
@@ -1330,6 +1331,32 @@ if(BUILD_TESTING)
             COMMAND cuda_bucket_compute_test
         )
 
+        add_executable(cuda_reduce_backend_test
+            tests/cuda_reduce_backend_test.cpp
+        )
+
+        target_link_libraries(cuda_reduce_backend_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        if(MSVC)
+            target_compile_options(cuda_reduce_backend_test PRIVATE /W4)
+        else()
+            target_compile_options(cuda_reduce_backend_test PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+            )
+        endif()
+
+        add_test(
+            NAME cuda_reduce_backend_test
+            COMMAND cuda_reduce_backend_test
+        )
+
         # Exercises cuda_sync_bench's synchronization- mode/H2D/D2H
         # correctness and CLI validation by spawning the actual compiled
         # binary -- it is a standalone diagnostic tool (a plain main(),
@@ -1384,6 +1411,28 @@ if(BUILD_TESTING)
         add_test(
             NAME tensor_metal_test
             COMMAND tensor_metal_test
+        )
+
+        add_executable(metal_reduce_backend_test
+            tests/metal_reduce_backend_test.cpp
+        )
+
+        target_link_libraries(metal_reduce_backend_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        target_compile_options(metal_reduce_backend_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+
+        add_test(
+            NAME metal_reduce_backend_test
+            COMMAND metal_reduce_backend_test
         )
     endif()
 

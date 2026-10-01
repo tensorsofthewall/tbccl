@@ -7,6 +7,7 @@
 // kernel is needed unless the gate (CPU reduction > 10% of end-to-end
 // time) is actually tripped.
 
+#include <tbccl/hetero_allreduce.hpp>
 #include <tbccl/reduction.hpp>
 
 #include <cstddef>
