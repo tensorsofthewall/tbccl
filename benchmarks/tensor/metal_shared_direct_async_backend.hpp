@@ -74,6 +74,14 @@ public:
         return backend_.destination_staging_data();
     }
 
+    // No-op: unlike TensorBackendAsyncAdapter, this backend has no
+    // per-chunk commit bookkeeping to reset (the direct path never calls
+    // stage_source_chunk()/commit_destination_chunk()). Present only so
+    // call sites that unconditionally call begin_transfer() on whichever
+    // concrete Metal backend is active (adapter or direct) don't need to
+    // branch on that choice.
+    void begin_transfer(std::size_t /*expected_chunk_count*/) noexcept {}
+
 private:
     TensorBackend &backend_;
 };

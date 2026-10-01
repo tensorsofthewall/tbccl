@@ -28,6 +28,7 @@
 #include "bucket_allreduce_worker.hpp"
 #include "tensor/host_async_backend.hpp"
 #include "tensor/host_reduce_backend.hpp"
+#include "tensor/metal_shared_direct_async_backend.hpp"
 #include "tensor/tensor_backend.hpp"
 #include "tensor/tensor_backend_async_adapter.hpp"
 
@@ -114,6 +115,7 @@ namespace
         std::size_t warmup = 3;
         std::size_t iterations = 10;
         std::string schedule = "overlap"; // compute-only, collective-only, serial, overlap
+        std::string metal_async_path = "adapter"; // adapter, direct
         std::string label;
         std::string output;
         std::string timeline_output;
@@ -143,6 +145,7 @@ namespace
             else if (arg == "--warmup") o.warmup = std::stoull(require_value(arg, i, argc, argv));
             else if (arg == "--iterations") o.iterations = std::stoull(require_value(arg, i, argc, argv));
             else if (arg == "--schedule") o.schedule = require_value(arg, i, argc, argv);
+            else if (arg == "--metal-async-path") o.metal_async_path = require_value(arg, i, argc, argv);
             else if (arg == "--label") o.label = require_value(arg, i, argc, argv);
             else if (arg == "--output") o.output = require_value(arg, i, argc, argv);
             else if (arg == "--timeline-output") o.timeline_output = require_value(arg, i, argc, argv);
@@ -334,8 +337,13 @@ int main(int argc, char **argv)
         void *compute_stream = nullptr;
         void *copy_stream = nullptr;
 #endif
+        if (options.metal_async_path != "adapter" && options.metal_async_path != "direct")
+            throw std::runtime_error("unknown --metal-async-path: " + options.metal_async_path);
+        const bool metal_direct = (options.metal_async_path == "direct");
+
         std::vector<std::unique_ptr<tbccl_bench::tensor::TensorBackend>> metal_backends;
         std::vector<std::unique_ptr<tbccl_bench::tensor::TensorBackendAsyncAdapter>> metal_adapters;
+        std::vector<std::unique_ptr<tbccl_bench::tensor::MetalSharedDirectAsyncBackend>> metal_directs;
         std::vector<std::unique_ptr<tbccl_bench::tensor::HostAsyncBackend>> metal_send_wrappers;
         std::vector<std::unique_ptr<tbccl_bench::tensor::HostReduceBackend>> metal_reduces;
 
@@ -371,8 +379,21 @@ int main(int argc, char **argv)
             {
                 auto backend = tbccl_bench::tensor::make_backend(tbccl_bench::tensor::BackendKind::MetalShared);
                 backend->allocate(options.bucket_bytes);
-                auto adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*backend);
-                recv_backends[b] = adapter.get();
+
+                tbccl::AsyncMemoryBackend *metal_async = nullptr;
+                if (metal_direct)
+                {
+                    auto direct = std::make_unique<tbccl_bench::tensor::MetalSharedDirectAsyncBackend>(*backend);
+                    metal_async = direct.get();
+                    metal_directs.push_back(std::move(direct));
+                }
+                else
+                {
+                    auto adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*backend);
+                    metal_async = adapter.get();
+                    metal_adapters.push_back(std::move(adapter));
+                }
+                recv_backends[b] = metal_async;
                 if (is_root)
                 {
                     metal_send_wrappers.push_back(std::make_unique<tbccl_bench::tensor::HostAsyncBackend>(
@@ -384,10 +405,9 @@ int main(int argc, char **argv)
                 }
                 else
                 {
-                    send_backends[b] = adapter.get();
+                    send_backends[b] = metal_async;
                 }
                 metal_backends.push_back(std::move(backend));
-                metal_adapters.push_back(std::move(adapter));
             }
         }
 
@@ -437,7 +457,8 @@ int main(int argc, char **argv)
                     auto *src = static_cast<std::uint8_t *>(
                         const_cast<void *>(backend->source_staging_data()));
                     for (std::size_t i = 0; i < options.bucket_bytes; ++i) src[i] = mac_pattern_byte(i, seed);
-                    metal_adapters[b]->begin_transfer(chunk_count);
+                    if (metal_direct) metal_directs[b]->begin_transfer(chunk_count);
+                    else metal_adapters[b]->begin_transfer(chunk_count);
                     if (is_root)
                     {
                         // Root's send-back wrapper must also reset per
@@ -552,7 +573,8 @@ int main(int argc, char **argv)
                     auto &backend = metal_backends[b];
                     auto *src = static_cast<std::uint8_t *>(const_cast<void *>(backend->source_staging_data()));
                     for (std::size_t i = 0; i < options.bucket_bytes; ++i) src[i] = mac_pattern_byte(i, seed);
-                    metal_adapters[b]->begin_transfer(chunk_count);
+                    if (metal_direct) metal_directs[b]->begin_transfer(chunk_count);
+                    else metal_adapters[b]->begin_transfer(chunk_count);
                 }
             }
 
@@ -624,6 +646,7 @@ int main(int argc, char **argv)
         json << "  \"rank\": " << rank << ",\n";
         json << "  \"root\": " << options.root << ",\n";
         json << "  \"schedule\": \"" << options.schedule << "\",\n";
+        json << "  \"metal_async_path\": \"" << options.metal_async_path << "\",\n";
         json << "  \"bucket_bytes\": " << options.bucket_bytes << ",\n";
         json << "  \"bucket_count\": " << options.bucket_count << ",\n";
         json << "  \"compute_rounds\": " << options.compute_rounds << ",\n";

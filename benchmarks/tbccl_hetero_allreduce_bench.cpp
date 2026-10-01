@@ -23,6 +23,7 @@
 
 #include "tensor/host_dual_buffer_backend.hpp"
 #include "tensor/host_reduce_backend.hpp"
+#include "tensor/metal_shared_direct_async_backend.hpp"
 #include "tensor/tensor_backend.hpp"
 #include "tensor/tensor_backend_async_adapter.hpp"
 #include "tensor/host_async_backend.hpp"
@@ -99,6 +100,7 @@ namespace
         std::size_t warmup = 3;
         std::size_t iterations = 10;
         std::string algo = "both"; // sync, async, both
+        std::string metal_async_path = "adapter"; // adapter, direct
         std::string label;
         std::string output;
     };
@@ -124,6 +126,7 @@ namespace
             else if (arg == "--warmup") options.warmup = std::stoull(require_value(arg, i, argc, argv));
             else if (arg == "--iterations") options.iterations = std::stoull(require_value(arg, i, argc, argv));
             else if (arg == "--algo") options.algo = require_value(arg, i, argc, argv);
+            else if (arg == "--metal-async-path") options.metal_async_path = require_value(arg, i, argc, argv);
             else if (arg == "--label") options.label = require_value(arg, i, argc, argv);
             else if (arg == "--output") options.output = require_value(arg, i, argc, argv);
             else throw std::runtime_error("unknown argument: " + arg);
@@ -201,6 +204,7 @@ int main(int argc, char **argv)
         json << "  \"rank\": " << rank << ",\n";
         json << "  \"root\": " << options.root << ",\n";
         json << "  \"backend\": \"" << options.backend << "\",\n";
+        json << "  \"metal_async_path\": \"" << options.metal_async_path << "\",\n";
         json << "  \"count\": " << count << ",\n";
         json << "  \"bytes\": " << bytes << ",\n";
         json << "  \"chunk_bytes\": " << options.chunk_bytes << ",\n";
@@ -347,8 +351,10 @@ int main(int argc, char **argv)
             // Metal-shared path.
             std::unique_ptr<tbccl_bench::tensor::TensorBackend> metal_backend;
             std::unique_ptr<tbccl_bench::tensor::TensorBackendAsyncAdapter> metal_adapter;
+            std::unique_ptr<tbccl_bench::tensor::MetalSharedDirectAsyncBackend> metal_direct;
             std::unique_ptr<tbccl_bench::tensor::HostAsyncBackend> metal_send_from_result;
             std::unique_ptr<tbccl_bench::tensor::HostReduceBackend> metal_reduce;
+            const bool metal_async_direct = (options.metal_async_path == "direct");
 
 #if defined(TBCCL_ENABLE_CUDA)
             std::unique_ptr<tbccl_bench::tensor::CudaChunkedAsyncBackend> cuda_backend;
@@ -386,10 +392,24 @@ int main(int argc, char **argv)
             }
             else if (options.backend == "metal-shared")
             {
+                if (options.metal_async_path != "adapter" && options.metal_async_path != "direct")
+                    throw std::runtime_error("unknown --metal-async-path: " + options.metal_async_path);
+
                 metal_backend = tbccl_bench::tensor::make_backend(tbccl_bench::tensor::BackendKind::MetalShared);
                 metal_backend->allocate(bytes);
-                metal_adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*metal_backend);
-                recv_backend = metal_adapter.get();
+
+                tbccl::AsyncMemoryBackend *metal_async = nullptr;
+                if (metal_async_direct)
+                {
+                    metal_direct = std::make_unique<tbccl_bench::tensor::MetalSharedDirectAsyncBackend>(*metal_backend);
+                    metal_async = metal_direct.get();
+                }
+                else
+                {
+                    metal_adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*metal_backend);
+                    metal_async = metal_adapter.get();
+                }
+                recv_backend = metal_async;
                 if (is_root)
                 {
                     // Root's send-back leg must read the post-reduce
@@ -405,7 +425,7 @@ int main(int argc, char **argv)
                 }
                 else
                 {
-                    send_backend = metal_adapter.get();
+                    send_backend = metal_async;
                 }
             }
             else
@@ -443,7 +463,8 @@ int main(int argc, char **argv)
 
                 if (options.backend == "metal-shared")
                 {
-                    metal_adapter->begin_transfer(chunk_count);
+                    if (metal_async_direct) metal_direct->begin_transfer(chunk_count);
+                    else metal_adapter->begin_transfer(chunk_count);
                     if (is_root) { /* send-leg uses metal_send_from_result, no begin_transfer needed */ }
                 }
 
@@ -474,7 +495,8 @@ int main(int argc, char **argv)
                     auto *src = static_cast<float *>(
                         const_cast<void *>(metal_backend->source_staging_data()));
                     for (std::size_t i = 0; i < count; ++i) src[i] = value_for(i, local_seed, local_mod);
-                    metal_adapter->begin_transfer(chunk_count);
+                    if (metal_async_direct) metal_direct->begin_transfer(chunk_count);
+                    else metal_adapter->begin_transfer(chunk_count);
                 }
 #if defined(TBCCL_ENABLE_CUDA)
                 else if (options.backend == "cuda")
