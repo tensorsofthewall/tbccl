@@ -560,6 +560,42 @@ else()
     )
 endif()
 
+add_executable(async_allreduce
+    examples/async_allreduce.cpp
+)
+
+target_link_libraries(async_allreduce
+    PRIVATE
+        tbccl
+        Threads::Threads
+)
+
+if(TBCCL_ENABLE_CUDA)
+    target_link_libraries(async_allreduce PRIVATE tbccl_tensor_backend)
+    target_compile_definitions(async_allreduce PRIVATE TBCCL_EXAMPLE_ENABLE_CUDA)
+endif()
+
+if(TBCCL_ENABLE_METAL)
+    target_link_libraries(async_allreduce PRIVATE "-framework Metal" "-framework Foundation")
+    target_compile_definitions(async_allreduce PRIVATE TBCCL_EXAMPLE_ENABLE_METAL)
+    set_source_files_properties(
+        examples/async_allreduce.cpp
+        PROPERTIES
+            LANGUAGE OBJCXX
+            COMPILE_FLAGS "-fobjc-arc"
+    )
+endif()
+
+if(MSVC)
+    target_compile_options(async_allreduce PRIVATE /W4)
+else()
+    target_compile_options(async_allreduce PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 add_executable(tbccl_async_overlap_bench
     benchmarks/async_overlap_bench.cpp
 )

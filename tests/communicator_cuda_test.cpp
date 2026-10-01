@@ -5,10 +5,10 @@
 // TBCCL_ENABLE_CUDA is on and only meaningful with a real CUDA device.
 
 #include "tensor/cuda_external_async_backend.hpp"
-#include "tensor/cuda_memory_provider.hpp"
 #include "tensor/cuda_reduce_backend.hpp" // cuda_copy_host_to_device/device_to_host helpers
 
 #include <tbccl/communicator.hpp>
+#include <tbccl/cuda_support.hpp>
 
 #include <cuda_runtime.h>
 
@@ -268,7 +268,7 @@ void test_cuda_host_all_reduce()
 
 int main()
 {
-    tbccl_bench::tensor::register_cuda_memory_provider();
+    tbccl::register_cuda_support();
     try
     {
         test_external_cuda_pointer_ownership_and_roundtrip();
