@@ -1,4 +1,4 @@
-#include "cuda_memory_provider.hpp"
+#include <tbccl/cuda_support.hpp>
 
 #include "cuda_external_async_backend.hpp"
 
@@ -7,9 +7,6 @@
 #include <memory>
 
 namespace tbccl_bench::tensor
-{
-
-namespace
 {
 
 class CudaMemoryProvider final : public tbccl::ExternalMemoryProvider
@@ -60,15 +57,18 @@ private:
     std::unique_ptr<CudaExternalReduceBackend> reduce_;
 };
 
-} // namespace
+} // namespace tbccl_bench::tensor
 
-void register_cuda_memory_provider()
+namespace tbccl
 {
-    tbccl::register_memory_provider_factory(
-        tbccl::MemoryKind::Cuda,
-        [](const tbccl::BufferView &buffer, const tbccl::ExecutionContext &context) -> std::unique_ptr<tbccl::ExternalMemoryProvider> {
-            return std::make_unique<CudaMemoryProvider>(buffer, context);
+
+void register_cuda_support()
+{
+    register_memory_provider_factory(
+        MemoryKind::Cuda,
+        [](const BufferView &buffer, const ExecutionContext &context) -> std::unique_ptr<ExternalMemoryProvider> {
+            return std::make_unique<tbccl_bench::tensor::CudaMemoryProvider>(buffer, context);
         });
 }
 
-} // namespace tbccl_bench::tensor
+} // namespace tbccl
