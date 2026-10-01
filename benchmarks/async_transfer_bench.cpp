@@ -19,6 +19,7 @@
 #include <tbccl/transport.hpp>
 
 #include "tensor/host_async_backend.hpp"
+#include "tensor/metal_shared_direct_async_backend.hpp"
 #include "tensor/tensor_backend.hpp"
 #include "tensor/tensor_backend_async_adapter.hpp"
 
@@ -89,6 +90,7 @@ namespace
         std::string output;
         std::string label; // free-form tag echoed into output, for sweep bookkeeping
         std::string backend = "host"; // host, cuda-pageable, cuda-pinned, metal-shared, metal-private-staged
+        std::string metal_async_path = "adapter"; // adapter, direct -- only meaningful for --backend metal-shared
         // The worker execution-context work diagnostic: the
         // receiver's per-round std::fill + byte-pattern verify loop
         // runs BEFORE the ack is sent, so it is included in the
@@ -127,6 +129,7 @@ namespace
             else if (arg == "--output") options.output = require_value(arg, i, argc, argv);
             else if (arg == "--label") options.label = require_value(arg, i, argc, argv);
             else if (arg == "--backend") options.backend = require_value(arg, i, argc, argv);
+            else if (arg == "--metal-async-path") options.metal_async_path = require_value(arg, i, argc, argv);
             else if (arg == "--verify") {
                 const std::string v = require_value(arg, i, argc, argv);
                 if (v == "on") options.verify = true;
@@ -213,6 +216,9 @@ int main(int argc, char **argv)
         // device staging cost, not a host memcpy stand-in.
         std::unique_ptr<tbccl_bench::tensor::TensorBackend> device_backend;
         std::unique_ptr<tbccl_bench::tensor::TensorBackendAsyncAdapter> device_adapter;
+        std::unique_ptr<tbccl_bench::tensor::MetalSharedDirectAsyncBackend> device_direct;
+        const bool use_metal_direct =
+            (options.backend == "metal-shared") && (options.metal_async_path == "direct");
 
 #if defined(TBCCL_ENABLE_CUDA)
         // The true per-chunk async CUDA D2H/H2D staging backend,
@@ -238,6 +244,9 @@ int main(int argc, char **argv)
         }
         else if (use_device_backend)
         {
+            if (options.metal_async_path != "adapter" && options.metal_async_path != "direct")
+                throw std::runtime_error("unknown --metal-async-path: " + options.metal_async_path);
+
             const auto kind = tbccl_bench::tensor::parse_backend_kind(options.backend);
             if (!tbccl_bench::tensor::backend_kind_available(kind))
             {
@@ -245,8 +254,16 @@ int main(int argc, char **argv)
             }
             device_backend = tbccl_bench::tensor::make_backend(kind);
             device_backend->allocate(options.bytes);
-            device_adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*device_backend);
-            backend = device_adapter.get();
+            if (use_metal_direct)
+            {
+                device_direct = std::make_unique<tbccl_bench::tensor::MetalSharedDirectAsyncBackend>(*device_backend);
+                backend = device_direct.get();
+            }
+            else
+            {
+                device_adapter = std::make_unique<tbccl_bench::tensor::TensorBackendAsyncAdapter>(*device_backend);
+                backend = device_adapter.get();
+            }
         }
         else
         {
@@ -294,7 +311,8 @@ int main(int argc, char **argv)
                     device_backend->initialize_source(0xA5A5A5A5u);
                     device_backend->prepare_source();
                 }
-                device_adapter->begin_transfer(chunk_count);
+                if (use_metal_direct) device_direct->begin_transfer(chunk_count);
+                else device_adapter->begin_transfer(chunk_count);
             }
 #if defined(TBCCL_ENABLE_CUDA)
             else if (use_cuda_chunked_backend && is_sender)
@@ -399,6 +417,8 @@ int main(int argc, char **argv)
              << "  \"label\": \"" << options.label << "\",\n"
              << "  \"rank\": " << options.rank << ",\n"
              << "  \"role\": \"" << (is_sender ? "sender" : "receiver") << "\",\n"
+             << "  \"backend\": \"" << options.backend << "\",\n"
+             << "  \"metal_async_path\": \"" << options.metal_async_path << "\",\n"
              << "  \"bytes\": " << options.bytes << ",\n"
              << "  \"chunk_bytes\": " << options.chunk_bytes << ",\n"
              << "  \"pipeline_depth\": " << options.pipeline_depth << ",\n"
