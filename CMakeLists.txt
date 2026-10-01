@@ -532,6 +532,31 @@ else()
     )
 endif()
 
+add_executable(tbccl_bucketed_allreduce_bench
+    benchmarks/tbccl_bucketed_allreduce_bench.cpp
+)
+
+target_link_libraries(tbccl_bucketed_allreduce_bench
+    PRIVATE
+        tbccl_tensor_backend
+        tbccl
+)
+
+target_include_directories(tbccl_bucketed_allreduce_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+)
+
+if(MSVC)
+    target_compile_options(tbccl_bucketed_allreduce_bench PRIVATE /W4)
+else()
+    target_compile_options(tbccl_bucketed_allreduce_bench PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
 add_executable(tbccl_async_overlap_bench
     benchmarks/async_overlap_bench.cpp
 )

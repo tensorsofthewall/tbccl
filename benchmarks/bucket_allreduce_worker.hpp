@@ -16,6 +16,7 @@
 
 #include <tbccl/hetero_allreduce.hpp>
 
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -58,6 +59,18 @@ public:
         return state_->error_message;
     }
 
+    // The bucketed all-reduce overlap work timeline capture: when the
+    // worker thread finished this job (ok or error), as measured on
+    // the worker thread itself -- valid only once is_completed() is
+    // true. Lets a benchmark compute, e.g., "bucket N's collective
+    // completed after bucket N+1's compute had already started"
+    // without polling.
+    std::chrono::steady_clock::time_point completed_at() const
+    {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        return state_->completed_at;
+    }
+
 private:
     friend class BucketAllReduceWorker;
 
@@ -67,6 +80,7 @@ private:
         std::condition_variable cv;
         bool completed = false;
         std::string error_message; // empty == ok
+        std::chrono::steady_clock::time_point completed_at{};
     };
 
     std::shared_ptr<State> state_ = std::make_shared<State>();
@@ -169,18 +183,12 @@ private:
         std::shared_ptr<BucketAllReduceWork::State> state;
     };
 
-    static void complete_ok(BucketAllReduceWork &work)
-    {
-        std::lock_guard<std::mutex> lock(work.state_->mutex);
-        work.state_->completed = true;
-        work.state_->cv.notify_all();
-    }
-
     static void complete_error(BucketAllReduceWork &work, const std::string &message)
     {
         std::lock_guard<std::mutex> lock(work.state_->mutex);
         work.state_->completed = true;
         work.state_->error_message = message;
+        work.state_->completed_at = std::chrono::steady_clock::now();
         work.state_->cv.notify_all();
     }
 
@@ -188,6 +196,7 @@ private:
     {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->completed = true;
+        state->completed_at = std::chrono::steady_clock::now();
         state->cv.notify_all();
     }
 
@@ -197,6 +206,7 @@ private:
         std::lock_guard<std::mutex> lock(state->mutex);
         state->completed = true;
         state->error_message = message;
+        state->completed_at = std::chrono::steady_clock::now();
         state->cv.notify_all();
     }
 
