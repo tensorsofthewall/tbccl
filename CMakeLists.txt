@@ -131,6 +131,7 @@ if(TBCCL_ENABLE_CUDA)
     target_sources(tbccl_tensor_backend PRIVATE
         benchmarks/tensor/cuda_backend.cu
         benchmarks/tensor/cuda_chunked_async_backend.cu
+        benchmarks/tensor/cuda_bucket_compute.cu
     )
 endif()
 
@@ -466,6 +467,36 @@ if(MSVC)
     target_compile_options(tbccl_async_transfer_bench PRIVATE /W4)
 else()
     target_compile_options(tbccl_async_transfer_bench PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+    )
+endif()
+
+# Phase 36: plain .cpp (not .cu) so it builds on every platform -- the
+# sender role requires TBCCL_ENABLE_CUDA at runtime (checked, clear
+# error otherwise), the receiver role only needs tensor_backend.hpp's
+# portable backend set (host/metal-shared), exactly like
+# tbccl_async_transfer_bench above.
+add_executable(tbccl_cuda_overlap_bench
+    benchmarks/cuda_overlap_bench.cpp
+)
+
+target_link_libraries(tbccl_cuda_overlap_bench
+    PRIVATE
+        tbccl_tensor_backend
+        tbccl
+)
+
+target_include_directories(tbccl_cuda_overlap_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+)
+
+if(MSVC)
+    target_compile_options(tbccl_cuda_overlap_bench PRIVATE /W4)
+else()
+    target_compile_options(tbccl_cuda_overlap_bench PRIVATE
         -Wall
         -Wextra
         -Wpedantic
@@ -1241,6 +1272,32 @@ if(BUILD_TESTING)
         add_test(
             NAME cuda_chunked_async_backend_test
             COMMAND cuda_chunked_async_backend_test
+        )
+
+        add_executable(cuda_bucket_compute_test
+            tests/cuda_bucket_compute_test.cpp
+        )
+
+        target_link_libraries(cuda_bucket_compute_test
+            PRIVATE
+                tbccl_tensor_backend
+                tbccl
+                Threads::Threads
+        )
+
+        if(MSVC)
+            target_compile_options(cuda_bucket_compute_test PRIVATE /W4)
+        else()
+            target_compile_options(cuda_bucket_compute_test PRIVATE
+                -Wall
+                -Wextra
+                -Wpedantic
+            )
+        endif()
+
+        add_test(
+            NAME cuda_bucket_compute_test
+            COMMAND cuda_bucket_compute_test
         )
 
         # Phase 19 (Part J): exercises cuda_sync_bench's synchronization-

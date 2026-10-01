@@ -62,6 +62,7 @@ struct CudaChunkedAsyncBackend::Impl
     void *pinned_scratch = nullptr; // max_chunk_bytes, reused every call
     std::size_t max_chunk_bytes = 0;
     cudaStream_t stream = nullptr;
+    bool owns_stream = true;
 
     std::size_t pinned_alloc_count = 0;
     std::size_t stream_create_count = 0;
@@ -71,11 +72,14 @@ struct CudaChunkedAsyncBackend::Impl
         if (source_device) cudaFree(source_device);
         if (destination_device) cudaFree(destination_device);
         if (pinned_scratch) cudaFreeHost(pinned_scratch);
-        if (stream) cudaStreamDestroy(stream);
+        if (stream && owns_stream) cudaStreamDestroy(stream);
     }
 };
 
-CudaChunkedAsyncBackend::CudaChunkedAsyncBackend() : impl_(std::make_unique<Impl>())
+CudaChunkedAsyncBackend::CudaChunkedAsyncBackend() : CudaChunkedAsyncBackend(nullptr) {}
+
+CudaChunkedAsyncBackend::CudaChunkedAsyncBackend(void *shared_copy_stream)
+    : impl_(std::make_unique<Impl>())
 {
     int device_count = 0;
     const cudaError_t status = cudaGetDeviceCount(&device_count);
@@ -85,8 +89,16 @@ CudaChunkedAsyncBackend::CudaChunkedAsyncBackend() : impl_(std::make_unique<Impl
             "CudaChunkedAsyncBackend: no CUDA device available at runtime: " +
             std::string(cudaGetErrorString(status)));
     }
-    TBCCL_CHUNKED_CUDA_CHECK(cudaStreamCreate(&impl_->stream));
-    ++impl_->stream_create_count;
+    if (shared_copy_stream != nullptr)
+    {
+        impl_->stream = static_cast<cudaStream_t>(shared_copy_stream);
+        impl_->owns_stream = false;
+    }
+    else
+    {
+        TBCCL_CHUNKED_CUDA_CHECK(cudaStreamCreate(&impl_->stream));
+        ++impl_->stream_create_count;
+    }
 }
 
 CudaChunkedAsyncBackend::~CudaChunkedAsyncBackend() = default;
@@ -206,6 +218,16 @@ std::size_t CudaChunkedAsyncBackend::diagnostic_pinned_alloc_count() const noexc
 std::size_t CudaChunkedAsyncBackend::diagnostic_stream_create_count() const noexcept
 {
     return impl_->stream_create_count;
+}
+
+void *CudaChunkedAsyncBackend::source_device_ptr() noexcept
+{
+    return impl_->source_device;
+}
+
+void *CudaChunkedAsyncBackend::destination_device_ptr() noexcept
+{
+    return impl_->destination_device;
 }
 
 } // namespace tbccl_bench::tensor
