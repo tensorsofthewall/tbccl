@@ -29,6 +29,17 @@ class CudaChunkedAsyncBackend final : public tbccl::AsyncMemoryBackend
 public:
     // Throws std::runtime_error if no CUDA device is available.
     CudaChunkedAsyncBackend();
+
+    // For the bucket-overlap benchmark, which needs ONE shared copy
+    // stream across N bucket backends ("keep streams minimal... do NOT
+    // add stream per bucket"), rather than one stream per instance.
+    // `shared_copy_stream` must be a cudaStream_t cast to void*, and
+    // must outlive this instance; this instance will NOT destroy it
+    // (ownership stays with the caller). Passing nullptr (or using the
+    // default constructor) preserves the CUDA/Metal device-pipeline
+    // work's original behavior: create and own a private stream.
+    explicit CudaChunkedAsyncBackend(void *shared_copy_stream);
+
     ~CudaChunkedAsyncBackend() override;
 
     CudaChunkedAsyncBackend(const CudaChunkedAsyncBackend &) = delete;
@@ -67,6 +78,17 @@ public:
     // has crept back in for the device path.
     std::size_t diagnostic_pinned_alloc_count() const noexcept;
     std::size_t diagnostic_stream_create_count() const noexcept;
+
+    // benchmark-only direct device-pointer access, so a compute
+    // kernel (benchmarks/tensor/cuda_bucket_compute.hpp) can write
+    // this backend's source buffer directly, and so a consumer-side
+    // compute step (if ever added) could read the destination buffer.
+    // Not used by TensorCommWorker or any generic code --
+    // AsyncMemoryBackend's interface never exposes a raw device
+    // pointer (generic TBCCL understands ready/ not-ready, never CUDA
+    // types).
+    void *source_device_ptr() noexcept;
+    void *destination_device_ptr() noexcept;
 
 private:
     struct Impl;
