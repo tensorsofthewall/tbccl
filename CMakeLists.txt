@@ -13,6 +13,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
+# Needed early for CMAKE_INSTALL_INCLUDEDIR, used by tbccl's PUBLIC
+# include directories below so the exported target works correctly both
+# from the build tree and from an installed prefix.
+include(GNUInstallDirs)
+
 option(
     TBCCL_ENABLE_RING_TRACE
     "Enable internal ring execution tracing (diagnostic only; adds a lightweight per-thread event buffer to the ring collective path). Off by default; leave off for normal builds."
@@ -62,7 +67,8 @@ endif()
 
 target_include_directories(tbccl
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # src/core/world.cpp needs ring_executor.hpp (World::ring_executor_'s
@@ -1689,3 +1695,51 @@ if(BUILD_TESTING)
     endif()
 
 endif()
+
+# ---------------------------------------------------------------------------
+# Install/export support for the core tbccl library -- the actual public API
+# surface (include/tbccl/*.hpp + libtbccl). The optional CUDA/Metal device
+# component (tbccl_tensor_backend, benchmarks/tensor/), benchmarks/,
+# examples/, and tests/ are NOT installed; they remain source-tree/vendored
+# only (a deliberate, documented scope limit -- see
+# docs/public_api.md). A host-only external consumer needs nothing beyond
+# what this block installs.
+# ---------------------------------------------------------------------------
+
+include(CMakePackageConfigHelpers)
+
+install(TARGETS tbccl
+    EXPORT TBCCLTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY include/tbccl
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.hpp"
+)
+
+install(EXPORT TBCCLTargets
+    FILE TBCCLTargets.cmake
+    NAMESPACE TBCCL::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TBCCL
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/TBCCLConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMinorVersion
+)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/TBCCLConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/TBCCLConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TBCCL
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/TBCCLConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/TBCCLConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TBCCL
+)
