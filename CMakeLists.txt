@@ -1549,6 +1549,30 @@ if(BUILD_TESTING)
             COMMAND tensor_metal_test
         )
 
+        add_executable(communicator_metal_test
+            tests/communicator_metal_test.mm
+        )
+
+        target_link_libraries(communicator_metal_test
+            PRIVATE
+                tbccl
+                Threads::Threads
+                "-framework Metal"
+                "-framework Foundation"
+        )
+
+        target_compile_options(communicator_metal_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+
+        add_test(
+            NAME communicator_metal_test
+            COMMAND communicator_metal_test
+        )
+        set_tests_properties(communicator_metal_test PROPERTIES TIMEOUT 60)
+
         add_executable(metal_reduce_backend_test
             tests/metal_reduce_backend_test.cpp
         )
