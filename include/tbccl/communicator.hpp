@@ -132,6 +132,9 @@ class Capabilities
 public:
     bool supports_memory_kind(MemoryKind kind) const noexcept;
     bool supports_collective_all_reduce(MemoryKind kind, DataType datatype, ReduceOp op) const noexcept;
+    // Phase 43: byte-generic collectives (no datatype/op: nothing is interpreted or reduced).
+    bool supports_collective_broadcast(MemoryKind kind) const noexcept;
+    bool supports_collective_all_gather(MemoryKind kind) const noexcept;
     std::size_t effective_max_chunk() const noexcept { return negotiation_.effective_max_chunk; }
     std::size_t effective_alignment() const noexcept { return negotiation_.effective_alignment; }
     const NegotiationResult &negotiation() const noexcept { return negotiation_; }
@@ -220,6 +223,23 @@ public:
         std::size_t count,
         DataType datatype,
         ReduceOp op,
+        const ExecutionContext &context = {});
+
+    // Phase 43: byte-generic N=2 Broadcast. In place from the caller's view: on `root` the buffer is
+    // the source, on the other rank it is the destination; `buffer.bytes` is authoritative and both
+    // ranks must pass the same size. Runs in the same FIFO ordering domain as all_reduce(). Throws
+    // "unsupported: ..." for world_size != 2 or an unregistered memory kind, "invalid_argument: ..."
+    // for root >= world_size or a null non-empty buffer.
+    Work broadcast(const BufferView &buffer, std::size_t root, const ExecutionContext &context = {});
+
+    // Phase 43: byte-generic N=2 AllGather. `outputs` must hold exactly world_size() buffers, each of
+    // `input.bytes` bytes; on completion outputs[r] holds rank r's input on BOTH ranks (including
+    // outputs[rank()] <- input, performed inside the runtime through the memory providers; skipped if
+    // they alias). Deadlock-safe ordering: rank 0 sends then receives, rank 1 receives then sends.
+    // Not performance-tuned (intended for small metadata).
+    Work all_gather(
+        const BufferView &input,
+        const std::vector<BufferView> &outputs,
         const ExecutionContext &context = {});
 
 private:
