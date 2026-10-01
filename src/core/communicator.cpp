@@ -334,6 +334,16 @@ bool Capabilities::supports_collective_all_reduce(MemoryKind /*kind*/, DataType 
     return false;
 }
 
+bool Capabilities::supports_collective_broadcast(MemoryKind kind) const noexcept
+{
+    return negotiation_.ok && supports_memory_kind(kind);
+}
+
+bool Capabilities::supports_collective_all_gather(MemoryKind kind) const noexcept
+{
+    return negotiation_.ok && supports_memory_kind(kind);
+}
+
 // ---------------------------------------------------------------------
 // Communicator::Impl
 // ---------------------------------------------------------------------
@@ -594,6 +604,132 @@ Work Communicator::all_reduce(
     catch (...)
     {
         impl_->mark_failed("all_reduce submit failed");
+        throw;
+    }
+}
+
+namespace
+{
+
+std::atomic<std::uint64_t> g_transfer_id{std::uint64_t{1} << 40};
+
+void run_transfer(
+    TensorCommWorker &worker,
+    Transport &transport,
+    AsyncMemoryBackend &backend,
+    TransferDirection direction,
+    std::size_t bytes,
+    const char *what)
+{
+    TransferRequest request;
+    request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
+    request.direction = direction;
+    request.backend = &backend;
+    request.transport = &transport;
+    request.total_bytes = bytes;
+    request.chunk_hint = 0;
+    TransferWork work = worker.enqueue(request);
+    work.wait();
+    if (work.has_error()) throw std::runtime_error(std::string("transport_error: ") + what + ": " + work.error());
+}
+
+} // namespace
+
+Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const ExecutionContext &context)
+{
+    require_not_failed(*this);
+    if (impl_->world_size != 2) throw std::runtime_error("unsupported: broadcast requires world_size==2");
+    if (root >= impl_->world_size) throw std::runtime_error("invalid_argument: broadcast root out of range");
+    if (buffer.bytes > 0 && buffer.data == nullptr)
+        throw std::runtime_error("invalid_argument: broadcast buffer.data is null for a non-empty buffer");
+
+    const std::size_t rank = impl_->rank;
+    const std::size_t bytes = buffer.bytes;
+    std::shared_ptr<ExternalMemoryProvider> provider;
+    if (bytes > 0) provider = make_provider(buffer, context);
+
+    Transport *transport = impl_->transport.get();
+    TensorCommWorker *worker = impl_->comm_worker.get();
+    auto run = [transport, worker, provider, rank, root, bytes]() {
+        if (bytes == 0) return;
+        run_transfer(
+            *worker, *transport, provider->primary_backend(),
+            rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
+    };
+    try
+    {
+        return impl_->collective_executor->submit(std::move(run));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("broadcast submit failed");
+        throw;
+    }
+}
+
+Work Communicator::all_gather(
+    const BufferView &input, const std::vector<BufferView> &outputs, const ExecutionContext &context)
+{
+    require_not_failed(*this);
+    if (impl_->world_size != 2) throw std::runtime_error("unsupported: all_gather requires world_size==2");
+    if (outputs.size() != impl_->world_size)
+        throw std::runtime_error("invalid_argument: all_gather needs exactly world_size output buffers");
+    const std::size_t bytes = input.bytes;
+    for (const auto &out : outputs)
+    {
+        if (out.bytes != bytes) throw std::runtime_error("invalid_argument: all_gather output size differs from input size");
+    }
+    if (bytes > 0 && input.data == nullptr) throw std::runtime_error("invalid_argument: all_gather input.data is null");
+    for (const auto &out : outputs)
+    {
+        if (bytes > 0 && out.data == nullptr) throw std::runtime_error("invalid_argument: all_gather output.data is null");
+    }
+
+    const std::size_t rank = impl_->rank;
+    const std::size_t peer = impl_->other_peer;
+    std::shared_ptr<ExternalMemoryProvider> in_provider, local_out_provider, peer_out_provider;
+    if (bytes > 0)
+    {
+        in_provider = make_provider(input, context);
+        peer_out_provider = make_provider(outputs[peer], context);
+        if (outputs[rank].data != input.data) local_out_provider = make_provider(outputs[rank], context);
+    }
+
+    Transport *transport = impl_->transport.get();
+    TensorCommWorker *worker = impl_->comm_worker.get();
+    auto run = [transport, worker, in_provider, local_out_provider, peer_out_provider, rank, bytes]() {
+        if (bytes == 0) return;
+        if (local_out_provider)
+        {
+            // outputs[rank] <- input through the providers' own staging interface (no device code here).
+            constexpr std::size_t kCopyChunk = std::size_t{1} << 20;
+            std::vector<unsigned char> staging(std::min(bytes, kCopyChunk));
+            for (std::size_t offset = 0; offset < bytes; offset += kCopyChunk)
+            {
+                const Chunk chunk{offset, std::min(kCopyChunk, bytes - offset)};
+                in_provider->primary_backend().stage_source_chunk(chunk, staging.data());
+                local_out_provider->primary_backend().commit_destination_chunk(chunk, staging.data());
+            }
+        }
+        // Deterministic, deadlock-safe order: lower rank sends first.
+        if (rank == 0)
+        {
+            run_transfer(*worker, *transport, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
+            run_transfer(*worker, *transport, peer_out_provider->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
+        }
+        else
+        {
+            run_transfer(*worker, *transport, peer_out_provider->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
+            run_transfer(*worker, *transport, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
+        }
+    };
+    try
+    {
+        return impl_->collective_executor->submit(std::move(run));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("all_gather submit failed");
         throw;
     }
 }

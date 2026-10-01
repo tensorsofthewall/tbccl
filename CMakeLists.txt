@@ -1376,6 +1376,18 @@ if(BUILD_TESTING)
     )
     set_tests_properties(tensor_backend_async_adapter_test PROPERTIES TIMEOUT 60)
 
+    add_executable(communicator_collectives_test
+        tests/communicator_collectives_test.cpp
+    )
+    target_link_libraries(communicator_collectives_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_collectives_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_collectives_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_collectives_test COMMAND communicator_collectives_test)
+    set_tests_properties(communicator_collectives_test PROPERTIES TIMEOUT 120)
+
     add_executable(communicator_test
         tests/communicator_test.cpp
     )
@@ -1541,6 +1553,13 @@ if(BUILD_TESTING)
             NAME cuda_bucket_compute_test
             COMMAND cuda_bucket_compute_test
         )
+
+        add_executable(communicator_collectives_cuda_test
+            tests/communicator_collectives_cuda_test.cpp
+        )
+        target_link_libraries(communicator_collectives_cuda_test PRIVATE tbccl_tensor_backend CUDA::cudart Threads::Threads)
+        add_test(NAME communicator_collectives_cuda_test COMMAND communicator_collectives_cuda_test)
+        set_tests_properties(communicator_collectives_cuda_test PROPERTIES TIMEOUT 120)
 
         add_executable(communicator_cuda_test
             tests/communicator_cuda_test.cpp
