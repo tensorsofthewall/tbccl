@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 // Phase 32 Part I-M: the portable async tensor-transfer substrate.
 // Everything in this header is transport- and memory-backend-agnostic
 // -- it references only tbccl::Transport (transport.hpp) and the small
@@ -335,6 +337,21 @@ public:
 
     TensorCommWorker(const TensorCommWorker &) = delete;
     TensorCommWorker &operator=(const TensorCommWorker &) = delete;
+
+    // Phase 45: terminal, idempotent, non-blocking. Rejects new enqueue() calls, fails every queued request without
+    // executing it, and makes a not-yet-started dequeue fail. The active request is unwound by interrupting its
+    // Transport (done by the owner); it becomes terminal only after the staging/network threads have stopped touching
+    // its buffers.
+    void abort(const std::string &reason);
+
+    // True while a request is queued or being processed.
+    bool busy() const;
+
+    // Blocks (condition variable, no polling) until nothing is queued or active.
+    void wait_idle();
+
+    // Called (from the network thread, before the Work is failed) when a started transfer fails. Set once, before use.
+    void set_fatal_handler(std::function<void(const std::string &)> handler);
 
     // Never blocks on backend/transport/device work -- only on queue
     // capacity (Part AG). Returns immediately with a live TransferWork

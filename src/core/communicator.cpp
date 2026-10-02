@@ -255,11 +255,47 @@ public:
     CollectiveExecutor(const CollectiveExecutor &) = delete;
     CollectiveExecutor &operator=(const CollectiveExecutor &) = delete;
 
+    // Phase 45: terminal and idempotent. Queued jobs never started, so they fail without touching user memory; the
+    // active job (if any) unwinds when the Transport is interrupted and its Work fails after it returns.
+    void abort(const std::string &reason)
+    {
+        std::deque<CollectiveJob> doomed;
+        std::string message;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (aborted_) return;
+            aborted_ = true;
+            message = "aborted: communicator aborted" + (reason.empty() ? "" : " (" + reason + ")");
+            abort_message_ = message;
+            doomed.swap(queue_);
+        }
+        cv_.notify_all();
+        for (auto &job : doomed)
+        {
+            detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), message);
+        }
+    }
+
+    bool busy() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return running_ || !queue_.empty();
+    }
+
+    void set_fatal_handler(std::function<void(const std::string &)> handler) { on_fatal_ = std::move(handler); }
+
+    void wait_idle()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        idle_cv_.wait(lock, [&] { return !running_ && queue_.empty(); });
+    }
+
     Work submit(std::function<void()> run)
     {
         Work work = detail::TransferWorkAccess::make();
         {
             std::lock_guard<std::mutex> lock(mutex_);
+            if (aborted_) throw std::runtime_error(abort_message_);
             queue_.push_back(CollectiveJob{std::move(run), work});
         }
         cv_.notify_all();
@@ -276,6 +312,7 @@ private:
             if (stop_ && queue_.empty()) return;
             CollectiveJob job = std::move(queue_.front());
             queue_.pop_front();
+            running_ = true;
             lock.unlock();
             try
             {
@@ -284,20 +321,33 @@ private:
             }
             catch (const std::exception &e)
             {
+                // A job fails only after protocol participation began (arguments were validated before
+                // submission): the collective sequence is no longer trustworthy, so poison the communicator.
+                if (on_fatal_) on_fatal_(e.what());
                 detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
             }
             catch (...)
             {
+                if (on_fatal_) on_fatal_("unknown error in collective executor");
                 detail::TransferWorkAccess::complete_error(
                     detail::TransferWorkAccess::state_of(job.work), "unknown error in collective executor");
             }
+            lock.lock();
+            running_ = false;
+            lock.unlock();
+            idle_cv_.notify_all();
         }
     }
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cv_;
+    std::condition_variable idle_cv_;
     std::deque<CollectiveJob> queue_;
     bool stop_ = false;
+    bool aborted_ = false;
+    bool running_ = false;
+    std::string abort_message_;
+    std::function<void(const std::string &)> on_fatal_;
     std::thread thread_;
 };
 
@@ -370,12 +420,37 @@ struct Communicator::Impl
     std::unique_ptr<CollectiveExecutor> collective_executor;
     Capabilities caps;
 
+    // Phase 45: Running -> AbortRequested -> Aborted. The first transition's reason wins. Lock order: nothing is
+    // held across calls out of request_abort() (it only takes each component's own short mutex, one at a time).
+    enum class State : int { Running = 0, AbortRequested = 1, Aborted = 2 };
+    std::atomic<int> state{0};
+    std::mutex reason_mutex;
+    std::string reason;
     std::atomic<bool> failed{false};
 
-    void mark_failed(const std::string & /*reason*/)
+    // Non-blocking, idempotent, safe from any thread including workers (never joins).
+    void request_abort(const std::string &why)
     {
-        failed.store(true, std::memory_order_relaxed);
+        int expected = static_cast<int>(State::Running);
+        if (!state.compare_exchange_strong(expected, static_cast<int>(State::AbortRequested))) return;
+        {
+            std::lock_guard<std::mutex> lock(reason_mutex);
+            reason = why;
+        }
+        failed.store(true, std::memory_order_release);
+        // Interrupt first so the active transfer unwinds; then reject/drain queues.
+        if (transport) transport->abort(why);
+        if (comm_worker) comm_worker->abort(why);
+        if (collective_executor) collective_executor->abort(why);
     }
+
+    std::string abort_message()
+    {
+        std::lock_guard<std::mutex> lock(reason_mutex);
+        return "aborted: communicator aborted" + (reason.empty() ? "" : " (" + reason + ")");
+    }
+
+    void mark_failed(const std::string &why) { request_abort(why); }
 
     // P2P send()/recv() enqueue onto TensorCommWorker, which is
     // asynchronous: enqueue() returns immediately, and the actual
@@ -404,7 +479,45 @@ struct Communicator::Impl
 };
 
 Communicator::Communicator() : impl_(std::make_unique<Impl>()) {}
-Communicator::~Communicator() = default;
+Communicator::~Communicator()
+{
+    auto &impl = *impl_;
+    const bool busy = (impl.comm_worker && impl.comm_worker->busy()) ||
+                      (impl.collective_executor && impl.collective_executor->busy());
+    if (busy)
+    {
+        // Outstanding operations on a (possibly silent) peer: abandon them instead of waiting for it forever.
+        impl.request_abort("communicator destroyed with outstanding operations");
+    }
+    else
+    {
+        // Idle: nothing can fail later, but make late fatal-handler calls (during member destruction) no-ops.
+        int expected = static_cast<int>(Impl::State::Running);
+        impl.state.compare_exchange_strong(expected, static_cast<int>(Impl::State::Aborted));
+    }
+    // Members are destroyed executor -> worker -> transport: queues are empty/failed, so each join is prompt.
+}
+
+void Communicator::abort(const std::string &reason)
+{
+    auto &impl = *impl_;
+    impl.request_abort(reason.empty() ? "abort() called" : reason);
+    // Wait (event-driven) until no local TBCCL thread can touch user buffers any more.
+    impl.collective_executor->wait_idle();
+    impl.comm_worker->wait_idle();
+    impl.state.store(static_cast<int>(Impl::State::Aborted));
+}
+
+bool Communicator::aborted() const noexcept
+{
+    return impl_->state.load() != static_cast<int>(Impl::State::Running);
+}
+
+std::string Communicator::abort_reason() const
+{
+    std::lock_guard<std::mutex> lock(impl_->reason_mutex);
+    return impl_->reason;
+}
 
 std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
 {
@@ -454,6 +567,8 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
     impl.transport = std::make_unique<TcpTransport>(std::move(connection));
     impl.comm_worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, /*queue_depth=*/8);
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
+    impl.comm_worker->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
+    impl.collective_executor->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
 
     return comm;
 }
@@ -476,7 +591,10 @@ void require_not_failed(const Communicator &comm)
 {
     if (comm.failed())
     {
-        throw std::runtime_error("peer_failure: communicator is in a failed state (a prior operation hit a transport/protocol error)");
+        const std::string reason = comm.abort_reason();
+        throw std::runtime_error(
+            "peer_failure: communicator is in a failed state: aborted" +
+            (reason.empty() ? std::string() : " (" + reason + ")"));
     }
 }
 } // namespace

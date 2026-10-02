@@ -199,6 +199,19 @@ public:
     // automatic reconnection is attempted.
     bool failed() const noexcept;
 
+    // Phase 45: communicator-wide, destructive, idempotent, thread-safe abort. NOT the same as Work::wait(timeout),
+    // which only stops the caller waiting and leaves the operation (and the communicator) intact.
+    // After abort(): new operations throw immediately; queued Works fail without running; the active operation is
+    // interrupted (its socket is shut down; no peer cooperation needed) and its Work fails only after TBCCL has
+    // stopped touching its buffers; abort() returns once that has happened. The communicator cannot be reused.
+    // The first reason (from abort() or from a fatal transport/protocol/device error) is kept.
+    // Limit: finite local device work already running (e.g. a user CUDA kernel TBCCL is synchronizing on) is not preempted.
+    // A caller-side Work::wait(timeout) expiring never aborts; failures detected before protocol start
+    // (invalid arguments) do not poison the communicator.
+    void abort(const std::string &reason = "");
+    bool aborted() const noexcept;
+    std::string abort_reason() const;
+
     // Phase 44: this communicator's resource slot for `kind` (null if its factory never used one). Diagnostics only.
     ProviderResourceSlot provider_resources(MemoryKind kind) const;
 
