@@ -123,9 +123,20 @@ int main(int argc, char **argv)
         }
         cudaFree(d);
         cudaStreamDestroy(s);
+        unsigned long long pre[8] = {}, post[8] = {};
+        if (snap) snap(pre);
+        peer.join(); // the peer finished all ops; destroy ours now
+        auto td0 = clk::now();
+        c.reset();
+        auto td1 = clk::now();
+        if (snap) snap(post);
+        std::printf("communicator destroy after %zu MiB max: %.0f us", sizes.back(), us(td0, td1));
+        if (snap) std::printf(" (cudaFreeHost calls %llu, %.0f us inside)", post[3] - pre[3], (post[4] - pre[4]) / 1e3);
+        std::printf("\n");
+
     }
     catch (const std::exception &e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); rc = 1; }
-    peer.join();
+    if (peer.joinable()) peer.join();
     if (e1) { try { std::rethrow_exception(e1); } catch (const std::exception &e) { std::fprintf(stderr, "peer FAIL: %s\n", e.what()); rc = 1; } }
     return rc;
 }
