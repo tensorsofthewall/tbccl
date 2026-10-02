@@ -10,6 +10,10 @@
 // a public-API consumer ever needs -- no benchmark header is included,
 // matching.
 
+#include <tbccl/communicator.hpp>
+
+#include <cstdint>
+
 namespace tbccl
 {
 
@@ -23,5 +27,26 @@ namespace tbccl
 // support (Communicator returns ErrorCode::Unsupported for it, same as
 // any other unregistered MemoryKind).
 void register_cuda_support();
+
+// per-Communicator persistent CUDA staging counters (diagnostics/tests). Pinned staging is a single grow-only
+// block owned by the Communicator; in steady state (capacity already sufficient) no collective allocates or frees
+// pinned memory, and the AllReduce root's device scratch is likewise reused.
+struct CudaStagingStats
+{
+    std::uint64_t pinned_alloc_count = 0;
+    std::uint64_t pinned_free_count = 0;
+    std::uint64_t pinned_allocated_bytes_total = 0;
+    std::uint64_t pinned_capacity = 0;
+    std::uint64_t pinned_peak_capacity = 0;
+    std::uint64_t device_scratch_alloc_count = 0;
+    std::uint64_t device_scratch_free_count = 0;
+    std::uint64_t device_scratch_capacity = 0;
+};
+
+// False if `comm` has not used CUDA memory yet (no resources exist).
+bool cuda_staging_stats(const Communicator &comm, CudaStagingStats &out);
+
+// Test seam only: makes the next pinned-staging growth of `comm` fail.
+void cuda_staging_test_fail_next_pinned_growth(const Communicator &comm);
 
 } // namespace tbccl

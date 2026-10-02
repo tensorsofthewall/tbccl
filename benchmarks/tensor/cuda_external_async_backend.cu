@@ -2,8 +2,11 @@
 
 #include <cuda_runtime.h>
 
+#include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -28,8 +31,108 @@ namespace
 #define TBCCL_EXTERNAL_CUDA_CHECK(expr) \
     ::tbccl_bench::tensor::check_cuda((expr), #expr)
 
+struct CudaStagingResources::State
+{
+    mutable std::mutex mutex; // guards the pinned block and its counters; also the "lease" for its use
+    void *pinned = nullptr;
+    std::size_t pinned_cap = 0;
+    Stats stats;
+    bool fail_next_growth = false;
+
+    std::mutex device_mutex;
+    std::shared_ptr<void> device_block;
+    std::size_t device_cap = 0;
+    std::atomic<std::uint64_t> device_alloc{0};
+    std::atomic<std::uint64_t> device_free{0};
+};
+
+CudaStagingResources::CudaStagingResources() : s_(std::make_unique<State>()) {}
+
+CudaStagingResources::~CudaStagingResources()
+{
+    std::lock_guard<std::mutex> lock(s_->mutex);
+    if (s_->pinned)
+    {
+        cudaFreeHost(s_->pinned);
+        ++s_->stats.pinned_free_count;
+        s_->pinned = nullptr;
+    }
+}
+
+void CudaStagingResources::with_pinned(std::size_t bytes, const std::function<void(void *)> &fn)
+{
+    std::lock_guard<std::mutex> lock(s_->mutex);
+    if (s_->pinned_cap < bytes)
+    {
+        void *fresh = nullptr;
+        if (s_->fail_next_growth)
+        {
+            s_->fail_next_growth = false;
+            throw std::runtime_error("device_error: pinned staging growth failed (injected)");
+        }
+        const cudaError_t status = cudaMallocHost(&fresh, bytes);
+        if (status != cudaSuccess)
+        {
+            throw std::runtime_error(
+                std::string("device_error: pinned staging growth to ") + std::to_string(bytes) +
+                " bytes failed: " + cudaGetErrorString(status));
+        }
+        ++s_->stats.pinned_alloc_count;
+        s_->stats.pinned_allocated_bytes_total += bytes;
+        void *old = s_->pinned;
+        s_->pinned = fresh;
+        s_->pinned_cap = bytes;
+        s_->stats.pinned_capacity = bytes;
+        s_->stats.pinned_peak_capacity = std::max<std::uint64_t>(s_->stats.pinned_peak_capacity, bytes);
+        if (old)
+        {
+            cudaFreeHost(old);
+            ++s_->stats.pinned_free_count;
+        }
+    }
+    fn(s_->pinned);
+}
+
+std::shared_ptr<void> CudaStagingResources::acquire_device_scratch(std::size_t bytes)
+{
+    std::lock_guard<std::mutex> lock(s_->device_mutex);
+    if (!s_->device_block || s_->device_cap < bytes)
+    {
+        void *fresh = nullptr;
+        TBCCL_EXTERNAL_CUDA_CHECK(cudaMalloc(&fresh, bytes));
+        s_->device_alloc.fetch_add(1);
+        State *state = s_.get();
+        // Freed when the last lease on this block is released; cudaFree is a no-op-safe tail at shutdown.
+        s_->device_block = std::shared_ptr<void>(fresh, [state](void *p) {
+            cudaFree(p);
+            state->device_free.fetch_add(1);
+        });
+        s_->device_cap = bytes;
+    }
+    return s_->device_block;
+}
+
+CudaStagingResources::Stats CudaStagingResources::stats() const
+{
+    std::lock_guard<std::mutex> lock(s_->mutex);
+    Stats out = s_->stats;
+    out.device_scratch_alloc_count = s_->device_alloc.load();
+    out.device_scratch_free_count = s_->device_free.load();
+    out.device_scratch_capacity = s_->device_cap;
+    return out;
+}
+
+void CudaStagingResources::fail_next_pinned_growth()
+{
+    std::lock_guard<std::mutex> lock(s_->mutex);
+    s_->fail_next_growth = true;
+}
+
 struct CudaExternalAsyncBackend::Impl
 {
+    std::shared_ptr<CudaStagingResources> resources; // null => private per-instance storage (legacy)
+    std::shared_ptr<void> scratch_lease;             // keeps a shared device scratch block alive
+
     void *device_ptr = nullptr;
     bool owns_device_ptr = false;
     std::size_t bytes = 0;
@@ -51,7 +154,11 @@ struct CudaExternalAsyncBackend::Impl
     }
 };
 
-CudaExternalAsyncBackend::CudaExternalAsyncBackend(void *external_device_ptr, std::size_t bytes, void *shared_copy_stream)
+CudaExternalAsyncBackend::CudaExternalAsyncBackend(
+    void *external_device_ptr,
+    std::size_t bytes,
+    void *shared_copy_stream,
+    std::shared_ptr<CudaStagingResources> resources)
     : impl_(std::make_unique<Impl>())
 {
     int device_count = 0;
@@ -64,9 +171,16 @@ CudaExternalAsyncBackend::CudaExternalAsyncBackend(void *external_device_ptr, st
     }
 
     impl_->bytes = bytes;
+    impl_->resources = std::move(resources);
     if (external_device_ptr != nullptr)
     {
         impl_->device_ptr = external_device_ptr;
+        impl_->owns_device_ptr = false;
+    }
+    else if (bytes > 0 && impl_->resources)
+    {
+        impl_->scratch_lease = impl_->resources->acquire_device_scratch(bytes);
+        impl_->device_ptr = impl_->scratch_lease.get();
         impl_->owns_device_ptr = false;
     }
     else if (bytes > 0)
@@ -85,7 +199,7 @@ CudaExternalAsyncBackend::CudaExternalAsyncBackend(void *external_device_ptr, st
         TBCCL_EXTERNAL_CUDA_CHECK(cudaStreamCreate(&impl_->stream));
     }
 
-    if (bytes > 0)
+    if (bytes > 0 && !impl_->resources)
     {
         TBCCL_EXTERNAL_CUDA_CHECK(cudaMallocHost(&impl_->pinned_scratch, bytes));
     }
@@ -112,11 +226,13 @@ void CudaExternalAsyncBackend::stage_source_chunk(const tbccl::Chunk &chunk, voi
     }
 
     auto *source = static_cast<const std::uint8_t *>(impl_->device_ptr) + chunk.offset;
-    TBCCL_EXTERNAL_CUDA_CHECK(cudaMemcpyAsync(
-        impl_->pinned_scratch, source, chunk.size, cudaMemcpyDeviceToHost, impl_->stream));
-    TBCCL_EXTERNAL_CUDA_CHECK(cudaStreamSynchronize(impl_->stream));
-
-    std::memcpy(staging, impl_->pinned_scratch, chunk.size);
+    auto copy_out = [&](void *pinned) {
+        TBCCL_EXTERNAL_CUDA_CHECK(cudaMemcpyAsync(pinned, source, chunk.size, cudaMemcpyDeviceToHost, impl_->stream));
+        TBCCL_EXTERNAL_CUDA_CHECK(cudaStreamSynchronize(impl_->stream));
+        std::memcpy(staging, pinned, chunk.size);
+    };
+    if (impl_->resources) impl_->resources->with_pinned(chunk.size, copy_out);
+    else copy_out(impl_->pinned_scratch);
 }
 
 void CudaExternalAsyncBackend::commit_destination_chunk(const tbccl::Chunk &chunk, const void *staging)
@@ -127,12 +243,14 @@ void CudaExternalAsyncBackend::commit_destination_chunk(const tbccl::Chunk &chun
         throw std::runtime_error("CudaExternalAsyncBackend::commit_destination_chunk: chunk exceeds buffer bytes");
     }
 
-    std::memcpy(impl_->pinned_scratch, staging, chunk.size);
-
     auto *destination = static_cast<std::uint8_t *>(impl_->device_ptr) + chunk.offset;
-    TBCCL_EXTERNAL_CUDA_CHECK(cudaMemcpyAsync(
-        destination, impl_->pinned_scratch, chunk.size, cudaMemcpyHostToDevice, impl_->stream));
-    TBCCL_EXTERNAL_CUDA_CHECK(cudaStreamSynchronize(impl_->stream));
+    auto copy_in = [&](void *pinned) {
+        std::memcpy(pinned, staging, chunk.size);
+        TBCCL_EXTERNAL_CUDA_CHECK(cudaMemcpyAsync(destination, pinned, chunk.size, cudaMemcpyHostToDevice, impl_->stream));
+        TBCCL_EXTERNAL_CUDA_CHECK(cudaStreamSynchronize(impl_->stream));
+    };
+    if (impl_->resources) impl_->resources->with_pinned(chunk.size, copy_in);
+    else copy_in(impl_->pinned_scratch);
 }
 
 void *CudaExternalAsyncBackend::device_ptr() const noexcept { return impl_->device_ptr; }
@@ -209,10 +327,12 @@ namespace
 } // namespace
 
 void *cuda_external_test_launch_delayed_write_i32(
-    void *device_ptr, std::size_t count, std::int32_t value, std::size_t spin_iterations)
+    void *device_ptr, std::size_t count, std::int32_t value, std::size_t spin_iterations, bool non_blocking)
 {
     cudaStream_t stream = nullptr;
-    check_cuda(cudaStreamCreate(&stream), "cudaStreamCreate (delayed write test stream)");
+    check_cuda(
+        cudaStreamCreateWithFlags(&stream, non_blocking ? cudaStreamNonBlocking : cudaStreamDefault),
+        "cudaStreamCreate (delayed write test stream)");
     if (count > 0)
     {
         constexpr int kThreadsPerBlock = 256;
