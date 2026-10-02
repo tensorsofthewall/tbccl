@@ -1552,6 +1552,17 @@ if(BUILD_TESTING)
             COMMAND cuda_bucket_compute_test
         )
 
+        add_executable(communicator_cuda_staging_test tests/communicator_cuda_staging_test.cpp)
+        target_include_directories(communicator_cuda_staging_test PRIVATE ${CMAKE_SOURCE_DIR}/benchmarks/tensor)
+        target_link_libraries(communicator_cuda_staging_test PRIVATE tbccl_tensor_backend CUDA::cudart Threads::Threads)
+        add_test(NAME communicator_cuda_staging_test COMMAND communicator_cuda_staging_test)
+        set_tests_properties(communicator_cuda_staging_test PROPERTIES TIMEOUT 300)
+
+        add_executable(cuda_submit_bench benchmarks/tensor/cuda_submit_bench.cpp)
+        target_link_libraries(cuda_submit_bench PRIVATE tbccl_tensor_backend CUDA::cudart Threads::Threads ${CMAKE_DL_LIBS})
+        add_library(cuda_alloc_interpose SHARED benchmarks/tensor/cuda_alloc_interpose.cpp)
+        target_link_libraries(cuda_alloc_interpose PRIVATE ${CMAKE_DL_LIBS})
+
         add_executable(communicator_collectives_cuda_test
             tests/communicator_collectives_cuda_test.cpp
         )

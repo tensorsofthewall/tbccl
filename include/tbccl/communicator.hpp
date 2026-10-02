@@ -77,6 +77,19 @@ public:
 using MemoryProviderFactory = std::function<
     std::unique_ptr<ExternalMemoryProvider>(const BufferView &buffer, const ExecutionContext &context)>;
 
+// Phase 44: opaque, communicator-scoped storage for one MemoryKind's provider resources (e.g. persistent
+// pinned staging). Empty until a slot-aware factory fills it; owned by the Communicator and released after its
+// worker threads have stopped, so resources outlive every operation that can use them. Per-communicator, never
+// process-global.
+using ProviderResourceSlot = std::shared_ptr<void>;
+
+// Slot-aware variant of MemoryProviderFactory: the factory may lazily create resources in `communicator_slot`
+// and share them with the providers it returns. Calls for one communicator and kind are serialized.
+using MemoryProviderFactoryEx = std::function<std::unique_ptr<ExternalMemoryProvider>(
+    const BufferView &buffer, const ExecutionContext &context, ProviderResourceSlot &communicator_slot)>;
+
+void register_memory_provider_factory_ex(MemoryKind kind, MemoryProviderFactoryEx factory);
+
 // Registers (or replaces) the provider factory for `kind`. MemoryKind::Host
 // and MemoryKind::MetalShared already have a built-in factory and do not
 // need to be registered -- calling this for them overrides the built-in
@@ -185,6 +198,9 @@ public:
     // immediately with ErrorCode::PeerFailure rather than hanging. No
     // automatic reconnection is attempted.
     bool failed() const noexcept;
+
+    // Phase 44: this communicator's resource slot for `kind` (null if its factory never used one). Diagnostics only.
+    ProviderResourceSlot provider_resources(MemoryKind kind) const;
 
     // Async P2P. `peer` must be the communicator's single other rank (0
     // or 1). Returns a live Work; never blocks on transport/device work,

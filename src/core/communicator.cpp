@@ -161,13 +161,13 @@ std::mutex &registry_mutex()
     return m;
 }
 
-std::map<MemoryKind, MemoryProviderFactory> &registry()
+std::map<MemoryKind, MemoryProviderFactoryEx> &registry()
 {
-    static std::map<MemoryKind, MemoryProviderFactory> r = {
-        {MemoryKind::Host, [](const BufferView &b, const ExecutionContext &c) -> std::unique_ptr<ExternalMemoryProvider> {
+    static std::map<MemoryKind, MemoryProviderFactoryEx> r = {
+        {MemoryKind::Host, [](const BufferView &b, const ExecutionContext &c, ProviderResourceSlot &) -> std::unique_ptr<ExternalMemoryProvider> {
              return std::make_unique<HostMemoryProvider>(b, c);
          }},
-        {MemoryKind::MetalShared, [](const BufferView &b, const ExecutionContext &c) -> std::unique_ptr<ExternalMemoryProvider> {
+        {MemoryKind::MetalShared, [](const BufferView &b, const ExecutionContext &c, ProviderResourceSlot &) -> std::unique_ptr<ExternalMemoryProvider> {
              return std::make_unique<HostMemoryProvider>(b, c);
          }},
     };
@@ -177,6 +177,13 @@ std::map<MemoryKind, MemoryProviderFactory> &registry()
 } // namespace
 
 void register_memory_provider_factory(MemoryKind kind, MemoryProviderFactory factory)
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    registry()[kind] = [factory = std::move(factory)](
+                           const BufferView &b, const ExecutionContext &c, ProviderResourceSlot &) { return factory(b, c); };
+}
+
+void register_memory_provider_factory_ex(MemoryKind kind, MemoryProviderFactoryEx factory)
 {
     std::lock_guard<std::mutex> lock(registry_mutex());
     registry()[kind] = std::move(factory);
@@ -191,7 +198,8 @@ bool memory_kind_registered(MemoryKind kind)
 namespace
 {
 
-std::unique_ptr<ExternalMemoryProvider> make_provider(const BufferView &buffer, const ExecutionContext &context)
+std::unique_ptr<ExternalMemoryProvider> make_provider(
+    const BufferView &buffer, const ExecutionContext &context, std::map<MemoryKind, ProviderResourceSlot> &slots)
 {
     std::lock_guard<std::mutex> lock(registry_mutex());
     auto it = registry().find(buffer.memory_kind);
@@ -201,7 +209,7 @@ std::unique_ptr<ExternalMemoryProvider> make_provider(const BufferView &buffer, 
             "unsupported: no memory provider registered for kind=" + memory_kind_name(buffer.memory_kind) +
             " (call tbccl::register_memory_provider_factory() first)");
     }
-    return it->second(buffer, context);
+    return it->second(buffer, context, slots[buffer.memory_kind]);
 }
 
 // ---------------------------------------------------------------------
@@ -349,6 +357,10 @@ bool Capabilities::supports_collective_all_gather(MemoryKind kind) const noexcep
 
 struct Communicator::Impl
 {
+    // Declared first so it is destroyed last: provider resources (e.g. pinned staging) must outlive the worker
+    // threads that use them. Guarded by registry_mutex() (make_provider holds it).
+    std::map<MemoryKind, ProviderResourceSlot> provider_slots;
+
     std::size_t rank = 0;
     std::size_t world_size = 0;
     std::size_t other_peer = 0; // the only valid P2P peer index (world_size==2)
@@ -451,6 +463,13 @@ std::size_t Communicator::world_size() const noexcept { return impl_->world_size
 const Capabilities &Communicator::capabilities() const noexcept { return impl_->caps; }
 bool Communicator::failed() const noexcept { return impl_->failed.load(std::memory_order_relaxed); }
 
+ProviderResourceSlot Communicator::provider_resources(MemoryKind kind) const
+{
+    std::lock_guard<std::mutex> lock(registry_mutex());
+    auto it = impl_->provider_slots.find(kind);
+    return it == impl_->provider_slots.end() ? nullptr : it->second;
+}
+
 namespace
 {
 void require_not_failed(const Communicator &comm)
@@ -472,7 +491,7 @@ Work Communicator::send(
     }
     validate_buffer_view(buffer, count, datatype);
 
-    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context);
+    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context, impl_->provider_slots);
     auto &backend = provider->primary_backend();
 
     TransferRequest request;
@@ -504,7 +523,7 @@ Work Communicator::recv(
     }
     validate_buffer_view(buffer, count, datatype);
 
-    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context);
+    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context, impl_->provider_slots);
     auto &backend = provider->primary_backend();
 
     TransferRequest request;
@@ -553,7 +572,7 @@ Work Communicator::all_reduce(
 
     // Keep the provider alive for the duration of the collective by
     // capturing it (shared_ptr) into the executor job's lambda.
-    auto provider = std::shared_ptr<ExternalMemoryProvider>(make_provider(recv_buf, context));
+    auto provider = std::shared_ptr<ExternalMemoryProvider>(make_provider(recv_buf, context, impl_->provider_slots));
 
     if (send_buf.data != recv_buf.data && count > 0)
     {
@@ -645,7 +664,7 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
     const std::size_t rank = impl_->rank;
     const std::size_t bytes = buffer.bytes;
     std::shared_ptr<ExternalMemoryProvider> provider;
-    if (bytes > 0) provider = make_provider(buffer, context);
+    if (bytes > 0) provider = make_provider(buffer, context, impl_->provider_slots);
 
     Transport *transport = impl_->transport.get();
     TensorCommWorker *worker = impl_->comm_worker.get();
@@ -689,9 +708,9 @@ Work Communicator::all_gather(
     std::shared_ptr<ExternalMemoryProvider> in_provider, local_out_provider, peer_out_provider;
     if (bytes > 0)
     {
-        in_provider = make_provider(input, context);
-        peer_out_provider = make_provider(outputs[peer], context);
-        if (outputs[rank].data != input.data) local_out_provider = make_provider(outputs[rank], context);
+        in_provider = make_provider(input, context, impl_->provider_slots);
+        peer_out_provider = make_provider(outputs[peer], context, impl_->provider_slots);
+        if (outputs[rank].data != input.data) local_out_provider = make_provider(outputs[rank], context, impl_->provider_slots);
     }
 
     Transport *transport = impl_->transport.get();
