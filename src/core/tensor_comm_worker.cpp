@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include <tbccl/async_transfer.hpp>
 
 #include <tbccl/transport.hpp>
@@ -103,6 +104,7 @@ namespace detail
     {
         {
             std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->done) return; // exactly one terminal transition
             state->done = true;
         }
         state->cv.notify_all();
@@ -114,6 +116,7 @@ namespace detail
     {
         {
             std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->done) return;
             state->done = true;
             state->error_flag = true;
             state->error_message = message;
@@ -418,6 +421,13 @@ struct TensorCommWorker::Impl
 
     std::atomic<bool> stopping{false};
 
+    // Terminal abort. Written once under queue_mutex (so enqueue/dequeue observe it consistently), then read
+    // lock-free. `active` is true while the network thread owns a dequeued request.
+    std::atomic<bool> aborted{false};
+    std::string abort_reason;
+    bool active = false;
+    std::function<void(const std::string &)> on_fatal;
+
     std::mutex stats_mutex;
     TensorCommWorker::Stats stats;
 
@@ -473,6 +483,42 @@ struct TensorCommWorker::Impl
         {
             staging_thread.join();
         }
+    }
+
+    std::string aborted_message()
+    {
+        std::lock_guard<std::mutex> lock(queue_mutex);
+        return "aborted: communicator aborted" + (abort_reason.empty() ? "" : " (" + abort_reason + ")");
+    }
+
+    // Fails every queued (never started, so never touching user memory) request. The queue is moved out under the
+    // lock and completed outside it.
+    void drain_queue_failed()
+    {
+        std::deque<std::pair<TransferRequest, std::shared_ptr<TransferWork::State>>> doomed;
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            doomed.swap(queue);
+        }
+        queue_cv.notify_all(); // wakes enqueue() callers blocked on capacity
+        if (doomed.empty()) return;
+        const std::string message = aborted_message();
+        for (auto &item : doomed)
+        {
+            detail::TransferWorkAccess::complete_error(item.second, message);
+            record_stat(false);
+        }
+    }
+
+    void request_abort(const std::string &reason)
+    {
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            if (aborted.load()) return;
+            abort_reason = reason;
+            aborted.store(true);
+        }
+        drain_queue_failed();
     }
 
     // Runs `staging_job` on the persistent staging thread, blocking the
@@ -554,8 +600,21 @@ struct TensorCommWorker::Impl
 
                 item = std::move(queue.front());
                 queue.pop_front();
+                active = true;
             }
             queue_cv.notify_all(); // wakes an enqueue() blocked on capacity
+
+            if (aborted.load())
+            {
+                detail::TransferWorkAccess::complete_error(item.second, aborted_message());
+                record_stat(false);
+                {
+                    std::lock_guard<std::mutex> lock(queue_mutex);
+                    active = false;
+                }
+                queue_cv.notify_all();
+                continue;
+            }
 
             if (timing_enabled())
             {
@@ -564,6 +623,11 @@ struct TensorCommWorker::Impl
             }
 
             process_request(item.first, item.second);
+            {
+                std::lock_guard<std::mutex> lock(queue_mutex);
+                active = false;
+            }
+            queue_cv.notify_all();
         }
     }
 
@@ -610,6 +674,7 @@ struct TensorCommWorker::Impl
         }
         catch (const std::exception &error)
         {
+            fatal(error.what());
             detail::TransferWorkAccess::complete_error(state, error.what());
             record_stat(false);
         }
@@ -693,6 +758,7 @@ struct TensorCommWorker::Impl
 
             if (progress.failed)
             {
+                fatal(progress.error_message);
                 detail::TransferWorkAccess::complete_error(state, progress.error_message);
                 record_stat(false);
                 return;
@@ -703,9 +769,17 @@ struct TensorCommWorker::Impl
         }
         catch (const std::exception &error)
         {
+            fatal(error.what());
             detail::TransferWorkAccess::complete_error(state, error.what());
             record_stat(false);
         }
+    }
+
+    // A transport/protocol/device failure after a transfer has started leaves the peers' stream position unknown:
+    // poison the communicator (idempotent, non-blocking, safe from this thread).
+    void fatal(const std::string &message)
+    {
+        if (on_fatal) on_fatal(message);
     }
 
     void record_stat(bool ok)
@@ -747,7 +821,13 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
         std::unique_lock<std::mutex> lock(impl_->queue_mutex);
         impl_->queue_cv.wait(
             lock,
-            [&]() { return impl_->queue.size() < impl_->queue_depth; });
+            [&]() { return impl_->aborted.load() || impl_->queue.size() < impl_->queue_depth; });
+        if (impl_->aborted.load())
+        {
+            throw std::runtime_error(
+                "aborted: communicator aborted" +
+                (impl_->abort_reason.empty() ? "" : " (" + impl_->abort_reason + ")"));
+        }
 
         impl_->queue.emplace_back(std::move(request), work.state_);
     }
@@ -760,6 +840,28 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
     impl_->queue_cv.notify_all();
 
     return work;
+}
+
+void TensorCommWorker::abort(const std::string &reason)
+{
+    impl_->request_abort(reason);
+}
+
+bool TensorCommWorker::busy() const
+{
+    std::lock_guard<std::mutex> lock(impl_->queue_mutex);
+    return impl_->active || !impl_->queue.empty();
+}
+
+void TensorCommWorker::wait_idle()
+{
+    std::unique_lock<std::mutex> lock(impl_->queue_mutex);
+    impl_->queue_cv.wait(lock, [&]() { return !impl_->active && impl_->queue.empty(); });
+}
+
+void TensorCommWorker::set_fatal_handler(std::function<void(const std::string &)> handler)
+{
+    impl_->on_fatal = std::move(handler);
 }
 
 TensorCommWorker::Stats TensorCommWorker::stats() const

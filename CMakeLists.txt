@@ -1376,6 +1376,11 @@ if(BUILD_TESTING)
     )
     set_tests_properties(tensor_backend_async_adapter_test PROPERTIES TIMEOUT 60)
 
+    add_executable(communicator_abort_test tests/communicator_abort_test.cpp)
+    target_link_libraries(communicator_abort_test PRIVATE tbccl Threads::Threads)
+    add_test(NAME communicator_abort_test COMMAND communicator_abort_test)
+    set_tests_properties(communicator_abort_test PROPERTIES TIMEOUT 120)
+
     add_executable(communicator_collectives_test
         tests/communicator_collectives_test.cpp
     )

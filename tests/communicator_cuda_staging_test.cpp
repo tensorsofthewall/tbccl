@@ -309,10 +309,12 @@ void test_failed_growth_keeps_old_block()
         });
     const auto mid = p.stats();
     expect(mid.pinned_alloc_count == before.pinned_alloc_count && mid.pinned_capacity == before.pinned_capacity, "old block preserved");
-    // the same communicator keeps working at the preserved capacity and (after the injected failure) can grow again
-    run_op(p, Op::AllReduce, MiB, true, false);
-    run_op(p, Op::Broadcast1, 4 * MiB, true, false);
-    expect(p.stats().pinned_capacity == 4 * MiB, "growth succeeds again");
+    // A device failure after the protocol started poisons the communicator (peers' stream position is unknown), so later
+    // operations are rejected; the preserved block is still intact and is freed once at destruction.
+    expect(p.c[0]->aborted(), "growth failure during an active collective poisons the communicator");
+    bool rejected = false;
+    try { run_op(p, Op::AllReduce, MiB, true, false); } catch (const std::exception &) { rejected = true; }
+    expect(rejected, "later operation rejected after poisoning");
 }
 
 // Pure-device producer (a delayed kernel on its own stream, no host involvement) feeds all_reduce through the
@@ -356,6 +358,36 @@ void test_stream_ordering_delayed_producer()
     }
 }
 
+// CUDA all_reduce blocked on a silent (alive, socket open) peer; abort fails the Work, the communicator destructs
+// promptly and the persistent staging resources are released exactly once.
+void test_cuda_abort_silent_peer()
+{
+    Pair p;
+    run_op(p, Op::AllReduce, 4 * MiB, true, false); // healthy control (also creates staging)
+    auto res = std::static_pointer_cast<tbccl_bench::tensor::CudaStagingResources>(p.c[0]->provider_resources(MemoryKind::Cuda));
+    expect(res != nullptr, "resources");
+    cudaStream_t s;
+    cu(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking), "stream");
+    constexpr std::size_t bytes = 8 * MiB;
+    Buf b(true, bytes, bytes_of(f32pattern(bytes / 4, 0)), s);
+    tbccl::Work w = p.c[0]->all_reduce(b.view(), b.view(), bytes / 4, tbccl::DataType::Float32, tbccl::ReduceOp::Sum, b.ctx());
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    expect(!w.is_completed(), "blocked on silent peer");
+    auto t0 = std::chrono::steady_clock::now();
+    p.c[0]->abort("cuda test");
+    auto t1 = std::chrono::steady_clock::now();
+    expect(w.is_completed() && w.has_error() && w.error().find("abort") != std::string::npos, "Work failed with abort: " + w.error());
+    p.c[0].reset();
+    auto t2 = std::chrono::steady_clock::now();
+    expect(res.use_count() == 1, "staging resources released by the communicator");
+    const auto st = res->stats();
+    expect(st.pinned_alloc_count >= 1, "had pinned staging");
+    res.reset(); // final free exactly once (checked by the interposer totals / memcheck)
+    std::cout << "  cuda abort " << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms, destroy "
+              << std::chrono::duration<double, std::milli>(t2 - t1).count() << " ms\n";
+    cudaStreamDestroy(s);
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -363,6 +395,7 @@ int main(int argc, char **argv)
     tbccl::register_cuda_support();
     struct T { const char *n; void (*f)(); } tests[] = {
         {"stream ordering: delayed producer + negative control", test_stream_ordering_delayed_producer},
+        {"cuda abort with silent peer", test_cuda_abort_silent_peer},
         {"correctness (all pairings, all collectives, 16 B..25 MiB)", test_correctness_all_pairings},
         {"steady state reuse (100 x 25 MiB, 100 x 16 MiB)", test_steady_state_reuse},
         {"varying sizes grow-only + oscillation", test_varying_sizes_grow_only},

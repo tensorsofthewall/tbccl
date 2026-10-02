@@ -66,6 +66,12 @@ public:
     // Human-readable "address:port" of the remote peer, for logging.
     virtual std::string peer_name() const = 0;
 
+    // Destructive interrupt. Safe to call from any thread, any number of times, while other threads are blocked inside
+    // send()/recv(): those calls must wake and throw ("aborted: ..."), as must any later call. Does not release the
+    // underlying resource (the destructor does, once). Default: no-op (a Connection that cannot be interrupted keeps
+    // the old behavior).
+    virtual void abort(const std::string & /*reason*/) {}
+
 protected:
     Connection() = default;
 };
@@ -126,6 +132,9 @@ public:
 
     virtual std::string peer_name() const = 0;
 
+    // See Connection::abort(). Never depends on peer cooperation.
+    virtual void abort(const std::string & /*reason*/) {}
+
 protected:
     Transport() = default;
 };
@@ -144,6 +153,7 @@ public:
     void recv(void *data, std::size_t bytes) override;
     TransportCapabilities capabilities() const noexcept override;
     std::string peer_name() const override;
+    void abort(const std::string &reason) override;
 
 private:
     std::unique_ptr<Connection> connection_;

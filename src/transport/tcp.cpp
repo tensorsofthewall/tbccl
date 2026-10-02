@@ -1,3 +1,5 @@
+#include <atomic>
+#include <mutex>
 #include <tbccl/tcp.hpp>
 
 #include <arpa/inet.h>
@@ -110,8 +112,22 @@ namespace
             }
         }
 
+        // shutdown(SHUT_RDWR) wakes blocked send/recv on every platform without releasing the descriptor
+        // (close() from another thread could let the fd number be reused under a still-running syscall).
+        // The fd is closed exactly once, in the destructor.
+        void abort(const std::string &reason) override
+        {
+            if (aborted_.exchange(true)) return;
+            {
+                std::lock_guard<std::mutex> lock(reason_mutex_);
+                reason_ = reason;
+            }
+            if (fd_ >= 0) ::shutdown(fd_, SHUT_RDWR);
+        }
+
         void send(const void *data, std::size_t bytes) override
         {
+            check_aborted();
             const auto *ptr = static_cast<const std::uint8_t *>(data);
 
             std::size_t sent = 0;
@@ -132,6 +148,7 @@ namespace
                     {
                         continue;
                     }
+                    check_aborted();
 
                     throw std::runtime_error(
                         "send failed: " +
@@ -149,6 +166,7 @@ namespace
 
         void recv(void *data, std::size_t bytes) override
         {
+            check_aborted();
             auto *ptr = static_cast<std::uint8_t *>(data);
 
             std::size_t received = 0;
@@ -164,6 +182,7 @@ namespace
                     {
                         continue;
                     }
+                    check_aborted();
 
                     throw std::runtime_error(
                         "recv failed: " +
@@ -172,6 +191,7 @@ namespace
 
                 if (n == 0)
                 {
+                    check_aborted();
                     throw std::runtime_error("peer closed connection");
                 }
 
@@ -185,7 +205,23 @@ namespace
         }
 
     private:
+        // A local abort is the primary cause of any error that follows it; report it instead of the
+        // platform-specific EOF/ECONNRESET/EPIPE/ENOTCONN the shutdown produced.
+        void check_aborted()
+        {
+            if (!aborted_.load()) return;
+            std::string reason;
+            {
+                std::lock_guard<std::mutex> lock(reason_mutex_);
+                reason = reason_;
+            }
+            throw std::runtime_error("aborted: communicator aborted" + (reason.empty() ? "" : " (" + reason + ")"));
+        }
+
         int fd_ = -1;
+        std::atomic<bool> aborted_{false};
+        std::mutex reason_mutex_;
+        std::string reason_;
     };
 
     class TcpListener final : public Listener
@@ -463,6 +499,11 @@ void TcpTransport::send(const void *data, std::size_t bytes)
 void TcpTransport::recv(void *data, std::size_t bytes)
 {
     connection_->recv(data, bytes);
+}
+
+void TcpTransport::abort(const std::string &reason)
+{
+    connection_->abort(reason);
 }
 
 TransportCapabilities TcpTransport::capabilities() const noexcept
