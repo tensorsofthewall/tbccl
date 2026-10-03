@@ -52,9 +52,23 @@ namespace
         const auto status = run_forked(world, [&](std::size_t rank, tbccl::Communicator &comm) {
             std::vector<float> data(bytes / 4, static_cast<float>(rank));
             if (rank == 2) die_after(delay_ms);
-            auto w = comm.all_reduce(view(data.data(), bytes), view(data.data(), bytes), data.size(), DataType::Float32, ReduceOp::Sum);
-            if (rank == 2) { w.wait(); return; } // only reached if it somehow finished before dying
-            expect_failed(w, "ring all_reduce");
+            // Repeat the all_reduce until the death is noticed: a fast machine can finish one 256 MiB ring before the victim dies.
+            const auto t0 = Clock::now();
+            for (;;)
+            {
+                try
+                {
+                    auto w = comm.all_reduce(view(data.data(), bytes), view(data.data(), bytes), data.size(), DataType::Float32, ReduceOp::Sum);
+                    w.wait();
+                    if (w.has_error()) break;
+                }
+                catch (const std::runtime_error &) // submission on an already-terminal communicator
+                {
+                    break;
+                }
+                if (rank != 2) expect(since(t0) < 30, "the ring all_reduce loop was never interrupted");
+            }
+            if (rank == 2) return;
             expect(comm.failed() && comm.aborted(), "terminal");
         }, std::chrono::seconds(90));
         expect_children_ok(status, world, 2, std::string("rank 2 dies during the ring all_reduce (") + phase + ")");
