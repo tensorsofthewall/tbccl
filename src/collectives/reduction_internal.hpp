@@ -8,12 +8,42 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <type_traits>
 
 #include <tbccl/reduction.hpp>
 
 namespace tbccl::detail
 {
+
+// Compile-time tag carrying the element type of a DataType, passed to the visitor's generic lambda.
+template <typename T>
+struct TypeTag
+{
+    using type = T;
+};
+
+// The single DataType -> element-type dispatcher shared by every reducing algorithm and the host reduce backend, so a new
+// reduction type is added in exactly one place. Calls fn(TypeTag<T>{}) for the matching T; throws for a DataType that has
+// no reduction arithmetic (callers have normally rejected it earlier with validate_reduction()).
+template <typename Fn>
+void visit_reduction_type(DataType datatype, Fn &&fn)
+{
+    switch (datatype)
+    {
+    case DataType::Int32: fn(TypeTag<std::int32_t>{}); return;
+    case DataType::Int64: fn(TypeTag<std::int64_t>{}); return;
+    case DataType::Float32: fn(TypeTag<float>{}); return;
+    case DataType::Float64: fn(TypeTag<double>{}); return;
+    case DataType::Int8:
+    case DataType::UInt8:
+    case DataType::Float16:
+    case DataType::BFloat16:
+        break;
+    }
+    throw std::runtime_error("unsupported: no reduction arithmetic for this DataType");
+}
+
 namespace reduction_detail
 {
 

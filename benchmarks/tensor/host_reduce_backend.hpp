@@ -47,8 +47,10 @@ public:
         case tbccl::DataType::Int64:
             sum_typed<std::int64_t>(count);
             return;
+        default:
+            break;
         }
-        throw std::runtime_error("HostReduceBackend: unrecognized DataType");
+        throw std::runtime_error("HostReduceBackend: reduction not implemented for this DataType");
     }
 
 private:

@@ -165,6 +165,7 @@ namespace
         case tbccl::DataType::Int64: return "int64";
         case tbccl::DataType::Float32: return "float32";
         case tbccl::DataType::Float64: return "float64";
+        default: break;
         }
 
         return "unknown";
@@ -430,6 +431,7 @@ int main(int argc, char **argv)
                 run_iteration<double>(
                     *world, world->size(), options, iteration);
                 break;
+            default: throw std::runtime_error("this tool does not support that datatype");
             }
 
             std::cout

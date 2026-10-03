@@ -284,6 +284,7 @@ namespace
         case tbccl::DataType::Int64: return "int64";
         case tbccl::DataType::Float32: return "float32";
         case tbccl::DataType::Float64: return "float64";
+        default: break;
         }
 
         return "unknown";
@@ -1023,6 +1024,7 @@ namespace
             return run_reduce_scatter_benchmark<double>(
                 world, collective, recv_count, datatype, op, iterations,
                 warmup);
+        default: throw std::runtime_error("this tool does not support that datatype");
         }
 
         throw std::runtime_error("unreachable: unknown DataType");
@@ -1224,6 +1226,7 @@ namespace
         case tbccl::DataType::Float64:
             return run_all_reduce_benchmark<double>(
                 world, collective, count, datatype, op, iterations, warmup);
+        default: throw std::runtime_error("this tool does not support that datatype");
         }
 
         throw std::runtime_error("unreachable: unknown DataType");

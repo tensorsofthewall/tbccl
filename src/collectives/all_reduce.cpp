@@ -55,6 +55,7 @@ namespace tbccl::detail
     {
         const std::size_t element_size = datatype_size(datatype);
         validate_reduce_op(op);
+        validate_reduction(datatype, op);
 
         if (count > std::numeric_limits<std::size_t>::max() / element_size)
         {
