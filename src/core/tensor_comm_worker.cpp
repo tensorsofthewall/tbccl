@@ -49,6 +49,32 @@ namespace
         return enabled;
     }
 
+    // Framed transfers (TransferRequest::framed). 16 bytes: u32 magic, u32 reserved (0), u64 payload length, big endian.
+    constexpr std::uint32_t kFrameMagic = 0x54424D50U; // "TBMP"
+    constexpr std::size_t kFrameHeaderBytes = 16;
+
+    void encode_frame_header(std::uint8_t (&out)[kFrameHeaderBytes], std::uint64_t length)
+    {
+        for (int i = 0; i < 4; ++i) out[i] = static_cast<std::uint8_t>(kFrameMagic >> (24 - 8 * i));
+        for (int i = 4; i < 8; ++i) out[i] = 0;
+        for (int i = 0; i < 8; ++i) out[8 + i] = static_cast<std::uint8_t>(length >> (56 - 8 * i));
+    }
+
+    // Throws "protocol_mismatch: ..." unless the header is a frame of exactly `expected` bytes.
+    void check_frame_header(const std::uint8_t (&in)[kFrameHeaderBytes], std::uint64_t expected)
+    {
+        std::uint32_t magic = 0;
+        for (int i = 0; i < 4; ++i) magic = (magic << 8) | in[i];
+        if (magic != kFrameMagic)
+            throw std::runtime_error("protocol_mismatch: the peer's point-to-point message has no valid frame header (the other rank is not sending a framed message here)");
+        std::uint64_t length = 0;
+        for (int i = 0; i < 8; ++i) length = (length << 8) | in[8 + i];
+        if (length != expected)
+            throw std::runtime_error(
+                "protocol_mismatch: point-to-point size mismatch: the peer sent " + std::to_string(length) + " bytes but this rank posted a receive for " +
+                std::to_string(expected) + " bytes");
+    }
+
     double now_us()
     {
         return std::chrono::duration<double, std::micro>(
@@ -655,12 +681,32 @@ struct TensorCommWorker::Impl
             if (request.direction == TransferDirection::Send)
             {
                 const void *source = request.backend->direct_source_data();
-                request.transport->send(source, request.total_bytes);
+                if (request.framed)
+                {
+                    std::uint8_t header[kFrameHeaderBytes];
+                    encode_frame_header(header, request.total_bytes);
+                    request.transport->send_framed(header, sizeof(header), source, request.total_bytes);
+                }
+                else
+                {
+                    request.transport->send(source, request.total_bytes);
+                }
             }
             else
             {
                 void *destination = request.backend->direct_destination_data();
-                request.transport->recv(destination, request.total_bytes);
+                if (request.framed)
+                {
+                    std::uint8_t header[kFrameHeaderBytes];
+                    const std::uint64_t expected = request.total_bytes;
+                    request.transport->recv_framed(header, sizeof(header), destination, request.total_bytes, [expected](const void *h) {
+                        check_frame_header(*reinterpret_cast<const std::uint8_t(*)[kFrameHeaderBytes]>(h), expected);
+                    });
+                }
+                else
+                {
+                    request.transport->recv(destination, request.total_bytes);
+                }
             }
             if (timing)
             {
@@ -716,6 +762,21 @@ struct TensorCommWorker::Impl
 
         try
         {
+            if (request.framed)
+            {
+                // Staged path: the header travels on its own before the chunks, and is checked before any user memory is written.
+                std::uint8_t header[kFrameHeaderBytes];
+                if (request.direction == TransferDirection::Send)
+                {
+                    encode_frame_header(header, request.total_bytes);
+                    request.transport->send(header, sizeof(header));
+                }
+                else
+                {
+                    request.transport->recv(header, sizeof(header));
+                    check_frame_header(header, request.total_bytes);
+                }
+            }
             const auto chunks =
                 plan_chunks(request.total_bytes, request.chunk_hint, request.alignment);
 
