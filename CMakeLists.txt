@@ -1636,6 +1636,18 @@ if(BUILD_TESTING)
         add_test(NAME communicator_collectives_cuda_test COMMAND communicator_collectives_cuda_test)
         set_tests_properties(communicator_collectives_cuda_test PROPERTIES TIMEOUT 120)
 
+        add_executable(reduction_low_precision_cuda_test
+            tests/reduction_low_precision_cuda_test.cpp
+        )
+        target_link_libraries(reduction_low_precision_cuda_test PRIVATE tbccl_tensor_backend tbccl CUDA::cudart Threads::Threads)
+        target_include_directories(reduction_low_precision_cuda_test
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests
+        )
+        add_test(NAME reduction_low_precision_cuda_test COMMAND reduction_low_precision_cuda_test)
+        set_tests_properties(reduction_low_precision_cuda_test PROPERTIES TIMEOUT 300)
+
         add_executable(communicator_cuda_test
             tests/communicator_cuda_test.cpp
         )
@@ -1825,7 +1837,8 @@ if(BUILD_TESTING)
         "hetero_allreduce_test;metal_shared_direct_async_backend_test"
         "bucket_allreduce_worker_test;communicator_test"
         "communicator_collectives_test;world_test"
-        "all_reduce_ring_test;tensor_cuda_test")
+        "all_reduce_ring_test;tensor_cuda_test"
+        "reduction_low_precision_test;reduction_low_precision_cuda_test")
         list(GET pair 0 lock_first)
         string(MD5 lock_name "${pair}")
         foreach(t IN LISTS pair)

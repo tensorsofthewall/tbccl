@@ -361,12 +361,12 @@ bool Capabilities::supports_memory_kind(MemoryKind kind) const noexcept
 bool Capabilities::supports_collective_all_reduce(MemoryKind kind, DataType datatype, ReduceOp op) const noexcept
 {
     // The N=2 engine only implements Sum. Host reduces every type reduction_supported() allows. A MetalShared reduce runs the
-    // benchmark-side host loop and a Cuda reduce runs the device kernels; each has only the element types listed here.
+    // benchmark-side host loop (original four element types only); a Cuda reduce runs the device kernels, which also cover the
+    // 16-bit floating-point types.
     if (op != ReduceOp::Sum || !negotiation_.ok || !reduction_supported(datatype, op)) return false;
     switch (kind)
     {
     case MemoryKind::MetalShared:
-    case MemoryKind::Cuda:
         switch (datatype)
         {
         case DataType::Int32:
@@ -375,7 +375,20 @@ bool Capabilities::supports_collective_all_reduce(MemoryKind kind, DataType data
         case DataType::Float64:
             return true;
         default:
-            return false; // device/Metal arithmetic for the newer types is added with their backends
+            return false; // the Metal-shared host loop only has the original four element types
+        }
+    case MemoryKind::Cuda:
+        switch (datatype)
+        {
+        case DataType::Int32:
+        case DataType::Int64:
+        case DataType::Float32:
+        case DataType::Float64:
+        case DataType::Float16:
+        case DataType::BFloat16:
+            return true;
+        default:
+            return false; // device arithmetic for Int8/UInt8 is added with the integer types
         }
     default:
         return true;

@@ -16,6 +16,7 @@
 
 #include "all_reduce_internal.hpp"
 #include "low_precision.hpp"
+#include "lowp_test_support.hpp"
 #include "reduction_internal.hpp"
 #include "test_utils.hpp"
 
@@ -33,69 +34,16 @@
 
 using tbccl_test::expect;
 namespace lowp = tbccl::detail::lowp;
+using lowp_test::Bf16;
+using lowp_test::edge_patterns;
+using lowp_test::expected_sum;
+using lowp_test::Fp16;
+using lowp_test::next_random;
+using lowp_test::random_patterns;
+using lowp_test::same;
 
 namespace
 {
-
-    // ----- format traits -------------------------------------------------------------------------------------------------------
-    struct Fp16
-    {
-        static constexpr const char *name = "float16";
-        static constexpr tbccl::DataType dt = tbccl::DataType::Float16;
-        using Elem = lowp::Half;
-        static constexpr std::uint16_t kInf = 0x7C00, kLastFinite = 0x7BFF;
-        static float dec(std::uint16_t b) { return lowp::fp16_bits_to_float(b); }
-        static std::uint16_t enc(float f) { return lowp::float_to_fp16_bits_rne(f); }
-        static bool is_nan(std::uint16_t b) { return (b & 0x7C00) == 0x7C00 && (b & 0x03FF) != 0; }
-        // Independent exact value of a non-NaN pattern.
-        static double exact(std::uint16_t b)
-        {
-            const double sign = (b & 0x8000) ? -1.0 : 1.0;
-            const int e = (b >> 10) & 0x1F, m = b & 0x3FF;
-            if (e == 0x1F) return sign * std::numeric_limits<double>::infinity();
-            return sign * (e == 0 ? std::ldexp(static_cast<double>(m), -24) : std::ldexp(static_cast<double>(1024 + m), e - 25));
-        }
-    };
-
-    struct Bf16
-    {
-        static constexpr const char *name = "bfloat16";
-        static constexpr tbccl::DataType dt = tbccl::DataType::BFloat16;
-        using Elem = lowp::BFloat16;
-        static constexpr std::uint16_t kInf = 0x7F80, kLastFinite = 0x7F7F;
-        static float dec(std::uint16_t b) { return lowp::bf16_bits_to_float(b); }
-        static std::uint16_t enc(float f) { return lowp::float_to_bf16_bits_rne(f); }
-        static bool is_nan(std::uint16_t b) { return (b & 0x7F80) == 0x7F80 && (b & 0x007F) != 0; }
-        static double exact(std::uint16_t b)
-        {
-            const double sign = (b & 0x8000) ? -1.0 : 1.0;
-            const int e = (b >> 7) & 0xFF, m = b & 0x7F;
-            if (e == 0xFF) return sign * std::numeric_limits<double>::infinity();
-            return sign * (e == 0 ? std::ldexp(static_cast<double>(m), -133) : std::ldexp(static_cast<double>(128 + m), e - 134));
-        }
-    };
-
-    std::uint32_t next_random(std::uint32_t &state)
-    {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        return state;
-    }
-
-    // Equal bits, or both NaN (NaN payloads are not compared; see low_precision.hpp).
-    template <class F>
-    bool same(std::uint16_t got, std::uint16_t want)
-    {
-        if (F::is_nan(want)) return F::is_nan(got);
-        return got == want;
-    }
-
-    template <class F>
-    std::uint16_t expected_sum(std::uint16_t a, std::uint16_t b)
-    {
-        return F::enc(F::dec(a) + F::dec(b));
-    }
 
     // ----- 1. conversions ------------------------------------------------------------------------------------------------------
     template <class F>
@@ -283,23 +231,6 @@ namespace
 
     // ----- 2. element-wise SUM ----------------------------------------------------------------------------------------------------
     template <class F>
-    std::vector<std::uint16_t> edge_patterns();
-
-    template <>
-    std::vector<std::uint16_t> edge_patterns<Fp16>()
-    {
-        return {0x0000, 0x8000, 0x0001, 0x8001, 0x03FF, 0x0400, 0x0401, 0x3555, 0x3C00, 0xBC00, 0x3C01, 0x4000, 0x5640, 0x7BFF, 0xFBFF,
-                0x7C00, 0xFC00, 0x7E00, 0x7C01, 0x0200, 0x0800, 0x6400, 0x6401, 0xE400};
-    }
-
-    template <>
-    std::vector<std::uint16_t> edge_patterns<Bf16>()
-    {
-        return {0x0000, 0x8000, 0x0001, 0x8001, 0x007F, 0x0080, 0x0081, 0x3F80, 0xBF80, 0x3F81, 0x4000, 0x4B00, 0x7F7F, 0xFF7F,
-                0x7F80, 0xFF80, 0x7FC0, 0x7F81, 0x3F00, 0x4380, 0x4381, 0x3C00, 0xC3C0, 0x3FC0};
-    }
-
-    template <class F>
     void test_sum_edge_matrix()
     {
         using E = typename F::Elem;
@@ -338,15 +269,6 @@ namespace
     }
 
     template <class F>
-    std::vector<std::uint16_t> random_patterns(std::size_t count, std::uint32_t seed)
-    {
-        std::vector<std::uint16_t> v(count);
-        std::uint32_t state = seed;
-        for (auto &x : v) x = static_cast<std::uint16_t>(next_random(state) >> 8);
-        return v;
-    }
-
-    template <class F>
     void test_sum_random_vectors()
     {
         using E = typename F::Elem;
@@ -371,16 +293,16 @@ namespace
     }
 
     // ----- 3. real N=2 collectives -------------------------------------------------------------------------------------------------
-    // Port zones used by no other test: World API cases take base, base+1 from 31000-31399; Communicator cases take base, base+1 from
-    // 31850-31899 (their data plane is control port + 1000 = 32850-32899).
+    // Port zones used by no other test, all below the kernel's ephemeral range (32768+): World API cases take base, base+1 from 31000-31199;
+    // Communicator cases cycle through control ports 29240-29251 (data plane = control + 1000 = 30240-30251) one pair at a time.
     std::uint16_t g_next_world_port = 31000;
-    std::uint16_t g_next_comm_port = 31850;
+    std::uint16_t g_next_comm_port = 29240;
 
     std::uint16_t take_world_port()
     {
         const std::uint16_t p = g_next_world_port;
         g_next_world_port = static_cast<std::uint16_t>(g_next_world_port + 4);
-        expect(g_next_world_port < 31400, "test world port budget exhausted");
+        expect(g_next_world_port < 31200, "test world port budget exhausted");
         return p;
     }
 
@@ -388,7 +310,7 @@ namespace
     {
         const std::uint16_t p = g_next_comm_port;
         g_next_comm_port = static_cast<std::uint16_t>(g_next_comm_port + 2);
-        expect(g_next_comm_port < 31900, "test communicator port budget exhausted");
+        if (g_next_comm_port >= 29252) g_next_comm_port = 29240; // sequential cases, SO_REUSEADDR listener
         return p;
     }
 

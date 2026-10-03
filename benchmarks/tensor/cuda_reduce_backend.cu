@@ -2,6 +2,8 @@
 
 #include <cuda_runtime.h>
 
+#include "cuda_reduce_ops.cuh"
+
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -26,20 +28,7 @@ namespace
     {
         const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
         if (i >= count) return;
-        if constexpr (std::is_integral_v<T>)
-        {
-            // bucketed AllReduce sums arbitrary CUDA-compute
-            // output reinterpreted as Int32, which overflows routinely
-            // -- wrap via the unsigned type, matching
-            // host_reduce_backend.hpp's identical fix, so CPU and GPU
-            // produce byte-identical wraparound results.
-            using U = std::make_unsigned_t<T>;
-            dst[i] = static_cast<T>(static_cast<U>(dst[i]) + static_cast<U>(src[i]));
-        }
-        else
-        {
-            dst[i] = dst[i] + src[i];
-        }
+        dst[i] = cuda_reduce::sum_elem<T>(dst[i], src[i]);
     }
 
     template <typename T>
@@ -78,6 +67,12 @@ void CudaReduceBackend::reduce_sum(std::size_t count, tbccl::DataType datatype)
         break;
     case tbccl::DataType::Int64:
         launch_sum<std::int64_t>(dst, src, count, stream);
+        break;
+    case tbccl::DataType::Float16:
+        launch_sum<__half>(dst, src, count, stream);
+        break;
+    case tbccl::DataType::BFloat16:
+        launch_sum<__nv_bfloat16>(dst, src, count, stream);
         break;
     default:
         throw std::runtime_error("CudaReduceBackend: unrecognized DataType");
