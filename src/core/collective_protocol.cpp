@@ -103,7 +103,7 @@ CollectiveVerdict judge_collective(const std::vector<CollectiveDescriptor> &by_r
     for (std::size_t r = 1; r < by_rank.size(); ++r)
     {
         const auto &d = by_rank[r];
-        const std::string who = rank_text(static_cast<std::uint32_t>(r));
+        const std::string who = rank_text(d.rank);
         if (d.sequence != ref.sequence)
             return mismatch(who + " is at collective #" + std::to_string(d.sequence) + " (" + collective_kind_name(d.kind) + ") but rank 0 is at #" + std::to_string(ref.sequence) + " (" + collective_kind_name(ref.kind) + ")");
         if (d.kind != ref.kind)

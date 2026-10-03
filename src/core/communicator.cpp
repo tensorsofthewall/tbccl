@@ -413,6 +413,7 @@ struct Communicator::Impl
     detail::Trace trace;
     detail::PlannerOverrides overrides;     // this rank's debug overrides (carried in descriptors)
     detail::PlannerThresholds thresholds;   // used by rank 0's planner
+    std::function<void(const std::string &)> fatal_cb; // aborts this communicator (handed to the collectives' validators)
 
     // The N=2 specialised paths (all_reduce / broadcast / all_gather) talk to the one remote rank.
     detail::PeerChannel &sole_channel()
@@ -556,6 +557,7 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
 
     impl.trace = detail::Trace(boot.communicator_id.prefix(), boot.rank, boot.world_size);
     impl.overrides = detail::planner_overrides_from_environment();
+    impl.fatal_cb = [&impl](const std::string &why) { impl.request_abort(why); };
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
     impl.collective_executor->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
@@ -795,7 +797,7 @@ Work Communicator::all_reduce(
 
     auto run = [impl, provider, local_error, rank, world, total_bytes, count, datatype, op, work_id, memory]() {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds, &impl->fatal_cb};
         if (world == 2)
         {
             // The N=2 fast path: no descriptor exchange, the specialised heterogeneous engine unchanged (Part 55).
@@ -856,7 +858,7 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
     const std::string local_error = local.error;
     auto run = [impl, provider, local_error, rank, world, root, bytes, work_id, memory]() {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds, &impl->fatal_cb};
         if (world == 2)
         {
             // N=2 fast path: one transfer, no descriptor exchange.
@@ -928,7 +930,7 @@ Work Communicator::all_gather(
     const MemoryKind memory = input.memory_kind;
     auto run = [impl, in_provider, out_providers, local_error, rank, world, bytes, work_id, memory]() mutable {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds, &impl->fatal_cb};
         if (world == 2)
         {
             // N=2 fast path, unchanged: deterministic, deadlock-safe order (lower rank sends first), no descriptor exchange.
@@ -979,12 +981,31 @@ Work Communicator::barrier()
     const std::uint64_t work_id = impl->next_work_id.fetch_add(1);
     auto run = [impl, rank, world, work_id]() {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds, &impl->fatal_cb};
         if (world > 1)
         {
-            const auto algorithm = detail::run_descriptor_exchange(
-                r, describe(detail::CollectiveKind::Barrier, rank, 0, MemoryKind::Host, 0, DataType::UInt8, ReduceOp::Sum, 0, std::string(), impl->overrides.barrier));
-            detail::run_barrier(r, algorithm);
+            // The barrier's algorithm is decided locally (it has no payload and needs no verdict): the agreed-upon default, or this rank's override. Ranks whose
+            // overrides differ are caught by the descriptor validation (the override is part of the descriptor).
+            const detail::CommAlgorithm forced = impl->overrides.barrier;
+            detail::CommAlgorithm algorithm;
+            try
+            {
+                algorithm = detail::plan_collective(detail::CollectiveKind::Barrier, world, 0, forced, impl->thresholds).algorithm;
+            }
+            catch (const std::runtime_error &e)
+            {
+                throw detail::CollectiveRejected(e.what()); // a bad override: this Work fails, nothing was communicated
+            }
+            const auto mine = describe(detail::CollectiveKind::Barrier, rank, 0, MemoryKind::Host, 0, DataType::UInt8, ReduceOp::Sum, 0, std::string(), forced);
+            if (algorithm == detail::CommAlgorithm::Dissemination)
+            {
+                detail::run_dissemination_barrier(r, mine);
+            }
+            else
+            {
+                algorithm = detail::run_descriptor_exchange(r, mine);
+                detail::run_barrier(r, algorithm);
+            }
         }
     };
     try

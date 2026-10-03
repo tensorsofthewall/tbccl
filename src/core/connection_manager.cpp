@@ -587,13 +587,57 @@ void ConnectionManager::abort_transfers(const std::string &reason)
 namespace tbccl::detail
 {
 
+namespace
+{
+// Compares an arriving descriptor with rank 0's current one. Returns the mismatch text, or an empty string if they agree or are about different sequences.
+std::string mismatch_text(const CollectiveDescriptor &current, const std::vector<std::uint8_t> &bytes, std::size_t peer)
+{
+    DescriptorWire wire{};
+    std::copy_n(bytes.begin(), std::min(bytes.size(), wire.size()), wire.begin());
+    CollectiveDescriptor d = decode_descriptor(wire);
+    d.rank = static_cast<std::uint32_t>(peer);
+    if (d.sequence != current.sequence) return {};
+    const auto verdict = judge_collective({current, d});
+    return verdict.status == VerdictStatus::Mismatch ? verdict.text : std::string();
+}
+} // namespace
+
 void CollectiveMailbox::post_descriptor(std::size_t peer, const std::vector<std::uint8_t> &bytes)
 {
+    std::function<void(const std::string &)> fatal;
+    std::string text;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         descriptors_.at(peer).push_back(bytes);
+        if (has_current_)
+        {
+            text = mismatch_text(current_, bytes, peer);
+            if (!text.empty()) fatal = current_fatal_;
+        }
     }
     cv_.notify_all();
+    if (fatal) fatal("protocol_mismatch: " + text);
+}
+
+void CollectiveMailbox::set_current(const CollectiveDescriptor &mine, std::function<void(const std::string &)> fatal)
+{
+    std::string text;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        has_current_ = true;
+        current_ = mine;
+        current_fatal_ = fatal;
+        for (std::size_t p = 0; p < descriptors_.size() && text.empty(); ++p)
+            if (!descriptors_[p].empty()) text = mismatch_text(mine, descriptors_[p].front(), p);
+    }
+    if (!text.empty() && fatal) fatal("protocol_mismatch: " + text);
+}
+
+void CollectiveMailbox::clear_current()
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    has_current_ = false;
+    current_fatal_ = nullptr;
 }
 
 void CollectiveMailbox::post_verdict(std::size_t peer, const std::vector<std::uint8_t> &bytes)

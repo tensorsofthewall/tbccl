@@ -19,6 +19,7 @@
 
 #include <tbccl/communicator.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@ struct CollectiveRun
     std::uint64_t work_id = 0;
     const Trace *trace = nullptr;
     const PlannerThresholds *thresholds = nullptr; // used by rank 0 only
+    const std::function<void(const std::string &)> *fatal = nullptr; // aborts the communicator (used by rank 0's descriptor validation)
 };
 
 // The children of one collective. wait_all() waits for EVERY child (even after the first failure) and then throws the first error in
@@ -75,6 +77,11 @@ void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provi
 // Execute the data phase of a collective with the algorithm rank 0 chose (the same on every rank). world_size > 2 only; an algorithm that is not
 // implemented for the collective is an internal_error (the planner never returns one).
 void run_barrier(const CollectiveRun &run, CommAlgorithm algorithm);
+
+// The dissemination barrier (the N>2 collective-selection work): ceil(log2 N) rounds, each rank sends a token to (rank + 2^k) mod N and receives one from (rank -
+// 2^k) mod N. There is no coordinator round trip: every rank hands its descriptor to rank 0 on the control plane without waiting for a verdict, rank 0 validates
+// them as they arrive, and tokens carry (sequence, kind) which each receiver checks. Throws CollectiveMismatch on any disagreement.
+void run_dissemination_barrier(const CollectiveRun &run, const CollectiveDescriptor &mine);
 void run_broadcast(const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
 void run_all_gather(
     const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes);

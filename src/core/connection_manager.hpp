@@ -17,6 +17,7 @@
 //             different peers make independent progress
 
 #include "bootstrap_config.hpp"
+#include "collective_protocol.hpp"
 
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/communicator.hpp>
@@ -68,6 +69,14 @@ public:
     std::vector<std::uint8_t> wait_descriptor(std::size_t peer);
     std::vector<std::uint8_t> wait_verdict(std::size_t peer);
     void abort(const std::string &reason);
+
+    // While rank 0 runs a collective that does not wait for every descriptor (the dissemination barrier), every arriving descriptor for THAT sequence is compared
+    // with rank 0's own, so "rank 1 called broadcast while the others are in a barrier" is caught as soon as the descriptor arrives (from the watcher thread) and
+    // `fatal` aborts the communicator, instead of the barrier waiting for tokens that never come. Descriptors that arrived earlier are checked at set_current()
+    // time.
+    void set_current(const CollectiveDescriptor &mine, std::function<void(const std::string &)> fatal);
+    void clear_current();
+
     explicit CollectiveMailbox(std::size_t world) : descriptors_(world), verdicts_(world) {}
 
 private:
@@ -76,6 +85,9 @@ private:
     std::condition_variable cv_;
     std::vector<std::deque<std::vector<std::uint8_t>>> descriptors_, verdicts_;
     bool aborted_ = false;
+    bool has_current_ = false;
+    CollectiveDescriptor current_;
+    std::function<void(const std::string &)> current_fatal_;
     std::string reason_;
 };
 
