@@ -40,12 +40,19 @@ struct CollectivePlan
     CommAlgorithm algorithm = CommAlgorithm::Reference;
 };
 
-// Selection thresholds (bytes of the collective's payload per rank). Generic local-loopback heuristics measured earlier, NOT
-// Thunderbolt-tuned constants; a future topology/autotuning layer may replace them.
+// Selection thresholds. Generic LOCAL LOOPBACK heuristics measured in N>2 collective-selection, NOT Thunderbolt-tuned constants; a future topology / autotuning
+// layer may replace them. The planner is a pure function of (kind, world_size, bytes) and these values.
 struct PlannerThresholds
 {
-    std::size_t all_reduce_ring_min_bytes = 0;   // N>2: bytes >= this -> Ring, below -> BinomialTree (0 until measured: see planner)
-    std::size_t broadcast_tree_min_bytes = 0;    // N>2: bytes >= this -> BinomialTree, below -> Reference
+    // all_reduce, world_size > 2: ring when bytes >= all_reduce_ring_bytes_per_extra_rank * (world_size - 2), otherwise a latency algorithm. A ring costs 2(N-1)
+    // sequential steps but moves only 2(N-1)/N x bytes per rank, so it pays off later the more ranks there are (measured crossovers: N=3 ~64 KiB, N=4 ~160 KiB, N=8 ~600 KiB).
+    std::size_t all_reduce_ring_bytes_per_extra_rank = 96 * 1024;
+    // all_reduce latency algorithm: recursive doubling for power-of-two worlds up to this size (it beat the tree at N=4 by 5-25% between 256 B and 128 KiB and lost to it at
+    // N=8 by 7-13%), the binomial tree otherwise.
+    std::size_t recursive_doubling_max_world = 4;
+    // barrier: dissemination from this world size on. At N <= 8 (the largest world TBCCL accepts) the control-plane gather/release (the N-rank runtime reference, now
+    // only two control hops) measured FASTER than the log N data rounds of the dissemination barrier (1.3-2.2x), so it is not selected by default below this size.
+    std::size_t barrier_dissemination_min_world = 9;
 };
 
 struct PlannerOverrides
