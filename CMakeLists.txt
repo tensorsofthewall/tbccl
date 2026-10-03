@@ -1212,6 +1212,15 @@ if(BUILD_TESTING)
     add_test(NAME c_api_functional_test COMMAND c_api_functional_test)
     set_tests_properties(c_api_functional_test PROPERTIES TIMEOUT 300)
 
+    # The documented quickstart (docs/c_api_quickstart.md) is a real program: built strictly and run as a test.
+    add_executable(c_quickstart examples/c_quickstart.c)
+    target_link_libraries(c_quickstart PRIVATE tbccl_c Threads::Threads)
+    if(NOT MSVC)
+        target_compile_options(c_quickstart PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME c_quickstart COMMAND c_quickstart)
+    set_tests_properties(c_quickstart PROPERTIES TIMEOUT 60)
+
     # Test-only access to the private progress-pause hook for the pure-C submission test (never installed).
     add_library(tbccl_c_test_hooks STATIC tests/c_api/c_test_hooks.cpp)
     target_include_directories(tbccl_c_test_hooks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/c_api ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
