@@ -1,5 +1,6 @@
 // Phase 50: full-mesh establishment and PeerChannel ownership (connection_manager.hpp).
 
+#include <tbccl/error.hpp>
 #include "connection_manager.hpp"
 
 #include "wire_protocol.hpp"
@@ -106,7 +107,7 @@ private:
 
     [[noreturn]] void throw_aborted()
     {
-        throw std::runtime_error("aborted: communicator aborted" + (reason_.empty() ? std::string() : " (" + reason_ + ")"));
+        throw Error(ErrorCode::Aborted, "aborted: communicator aborted" + (reason_.empty() ? std::string() : " (" + reason_ + ")"));
     }
 
     Transport &ensure()
@@ -134,7 +135,7 @@ private:
                     dialing_ = false;
                     dialing_conn_ = nullptr;
                     if (aborted_) throw_aborted();
-                    throw std::runtime_error(std::string("transport_error: lazy data connection failed: ") + e.what());
+                    throw Error(wrapped_code(e, ErrorCode::TransportError), std::string("transport_error: lazy data connection failed: ") + e.what());
                 }
                 lock.lock();
                 dialing_conn_ = nullptr;
@@ -184,7 +185,7 @@ std::unique_ptr<Connection> connect_with_retry(const Endpoint &endpoint, Clock::
         }
         const auto left = remaining(deadline);
         if (left.count() <= 0)
-            throw std::runtime_error("timeout: bootstrap timed out connecting to " + what + " at " + endpoint.host + ":" + std::to_string(endpoint.port) + " (" + last + ")");
+            throw Error(ErrorCode::Timeout, "timeout: bootstrap timed out connecting to " + what + " at " + endpoint.host + ":" + std::to_string(endpoint.port) + " (" + last + ")");
         std::this_thread::sleep_for(std::min(left, std::chrono::milliseconds(20)));
     }
 }
@@ -194,7 +195,7 @@ std::unique_ptr<Connection> connect_with_retry_cancellable(const Endpoint &endpo
     std::string last;
     for (;;)
     {
-        if (cancelled()) throw std::runtime_error("aborted: communicator aborted");
+        if (cancelled()) throw Error(ErrorCode::Aborted, "aborted: communicator aborted");
         try
         {
             return tcp_connect(endpoint.host, endpoint.port, {});
@@ -205,7 +206,7 @@ std::unique_ptr<Connection> connect_with_retry_cancellable(const Endpoint &endpo
         }
         const auto left = remaining(deadline);
         if (left.count() <= 0)
-            throw std::runtime_error("timeout: lazy data connection timed out connecting to " + what + " at " + endpoint.host + ":" + std::to_string(endpoint.port) + " (" + last + ")");
+            throw Error(ErrorCode::Timeout, "timeout: lazy data connection timed out connecting to " + what + " at " + endpoint.host + ":" + std::to_string(endpoint.port) + " (" + last + ")");
         std::this_thread::sleep_for(std::min(left, std::chrono::milliseconds(10)));
     }
 }
@@ -254,7 +255,7 @@ void accept_higher_ranks(
             std::vector<std::size_t> missing;
             for (std::size_t r = boot.rank + 1; r < boot.world_size; ++r)
                 if (!have[r]) missing.push_back(r);
-            throw std::runtime_error(
+            throw Error(ErrorCode::Timeout, 
                 "timeout: rank " + std::to_string(boot.rank) + " timed out waiting for the " + connection_role_name(role) + " connection from rank(s) " + join_ranks(missing));
         }
         auto connection = listener.accept_for(left);
@@ -359,7 +360,7 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         {
             control_listener = ListenersAccess::take_control(*prebound);
             data_listener = ListenersAccess::take_data(*prebound);
-            if (!control_listener || !data_listener) throw std::runtime_error("invalid_argument: CommunicatorListeners were already used by another communicator");
+            if (!control_listener || !data_listener) throw Error(ErrorCode::InvalidArgument, "invalid_argument: CommunicatorListeners were already used by another communicator");
         }
         else
         {
@@ -395,12 +396,12 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         }
         catch (const std::exception &e)
         {
-            throw std::runtime_error("transport_error: capability exchange with rank " + std::to_string(peer) + " failed: " + e.what());
+            throw Error(wrapped_code(e, ErrorCode::TransportError), "transport_error: capability exchange with rank " + std::to_string(peer) + " failed: " + e.what());
         }
         negotiations.push_back(negotiate(local, channel->capabilities));
         negotiated_ranks.push_back(peer);
         if (!negotiations.back().ok)
-            throw std::runtime_error("transport_error: capability negotiation with rank " + std::to_string(peer) + " failed: " + negotiations.back().failure_reason);
+            throw Error(ErrorCode::TransportError, "transport_error: capability negotiation with rank " + std::to_string(peer) + " failed: " + negotiations.back().failure_reason);
         control[peer]->set_io_timeout(std::chrono::milliseconds(0));
         channel->control = std::move(control[peer]);
         if (!lazy_data)
@@ -597,8 +598,8 @@ void ConnectionManager::goodbye()
 
 PeerChannel &ConnectionManager::channel(std::size_t peer)
 {
-    if (peer >= channels_.size()) throw std::runtime_error("invalid_argument: rank " + std::to_string(peer) + " is outside the world of " + std::to_string(channels_.size()));
-    if (!channels_[peer]) throw std::runtime_error("invalid_argument: rank " + std::to_string(peer) + " is this rank; there is no channel to itself");
+    if (peer >= channels_.size()) throw Error(ErrorCode::InvalidArgument, "invalid_argument: rank " + std::to_string(peer) + " is outside the world of " + std::to_string(channels_.size()));
+    if (!channels_[peer]) throw Error(ErrorCode::InvalidArgument, "invalid_argument: rank " + std::to_string(peer) + " is this rank; there is no channel to itself");
     return *channels_[peer];
 }
 
@@ -705,7 +706,7 @@ std::vector<std::uint8_t> CollectiveMailbox::wait_on(std::vector<std::deque<std:
     std::unique_lock<std::mutex> lock(mutex_);
     for (;;)
     {
-        if (aborted_) throw std::runtime_error("aborted: communicator aborted" + (reason_.empty() ? std::string() : " (" + reason_ + ")"));
+        if (aborted_) throw Error(ErrorCode::Aborted, "aborted: communicator aborted" + (reason_.empty() ? std::string() : " (" + reason_ + ")"));
         auto &q = queues.at(peer);
         if (!q.empty())
         {

@@ -1,5 +1,6 @@
 #include <atomic>
 #include <mutex>
+#include <tbccl/error.hpp>
 #include <tbccl/tcp.hpp>
 
 #include <arpa/inet.h>
@@ -35,7 +36,7 @@ namespace
                 sizeof(enabled)) != 0)
         {
 
-            throw std::runtime_error(
+            throw Error(ErrorCode::TransportError, 
                 "setsockopt(TCP_NODELAY) failed: " +
                 std::string(std::strerror(errno)));
         }
@@ -56,7 +57,7 @@ namespace
                 &microseconds,
                 sizeof(microseconds)) != 0)
         {
-            throw std::runtime_error(
+            throw Error(ErrorCode::TransportError, 
                 "setsockopt(SO_BUSY_POLL) failed: " +
                 std::string(std::strerror(errno)));
         }
@@ -157,10 +158,10 @@ namespace
                 {
                     if (errno == EINTR) continue;
                     check_aborted();
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: send timed out");
-                    throw std::runtime_error("send failed: " + std::string(std::strerror(errno)));
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw Error(ErrorCode::Timeout, "timeout: send timed out");
+                    throw Error(ErrorCode::TransportError, "send failed: " + std::string(std::strerror(errno)));
                 }
-                if (n == 0) throw std::runtime_error("send returned 0");
+                if (n == 0) throw Error(ErrorCode::TransportError, "send returned 0");
                 advance(iov, index, static_cast<std::size_t>(n));
             }
         }
@@ -191,13 +192,13 @@ namespace
                 {
                     if (errno == EINTR) continue;
                     check_aborted();
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: recv timed out");
-                    throw std::runtime_error("recv failed: " + std::string(std::strerror(errno)));
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw Error(ErrorCode::Timeout, "timeout: recv timed out");
+                    throw Error(ErrorCode::TransportError, "recv failed: " + std::string(std::strerror(errno)));
                 }
                 if (n == 0)
                 {
                     check_aborted();
-                    throw std::runtime_error("peer closed connection");
+                    throw Error(ErrorCode::TransportError, "peer closed connection");
                 }
                 advance(iov, index, static_cast<std::size_t>(n));
                 if (!validated && index >= 1)
@@ -216,7 +217,7 @@ namespace
             if (::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0 ||
                 ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0)
             {
-                throw std::runtime_error("setsockopt(SO_RCVTIMEO/SO_SNDTIMEO) failed: " + std::string(std::strerror(errno)));
+                throw Error(ErrorCode::TransportError, "setsockopt(SO_RCVTIMEO/SO_SNDTIMEO) failed: " + std::string(std::strerror(errno)));
             }
         }
 
@@ -244,16 +245,16 @@ namespace
                         continue;
                     }
                     check_aborted();
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: send timed out");
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw Error(ErrorCode::Timeout, "timeout: send timed out");
 
-                    throw std::runtime_error(
+                    throw Error(ErrorCode::TransportError, 
                         "send failed: " +
                         std::string(std::strerror(errno)));
                 }
 
                 if (n == 0)
                 {
-                    throw std::runtime_error("send returned 0");
+                    throw Error(ErrorCode::TransportError, "send returned 0");
                 }
 
                 sent += static_cast<std::size_t>(n);
@@ -279,9 +280,9 @@ namespace
                         continue;
                     }
                     check_aborted();
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: recv timed out");
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw Error(ErrorCode::Timeout, "timeout: recv timed out");
 
-                    throw std::runtime_error(
+                    throw Error(ErrorCode::TransportError, 
                         "recv failed: " +
                         std::string(std::strerror(errno)));
                 }
@@ -289,7 +290,7 @@ namespace
                 if (n == 0)
                 {
                     check_aborted();
-                    throw std::runtime_error("peer closed connection");
+                    throw Error(ErrorCode::TransportError, "peer closed connection");
                 }
 
                 received += static_cast<std::size_t>(n);
@@ -324,7 +325,7 @@ namespace
                 std::lock_guard<std::mutex> lock(reason_mutex_);
                 reason = reason_;
             }
-            throw std::runtime_error("aborted: communicator aborted" + (reason.empty() ? "" : " (" + reason + ")"));
+            throw Error(ErrorCode::Aborted, "aborted: communicator aborted" + (reason.empty() ? "" : " (" + reason + ")"));
         }
 
         int fd_ = -1;
@@ -360,7 +361,7 @@ namespace
                         continue;
                     }
 
-                    throw std::runtime_error(
+                    throw Error(ErrorCode::TransportError, 
                         "accept failed: " +
                         std::string(std::strerror(errno)));
                 }
@@ -408,7 +409,7 @@ namespace
                         continue;
                     }
 
-                    throw std::runtime_error(
+                    throw Error(ErrorCode::TransportError, 
                         "poll failed: " +
                         std::string(std::strerror(errno)));
                 }
@@ -434,7 +435,7 @@ namespace
                         continue;
                     }
 
-                    throw std::runtime_error(
+                    throw Error(ErrorCode::TransportError, 
                         "accept failed: " +
                         std::string(std::strerror(errno)));
                 }
@@ -474,7 +475,7 @@ std::unique_ptr<Connection> tcp_connect(
 
     if (fd < 0)
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::TransportError, 
             "socket failed: " + std::string(std::strerror(errno)));
     }
 
@@ -490,7 +491,7 @@ std::unique_ptr<Connection> tcp_connect(
 
         ::close(fd);
 
-        throw std::runtime_error("invalid IPv4 address: " + host);
+        throw Error(ErrorCode::InvalidArgument, "invalid IPv4 address: " + host);
     }
 
     if (::connect(
@@ -503,7 +504,7 @@ std::unique_ptr<Connection> tcp_connect(
 
         ::close(fd);
 
-        throw std::runtime_error(
+        throw Error(ErrorCode::TransportError, 
             "connect failed to " + host + ":" +
             std::to_string(port) + ": " + error);
     }
@@ -530,7 +531,7 @@ std::unique_ptr<Listener> tcp_listen(
 
     if (fd < 0)
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::TransportError, 
             "socket failed: " + std::string(std::strerror(errno)));
     }
 
@@ -555,7 +556,7 @@ std::unique_ptr<Listener> tcp_listen(
 
         ::close(fd);
 
-        throw std::runtime_error(
+        throw Error(ErrorCode::InvalidArgument, 
             "invalid IPv4 bind address: " + bind_address);
     }
 
@@ -569,7 +570,7 @@ std::unique_ptr<Listener> tcp_listen(
 
         ::close(fd);
 
-        throw std::runtime_error(
+        throw Error(ErrorCode::TransportError, 
             "bind failed on " + bind_address + ":" +
             std::to_string(port) + ": " + error);
     }
@@ -580,7 +581,7 @@ std::unique_ptr<Listener> tcp_listen(
 
         ::close(fd);
 
-        throw std::runtime_error("listen failed: " + error);
+        throw Error(ErrorCode::TransportError, "listen failed: " + error);
     }
 
     return std::make_unique<TcpListener>(fd, options);
@@ -603,7 +604,7 @@ TcpTransport::TcpTransport(std::unique_ptr<Connection> connection)
 {
     if (!connection_)
     {
-        throw std::invalid_argument(
+        throw Error(ErrorCode::InvalidArgument, 
             "TcpTransport requires a non-null Connection");
     }
 }

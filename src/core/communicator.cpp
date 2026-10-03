@@ -1,4 +1,5 @@
 #include <tbccl/communicator.hpp>
+#include <tbccl/error.hpp>
 
 #include <tbccl/collectives.hpp>
 #include <tbccl/hetero_allreduce.hpp>
@@ -17,6 +18,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <new>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
@@ -171,7 +173,7 @@ std::unique_ptr<ExternalMemoryProvider> make_provider(
     auto it = registry().find(buffer.memory_kind);
     if (it == registry().end())
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::Unsupported, 
             "unsupported: no memory provider registered for kind=" + memory_kind_name(buffer.memory_kind) +
             " (call tbccl::register_memory_provider_factory() first)");
     }
@@ -239,7 +241,7 @@ public:
         for (auto &job : doomed)
         {
             unfinished_.fetch_sub(1, std::memory_order_acq_rel);
-            detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), message);
+            detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), ErrorCode::Aborted, message);
         }
     }
 
@@ -260,7 +262,7 @@ public:
         Work work = detail::TransferWorkAccess::make();
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (aborted_) throw std::runtime_error(abort_message_);
+            if (aborted_) throw Error(ErrorCode::Aborted, abort_message_);
             queue_.push_back(CollectiveJob{std::move(run), work});
             unfinished_.fetch_add(1, std::memory_order_acq_rel);
         }
@@ -290,7 +292,7 @@ private:
             {
                 unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 // Every rank consumed the same descriptor and verdict and no payload moved: the Work fails, the communicator stays usable.
-                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
+                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.code(), e.what());
             }
             catch (const std::exception &e)
             {
@@ -298,14 +300,14 @@ private:
                 // submission): the collective sequence is no longer trustworthy, so poison the communicator.
                 unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 if (on_fatal_) on_fatal_(e.what());
-                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
+                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), error_code_of(e), e.what());
             }
             catch (...)
             {
                 unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 if (on_fatal_) on_fatal_("unknown error in collective executor");
                 detail::TransferWorkAccess::complete_error(
-                    detail::TransferWorkAccess::state_of(job.work), "unknown error in collective executor");
+                    detail::TransferWorkAccess::state_of(job.work), ErrorCode::InternalError, "internal_error: unknown error in collective executor");
             }
             lock.lock();
             running_ = false;
@@ -428,7 +430,7 @@ struct Communicator::Impl
     {
         for (const auto &c : mesh->channels())
             if (c) return *c;
-        throw std::runtime_error("internal_error: sole_channel() on a communicator without peers");
+        throw Error(ErrorCode::InternalError, "internal_error: sole_channel() on a communicator without peers");
     }
 
     // Phase 45: Running -> AbortRequested -> Aborted. The first transition's reason wins. Lock order: nothing is
@@ -478,6 +480,7 @@ struct Communicator::Impl
     // call to send()/recv() itself -- tracked here and pruned lazily
     // (amortized, no per-call thread, matching Part BB/BC) rather than
     // spawning a dedicated thread per operation just to keep it alive.
+    std::atomic<int> debug_fail_admission{0}; // test hook: the next N P2P admissions fail as if out of memory
     std::mutex outstanding_mutex;
     std::vector<std::pair<Work, std::shared_ptr<ExternalMemoryProvider>>> outstanding;
 
@@ -598,71 +601,77 @@ void require_not_failed(const Communicator &comm)
     if (comm.failed())
     {
         const std::string reason = comm.abort_reason();
-        throw std::runtime_error(
+        throw Error(ErrorCode::Aborted,
             "peer_failure: communicator is in a failed state: aborted" +
             (reason.empty() ? std::string() : " (" + reason + ")"));
     }
 }
 } // namespace
 
+namespace
+{
+
+// Phase 52: P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the
+// peer's persistent progress thread picks up in FIFO order. An allocation failure while admitting is reported at once as ResourceExhausted; nothing was
+// accepted, so the communicator stays usable. Any other failure after admission began poisons the communicator, as before. (A template only because
+// Communicator::Impl is private to the class.)
+template <typename ImplT>
+Work post_p2p(
+    ImplT &impl, TransferDirection direction, const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer,
+    const ExecutionContext &context)
+{
+    detail::PeerChannel &channel = impl.mesh->channel(peer); // throws invalid_argument for self / out of range
+    validate_buffer_view(buffer, count, datatype);
+    const auto exhausted = [&] {
+        return Error(ErrorCode::ResourceExhausted, std::string("resource_exhausted: could not admit the ") + (direction == TransferDirection::Send ? "send" : "recv") + " (out of memory)");
+    };
+    std::shared_ptr<ExternalMemoryProvider> provider;
+    TransferRequest request;
+    try
+    {
+        provider = make_provider(buffer, context, impl.provider_slots); // a rejected kind throws here, before anything is accepted: no poisoning
+        request.direction = direction;
+        request.backend = &provider->primary_backend();
+        request.transport = channel.data.get();
+        request.total_bytes = buffer.bytes;
+        request.chunk_hint = 0;
+        request.framed = true; // a receive of a different size fails with protocol_mismatch instead of hanging
+        if (impl.debug_fail_admission.load(std::memory_order_relaxed) > 0 && impl.debug_fail_admission.fetch_sub(1) > 0) throw std::bad_alloc();
+    }
+    catch (const std::bad_alloc &)
+    {
+        throw exhausted();
+    }
+    try
+    {
+        Work work = channel.worker->enqueue(request);
+        return impl.track(work, std::move(provider));
+    }
+    catch (const std::bad_alloc &)
+    {
+        throw exhausted();
+    }
+    catch (...)
+    {
+        impl.mark_failed(direction == TransferDirection::Send ? "send enqueue failed" : "recv enqueue failed");
+        throw;
+    }
+}
+
+} // namespace
+
 Work Communicator::send(
     const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer, const ExecutionContext &context)
 {
     require_not_failed(*this);
-    detail::PeerChannel &channel = impl_->mesh->channel(peer); // throws invalid_argument for self / out of range
-    validate_buffer_view(buffer, count, datatype);
-
-    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context, impl_->provider_slots);
-    auto &backend = provider->primary_backend();
-
-    TransferRequest request;
-    request.direction = TransferDirection::Send;
-    request.backend = &backend;
-    request.transport = channel.data.get();
-    request.total_bytes = buffer.bytes;
-    request.chunk_hint = 0;
-    request.framed = true; // a receive of a different size fails with protocol_mismatch instead of hanging
-
-    try
-    {
-        Work work = channel.worker->enqueue(request);
-        return impl_->track(work, std::move(provider));
-    }
-    catch (...)
-    {
-        impl_->mark_failed("send enqueue failed");
-        throw;
-    }
+    return post_p2p(*impl_, TransferDirection::Send, buffer, count, datatype, peer, context);
 }
 
 Work Communicator::recv(
     const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer, const ExecutionContext &context)
 {
     require_not_failed(*this);
-    detail::PeerChannel &channel = impl_->mesh->channel(peer);
-    validate_buffer_view(buffer, count, datatype);
-
-    std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context, impl_->provider_slots);
-    auto &backend = provider->primary_backend();
-
-    TransferRequest request;
-    request.direction = TransferDirection::Recv;
-    request.backend = &backend;
-    request.transport = channel.data.get();
-    request.total_bytes = buffer.bytes;
-    request.chunk_hint = 0;
-    request.framed = true;
-
-    try
-    {
-        Work work = channel.worker->enqueue(request);
-        return impl_->track(work, std::move(provider));
-    }
-    catch (...)
-    {
-        impl_->mark_failed("recv enqueue failed");
-        throw;
-    }
+    return post_p2p(*impl_, TransferDirection::Recv, buffer, count, datatype, peer, context);
 }
 
 namespace
@@ -735,7 +744,7 @@ void run_transfer(
     request.shared_lane = true; // N=2 specialised path: strictly sequential, single FIFO as before duplex lanes
     TransferWork work = worker.enqueue(request);
     work.wait();
-    if (work.has_error()) throw std::runtime_error(std::string("transport_error: ") + what + ": " + work.error());
+    if (work.has_error()) throw Error(work.error_code(), std::string("transport_error: ") + what + ": " + work.error());
 }
 
 } // namespace
@@ -753,19 +762,19 @@ Work Communicator::all_reduce(
     const std::size_t world = impl_->world_size;
     if (op != ReduceOp::Sum)
     {
-        throw std::runtime_error("unsupported: all_reduce only supports ReduceOp::Sum this phase");
+        throw Error(ErrorCode::Unsupported, "unsupported: all_reduce only supports ReduceOp::Sum this phase");
     }
     validate_reduction(datatype, op);
     if (world > 2 && (datatype == DataType::Float16 || datatype == DataType::BFloat16))
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::Unsupported, 
             std::string("unsupported: ") + datatype_label(datatype) + " SUM across " + std::to_string(world) +
             " ranks: Float16/BFloat16 N>2 reduction semantics are not defined (only the two-operand case is specified)");
     }
     const bool defer = world > 2; // see LocalProvider
     if (!defer && !impl_->caps.supports_collective_all_reduce(recv_buf.memory_kind, datatype, op))
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::Unsupported, 
             std::string("unsupported: all_reduce of dtype=") + datatype_label(datatype) + " is not available for this memory kind");
     }
     validate_buffer_view(send_buf, count, datatype);
@@ -791,7 +800,7 @@ Work Communicator::all_reduce(
         // out-of-place external-CUDA AllReduce; call with send_buf.data == recv_buf.data (in-place) for Cuda buffers.
         if (recv_buf.memory_kind == MemoryKind::Cuda)
         {
-            throw std::runtime_error(
+            throw Error(ErrorCode::Unsupported, 
                 "unsupported: out-of-place all_reduce (send_buf.data != recv_buf.data) is not supported for MemoryKind::Cuda; pass the same BufferView for send_buf and recv_buf");
         }
         std::memcpy(recv_buf.data, send_buf.data, recv_buf.bytes);
@@ -849,9 +858,9 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
 {
     require_not_failed(*this);
     const std::size_t world = impl_->world_size;
-    if (root >= world) throw std::runtime_error("invalid_argument: broadcast root out of range");
+    if (root >= world) throw Error(ErrorCode::InvalidArgument, "invalid_argument: broadcast root out of range");
     if (buffer.bytes > 0 && buffer.data == nullptr)
-        throw std::runtime_error("invalid_argument: broadcast buffer.data is null for a non-empty buffer");
+        throw Error(ErrorCode::InvalidArgument, "invalid_argument: broadcast buffer.data is null for a non-empty buffer");
 
     const std::size_t rank = impl_->rank;
     const std::size_t bytes = buffer.bytes;
@@ -899,16 +908,16 @@ Work Communicator::all_gather(
     require_not_failed(*this);
     const std::size_t world = impl_->world_size;
     if (outputs.size() != world)
-        throw std::runtime_error("invalid_argument: all_gather needs exactly world_size output buffers");
+        throw Error(ErrorCode::InvalidArgument, "invalid_argument: all_gather needs exactly world_size output buffers");
     const std::size_t bytes = input.bytes;
     for (const auto &out : outputs)
     {
-        if (out.bytes != bytes) throw std::runtime_error("invalid_argument: all_gather output size differs from input size");
+        if (out.bytes != bytes) throw Error(ErrorCode::InvalidArgument, "invalid_argument: all_gather output size differs from input size");
     }
-    if (bytes > 0 && input.data == nullptr) throw std::runtime_error("invalid_argument: all_gather input.data is null");
+    if (bytes > 0 && input.data == nullptr) throw Error(ErrorCode::InvalidArgument, "invalid_argument: all_gather input.data is null");
     for (const auto &out : outputs)
     {
-        if (bytes > 0 && out.data == nullptr) throw std::runtime_error("invalid_argument: all_gather output.data is null");
+        if (bytes > 0 && out.data == nullptr) throw Error(ErrorCode::InvalidArgument, "invalid_argument: all_gather output.data is null");
     }
 
     const std::size_t rank = impl_->rank;
@@ -1031,9 +1040,11 @@ namespace detail
 struct CommunicatorAccess
 {
     static std::vector<std::size_t> connected_data_peers(const Communicator &comm) { return comm.impl_->mesh->connected_data_peers(); }
+    static void fail_next_admissions(const Communicator &comm, int n) { comm.impl_->debug_fail_admission.store(n); }
 };
 
 std::vector<std::size_t> debug_connected_data_peers(const Communicator &comm) { return CommunicatorAccess::connected_data_peers(comm); }
+void debug_fail_next_admissions(const Communicator &comm, int count) { CommunicatorAccess::fail_next_admissions(comm, count); }
 } // namespace detail
 
 } // namespace tbccl

@@ -301,6 +301,7 @@ void test_failed_growth_keeps_old_block()
             w.wait();
             failed = w.has_error();
             expect(failed && w.error().find("device_error") != std::string::npos, "growth failure reported as device_error: " + w.error());
+            expect(w.error_code() == tbccl::ErrorCode::DeviceError, "Phase 52: the Work's structured code is DeviceError, set where the failure happened");
             cudaStreamDestroy(s);
         },
         [&](tbccl::Communicator &c) {

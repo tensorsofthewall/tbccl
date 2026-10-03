@@ -36,6 +36,7 @@
 //                       TCP connection (Part AF item 118) and
 //                       interleaving would corrupt framing.
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +44,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+
+#include <tbccl/types.hpp>
 
 namespace tbccl
 {
@@ -220,6 +223,10 @@ public:
     bool is_completed() const;
     bool has_error() const;
     std::string error() const;
+    // Phase 52: the structured terminal result, independent of error()'s text. Success until the Work is terminal; Success after a successful completion.
+    ErrorCode error_code() const;
+    // Phase 52: waits at most `timeout` for the terminal state; returns whether the Work is terminal. Neither cancels nor changes the operation.
+    bool wait_for(std::chrono::milliseconds timeout);
 
 private:
     friend class TensorCommWorker;
@@ -251,6 +258,7 @@ public:
 
     static void complete_error(
         const std::shared_ptr<TransferWork::State> &state,
+        ErrorCode code,
         const std::string &message);
 
     // Phase 41: constructs a fresh, live TransferWork whose state is not

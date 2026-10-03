@@ -1,3 +1,4 @@
+#include <tbccl/error.hpp>
 #include <tbccl/async_transfer.hpp>
 
 #include <stdexcept>
@@ -10,12 +11,12 @@ StagingPool::StagingPool(std::size_t slot_bytes, std::size_t depth)
 {
     if (depth_ == 0)
     {
-        throw std::invalid_argument("StagingPool depth must be >= 1");
+        throw Error(ErrorCode::InvalidArgument, "StagingPool depth must be >= 1");
     }
 
     if (slot_bytes_ == 0)
     {
-        throw std::invalid_argument("StagingPool slot_bytes must be >= 1");
+        throw Error(ErrorCode::InvalidArgument, "StagingPool slot_bytes must be >= 1");
     }
 
     buffers_.reserve(depth_);
@@ -58,7 +59,7 @@ std::size_t StagingPool::acquire()
 
     // Unreachable: the predicate above guarantees a Free slot exists
     // when wait() returns.
-    throw std::logic_error("StagingPool::acquire() invariant violated");
+    throw Error(ErrorCode::InternalError, "StagingPool::acquire() invariant violated");
 }
 
 void *StagingPool::data(std::size_t slot_index) noexcept

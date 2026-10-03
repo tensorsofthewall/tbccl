@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <tbccl/async_transfer.hpp>
+#include <tbccl/error.hpp>
 
 #include <tbccl/transport.hpp>
 
@@ -67,11 +68,11 @@ namespace
         std::uint32_t magic = 0;
         for (int i = 0; i < 4; ++i) magic = (magic << 8) | in[i];
         if (magic != kFrameMagic)
-            throw std::runtime_error("protocol_mismatch: the peer's point-to-point message has no valid frame header (the other rank is not sending a framed message here)");
+            throw Error(ErrorCode::ProtocolMismatch, "protocol_mismatch: the peer's point-to-point message has no valid frame header (the other rank is not sending a framed message here)");
         std::uint64_t length = 0;
         for (int i = 0; i < 8; ++i) length = (length << 8) | in[8 + i];
         if (length != expected)
-            throw std::runtime_error(
+            throw Error(ErrorCode::ProtocolMismatch, 
                 "protocol_mismatch: point-to-point size mismatch: the peer sent " + std::to_string(length) + " bytes but this rank posted a receive for " +
                 std::to_string(expected) + " bytes");
     }
@@ -95,6 +96,7 @@ struct TransferWork::State
     std::condition_variable cv;
     bool done = false;
     bool error_flag = false;
+    ErrorCode error_code = ErrorCode::Success;
     std::string error_message;
 };
 
@@ -124,6 +126,18 @@ std::string TransferWork::error() const
     return state_->error_message;
 }
 
+ErrorCode TransferWork::error_code() const
+{
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    return state_->error_code;
+}
+
+bool TransferWork::wait_for(std::chrono::milliseconds timeout)
+{
+    std::unique_lock<std::mutex> lock(state_->mutex);
+    return state_->cv.wait_for(lock, timeout, [&]() { return state_->done; });
+}
+
 namespace detail
 {
 
@@ -139,6 +153,7 @@ namespace detail
 
     void TransferWorkAccess::complete_error(
         const std::shared_ptr<TransferWork::State> &state,
+        ErrorCode code,
         const std::string &message)
     {
         {
@@ -146,6 +161,7 @@ namespace detail
             if (state->done) return;
             state->done = true;
             state->error_flag = true;
+            state->error_code = code;
             state->error_message = message;
         }
         state->cv.notify_all();
@@ -181,17 +197,19 @@ namespace
         std::vector<std::size_t> slot_for;
         std::size_t ready_count = 0;
         bool failed = false;
+        ErrorCode error_code = ErrorCode::InternalError;
         std::string error_message;
     };
 
-    void mark_failed(ChunkProgress &progress, const std::string &message)
+    void mark_failed(ChunkProgress &progress, const std::exception &error)
     {
         {
             std::lock_guard<std::mutex> lock(progress.mutex);
             if (!progress.failed)
             {
                 progress.failed = true;
-                progress.error_message = message;
+                progress.error_code = error_code_of(error);
+                progress.error_message = error.what();
             }
         }
         progress.cv.notify_all();
@@ -222,7 +240,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                mark_failed(progress, error.what());
+                mark_failed(progress, error);
                 return;
             }
 
@@ -239,7 +257,7 @@ namespace
             catch (const std::exception &error)
             {
                 pool.release(slot);
-                mark_failed(progress, error.what());
+                mark_failed(progress, error);
                 return;
             }
             if (timing)
@@ -300,7 +318,7 @@ namespace
             catch (const std::exception &error)
             {
                 pool.release(slot);
-                mark_failed(progress, error.what());
+                mark_failed(progress, error);
                 return;
             }
             if (timing)
@@ -332,7 +350,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                mark_failed(progress, error.what());
+                mark_failed(progress, error);
                 return;
             }
 
@@ -349,7 +367,7 @@ namespace
             catch (const std::exception &error)
             {
                 pool.release(slot);
-                mark_failed(progress, error.what());
+                mark_failed(progress, error);
                 return;
             }
             if (timing)
@@ -411,7 +429,7 @@ namespace
             catch (const std::exception &error)
             {
                 pool.release(slot);
-                mark_failed(progress, error.what());
+                mark_failed(progress, error);
                 return;
             }
             if (timing)
@@ -544,7 +562,7 @@ struct TensorCommWorker::Impl
         for (auto &item : doomed)
         {
             retire(item.first.direction);
-            detail::TransferWorkAccess::complete_error(item.second, message);
+            detail::TransferWorkAccess::complete_error(item.second, ErrorCode::Aborted, message);
             record_stat(false);
         }
     }
@@ -646,7 +664,7 @@ struct TensorCommWorker::Impl
             if (aborted.load())
             {
                 retire(item.first.direction);
-                detail::TransferWorkAccess::complete_error(item.second, aborted_message());
+                detail::TransferWorkAccess::complete_error(item.second, ErrorCode::Aborted, aborted_message());
                 record_stat(false);
                 {
                     std::lock_guard<std::mutex> lock(queue_mutex);
@@ -737,7 +755,7 @@ struct TensorCommWorker::Impl
         {
             fatal(error.what());
             retire(request.direction);
-            detail::TransferWorkAccess::complete_error(state, error.what());
+            detail::TransferWorkAccess::complete_error(state, error_code_of(error), error.what());
             record_stat(false);
         }
     }
@@ -768,7 +786,7 @@ struct TensorCommWorker::Impl
             // never created.
             retire(request.direction);
             detail::TransferWorkAccess::complete_error(
-                state, "staged path requested but staging thread disabled "
+                state, ErrorCode::Unsupported, "unsupported: staged path requested but staging thread disabled "
                        "(TBCCL_ASYNC_NO_STAGING_THREAD diagnostic mode)");
             record_stat(false);
             return;
@@ -840,7 +858,7 @@ struct TensorCommWorker::Impl
             {
                 fatal(progress.error_message);
                 retire(request.direction);
-                detail::TransferWorkAccess::complete_error(state, progress.error_message);
+                detail::TransferWorkAccess::complete_error(state, progress.error_code, progress.error_message);
                 record_stat(false);
                 return;
             }
@@ -853,7 +871,7 @@ struct TensorCommWorker::Impl
         {
             fatal(error.what());
             retire(request.direction);
-            detail::TransferWorkAccess::complete_error(state, error.what());
+            detail::TransferWorkAccess::complete_error(state, error_code_of(error), error.what());
             record_stat(false);
         }
     }
@@ -937,7 +955,7 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
             [&]() { return lane.aborted.load() || lane.queue.size() < lane.queue_depth; });
         if (lane.aborted.load())
         {
-            throw std::runtime_error(
+            throw Error(ErrorCode::Aborted, 
                 "aborted: communicator aborted" +
                 (lane.abort_reason.empty() ? "" : " (" + lane.abort_reason + ")"));
         }

@@ -1,5 +1,6 @@
 // Phase 50: CommunicatorId and RankDirectory validation (include/tbccl/rank_directory.hpp). Pure functions: no sockets.
 
+#include <tbccl/error.hpp>
 #include <tbccl/rank_directory.hpp>
 
 #include <random>
@@ -13,7 +14,7 @@ namespace tbccl
 namespace
 {
 
-[[noreturn]] void invalid(const std::string &message) { throw std::runtime_error("invalid_argument: " + message); }
+[[noreturn]] void invalid(const std::string &message) { throw Error(ErrorCode::InvalidArgument, "invalid_argument: " + message); }
 
 int hex_value(char c)
 {
@@ -85,7 +86,7 @@ void validate_rank_directory(
     if (world_size == 0) invalid("world_size must be at least 1");
     if (world_size > kMaxFullMeshWorldSize)
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::Unsupported, 
             "unsupported: world_size " + std::to_string(world_size) + " exceeds the full-mesh limit of " +
             std::to_string(kMaxFullMeshWorldSize) + " (sparse topologies are not implemented)");
     }

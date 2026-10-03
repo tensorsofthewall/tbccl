@@ -68,6 +68,8 @@ enum class ErrorCode
     // or wire protocol disagrees with this rank (communicator id, world size, rank, protocol version, collective descriptor).
     Aborted,
     ProtocolMismatch,
+    // Phase 52 (appended): an admission resource (descriptor allocation, an explicit limit) was unavailable. Never reported by waiting.
+    ResourceExhausted,
 };
 
 std::string error_code_name(ErrorCode code);

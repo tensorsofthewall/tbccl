@@ -1,5 +1,6 @@
 // Phase 50: handshake and control-frame encoding (wire_protocol.hpp). Private to libtbccl.
 
+#include <tbccl/error.hpp>
 #include "wire_protocol.hpp"
 
 #include <algorithm>
@@ -26,7 +27,7 @@ struct WireHello
     std::string text;
 };
 
-[[noreturn]] void mismatch(const std::string &message) { throw std::runtime_error("protocol_mismatch: " + message); }
+[[noreturn]] void mismatch(const std::string &message) { throw Error(ErrorCode::ProtocolMismatch, "protocol_mismatch: " + message); }
 
 void encode(const WireHello &w, std::uint8_t (&buffer)[kHelloWireSize])
 {

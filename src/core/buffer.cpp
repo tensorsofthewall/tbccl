@@ -1,3 +1,4 @@
+#include <tbccl/error.hpp>
 #include <tbccl/buffer.hpp>
 
 #include <limits>
@@ -18,19 +19,19 @@ void validate_buffer_view(
 
     if (view.data == nullptr)
     {
-        throw std::invalid_argument("validate_buffer_view: buffer.data is null for a non-zero count");
+        throw Error(ErrorCode::InvalidArgument, "validate_buffer_view: buffer.data is null for a non-zero count");
     }
 
     const std::size_t element_size = datatype_size(datatype);
     if (element_size != 0 && count > std::numeric_limits<std::size_t>::max() / element_size)
     {
-        throw std::invalid_argument("validate_buffer_view: count * datatype_size overflows size_t");
+        throw Error(ErrorCode::InvalidArgument, "validate_buffer_view: count * datatype_size overflows size_t");
     }
 
     const std::size_t required_bytes = count * element_size;
     if (required_bytes > view.bytes)
     {
-        throw std::invalid_argument(
+        throw Error(ErrorCode::InvalidArgument, 
             "validate_buffer_view: count * datatype_size exceeds buffer.bytes");
     }
 }

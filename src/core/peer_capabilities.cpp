@@ -1,3 +1,4 @@
+#include <tbccl/error.hpp>
 #include <tbccl/peer_capabilities.hpp>
 
 #include <tbccl/transport.hpp>
@@ -210,7 +211,7 @@ private:
     {
         if (offset_ + n > data_.size())
         {
-            throw std::runtime_error(
+            throw Error(ErrorCode::ProtocolMismatch,
                 "malformed PeerCapabilities wire data (truncated)");
         }
     }
@@ -278,7 +279,7 @@ PeerCapabilities exchange_capabilities(
     constexpr std::uint32_t kMaxReasonableSize = 4096;
     if (remote_size > kMaxReasonableSize)
     {
-        throw std::runtime_error(
+        throw Error(ErrorCode::ProtocolMismatch,
             "PeerCapabilities exchange: peer reported an implausible "
             "payload size");
     }
