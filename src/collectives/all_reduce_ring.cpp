@@ -1,6 +1,7 @@
 #include "all_gather_internal.hpp"
 #include "all_reduce_internal.hpp"
 #include "reduce_scatter_internal.hpp"
+#include "reduction_internal.hpp"
 
 #include <cstdint>
 #include <stdexcept>
@@ -85,28 +86,11 @@ namespace
                 " is not divisible by world size " + std::to_string(size));
         }
 
-        switch (datatype)
-        {
-        case DataType::Int32:
-            all_reduce_ring_typed<std::int32_t>(
+        detail::visit_reduction_type(datatype, [&](auto tag) {
+            using T = typename decltype(tag)::type;
+            all_reduce_ring_typed<T>(
                 world, send_buffer, recv_buffer, count, datatype, op);
-            break;
-
-        case DataType::Int64:
-            all_reduce_ring_typed<std::int64_t>(
-                world, send_buffer, recv_buffer, count, datatype, op);
-            break;
-
-        case DataType::Float32:
-            all_reduce_ring_typed<float>(
-                world, send_buffer, recv_buffer, count, datatype, op);
-            break;
-
-        case DataType::Float64:
-            all_reduce_ring_typed<double>(
-                world, send_buffer, recv_buffer, count, datatype, op);
-            break;
-        }
+        });
     }
 
 } // namespace tbccl::detail

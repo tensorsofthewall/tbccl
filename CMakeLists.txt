@@ -1007,6 +1007,31 @@ if(BUILD_TESTING)
         COMMAND all_reduce_test
     )
 
+    add_executable(datatype_metadata_test
+        tests/datatype_metadata_test.cpp
+    )
+
+    target_link_libraries(datatype_metadata_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(datatype_metadata_test PRIVATE /W4)
+    else()
+        target_compile_options(datatype_metadata_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME datatype_metadata_test
+        COMMAND datatype_metadata_test
+    )
+
     add_executable(reduce_scatter_test
         tests/reduce_scatter_test.cpp
     )

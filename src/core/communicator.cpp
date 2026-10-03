@@ -6,6 +6,8 @@
 #include <tbccl/tcp_world.hpp>
 #include <tbccl/transport.hpp>
 
+#include "reduction_internal.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -15,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -78,36 +81,13 @@ public:
 
     void reduce_sum(std::size_t count, DataType datatype) override
     {
-        switch (datatype)
-        {
-        case DataType::Float32: sum_typed<float>(count); return;
-        case DataType::Float64: sum_typed<double>(count); return;
-        case DataType::Int32: sum_typed<std::int32_t>(count); return;
-        case DataType::Int64: sum_typed<std::int64_t>(count); return;
-        }
-        throw std::runtime_error("HostPointerReduceBackend: unrecognized DataType");
+        detail::visit_reduction_type(datatype, [&](auto tag) {
+            using T = typename decltype(tag)::type;
+            detail::apply_reduction(static_cast<T *>(local_and_output_), static_cast<const T *>(peer_), count, ReduceOp::Sum);
+        });
     }
 
 private:
-    template <typename T>
-    void sum_typed(std::size_t count)
-    {
-        auto *dst = static_cast<T *>(local_and_output_);
-        const auto *src = static_cast<const T *>(peer_);
-        for (std::size_t i = 0; i < count; ++i)
-        {
-            if constexpr (std::is_integral_v<T>)
-            {
-                using U = std::make_unsigned_t<T>;
-                dst[i] = static_cast<T>(static_cast<U>(dst[i]) + static_cast<U>(src[i]));
-            }
-            else
-            {
-                dst[i] = dst[i] + src[i];
-            }
-        }
-    }
-
     void *local_and_output_;
     const void *peer_;
 };
@@ -377,18 +357,25 @@ bool Capabilities::supports_memory_kind(MemoryKind kind) const noexcept
     return kind == MemoryKind::Host;
 }
 
-bool Capabilities::supports_collective_all_reduce(MemoryKind /*kind*/, DataType datatype, ReduceOp op) const noexcept
+bool Capabilities::supports_collective_all_reduce(MemoryKind kind, DataType datatype, ReduceOp op) const noexcept
 {
-    if (op != ReduceOp::Sum) return false;
-    switch (datatype)
+    // The N=2 engine only implements Sum. Host and CUDA reduce every type reduction_supported() allows; a MetalShared reduce
+    // runs the benchmark-side host loop, which only has the original four element types.
+    if (op != ReduceOp::Sum || !negotiation_.ok || !reduction_supported(datatype, op)) return false;
+    if (kind == MemoryKind::MetalShared)
     {
-    case DataType::Int32:
-    case DataType::Int64:
-    case DataType::Float32:
-    case DataType::Float64:
-        return negotiation_.ok;
+        switch (datatype)
+        {
+        case DataType::Int32:
+        case DataType::Int64:
+        case DataType::Float32:
+        case DataType::Float64:
+            return true;
+        default:
+            return false;
+        }
     }
-    return false;
+    return true;
 }
 
 bool Capabilities::supports_collective_broadcast(MemoryKind kind) const noexcept
@@ -680,6 +667,12 @@ Work Communicator::all_reduce(
     if (op != ReduceOp::Sum)
     {
         throw std::runtime_error("unsupported: all_reduce only supports ReduceOp::Sum this phase");
+    }
+    validate_reduction(datatype, op);
+    if (!impl_->caps.supports_collective_all_reduce(recv_buf.memory_kind, datatype, op))
+    {
+        throw std::runtime_error(
+            std::string("unsupported: all_reduce of dtype=") + datatype_label(datatype) + " is not available for this memory kind");
     }
     validate_buffer_view(send_buf, count, datatype);
     validate_buffer_view(recv_buf, count, datatype);

@@ -83,6 +83,8 @@ namespace
                 " is invalid for world size " + std::to_string(size));
         }
 
+        validate_reduce_op(op);
+        validate_reduction(datatype, op);
         const std::size_t element_size = datatype_size(datatype);
 
         if (count > std::numeric_limits<std::size_t>::max() / element_size)
@@ -109,28 +111,11 @@ namespace
             return;
         }
 
-        switch (datatype)
-        {
-        case DataType::Int32:
-            reduce_typed<std::int32_t>(
+        detail::visit_reduction_type(datatype, [&](auto tag) {
+            using T = typename decltype(tag)::type;
+            reduce_typed<T>(
                 world, send_buffer, recv_buffer, count, op, root);
-            break;
-
-        case DataType::Int64:
-            reduce_typed<std::int64_t>(
-                world, send_buffer, recv_buffer, count, op, root);
-            break;
-
-        case DataType::Float32:
-            reduce_typed<float>(
-                world, send_buffer, recv_buffer, count, op, root);
-            break;
-
-        case DataType::Float64:
-            reduce_typed<double>(
-                world, send_buffer, recv_buffer, count, op, root);
-            break;
-        }
+        });
     }
 
 } // namespace tbccl

@@ -176,32 +176,12 @@ namespace
             "reduce_scatter_pipelined", chunk_bytes,
             datatype_size(datatype));
 
-        switch (datatype)
-        {
-        case DataType::Int32:
-            reduce_scatter_pipelined_typed<std::int32_t>(
+        detail::visit_reduction_type(datatype, [&](auto tag) {
+            using T = typename decltype(tag)::type;
+            reduce_scatter_pipelined_typed<T>(
                 world, send_buffer, recv_buffer, recv_count, op,
                 chunk_bytes);
-            break;
-
-        case DataType::Int64:
-            reduce_scatter_pipelined_typed<std::int64_t>(
-                world, send_buffer, recv_buffer, recv_count, op,
-                chunk_bytes);
-            break;
-
-        case DataType::Float32:
-            reduce_scatter_pipelined_typed<float>(
-                world, send_buffer, recv_buffer, recv_count, op,
-                chunk_bytes);
-            break;
-
-        case DataType::Float64:
-            reduce_scatter_pipelined_typed<double>(
-                world, send_buffer, recv_buffer, recv_count, op,
-                chunk_bytes);
-            break;
-        }
+        });
     }
 
 } // namespace tbccl::detail
