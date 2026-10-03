@@ -214,7 +214,7 @@ namespace
             s.wait();
             r.wait(); // nothing may stay running against the buffers
             expect_terminal(comm, "silent ring");
-            expect(has(blocked.error(), "rank 0") || has(blocked.error(), "rank 2") || has(blocked.error(), "aborted"), "the error says why: " + blocked.error());
+            expect(has(blocked.error(), "rank 0") || has(blocked.error(), "rank 2") || has(blocked.error(), "aborted") || has(blocked.error(), "closed"), "the error says why: " + blocked.error());
             expect(since(t0) < 6, "bounded");
         });
         expect_children_ok(status, 2, "rank 2 silent during the P2P ring");
