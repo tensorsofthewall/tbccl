@@ -19,6 +19,7 @@
 #include <tbccl/buffer.hpp>
 #include <tbccl/hetero_allreduce.hpp>
 #include <tbccl/peer_capabilities.hpp>
+#include <tbccl/rank_directory.hpp>
 #include <tbccl/reduction.hpp>
 #include <tbccl/types.hpp>
 #include <tbccl/work.hpp>
@@ -106,29 +107,41 @@ bool memory_kind_registered(MemoryKind kind);
 // Bootstrap
 // ---------------------------------------------------------------------
 
-struct CommunicatorPeerEndpoint
-{
-    std::string host;
-    std::uint16_t port = 0;
-};
+// The legacy name of Endpoint (rank_directory.hpp), kept so existing callers compile unchanged.
+using CommunicatorPeerEndpoint = Endpoint;
 
 // Framework-neutral bootstrap configuration -- modeled
 // directly on the already-clean TcpWorldOptions shape. No c10d::Store,
 // Python dict, or exo topology object anywhere near this type; an
 // out-of-tree framework adapter translates ITS bootstrap mechanism into
 // this struct.
+//
+// Describe the world with `world_size`, one shared `communicator_id` and a `rank_directory` holding every
+// rank's explicit control and data endpoint. The directory is assembled by whoever bootstraps the ranks (an adapter reading
+// its own store, an application, a launcher); libtbccl never discovers peers. Connections follow one rule: for every pair
+// the lower rank connects and the higher rank accepts, so a rank listens only if a higher rank exists
+// (rank_accepts_connections()).
+//
+// `peers` is the pre-N-rank-runtime convenience for world_size 1 or 2 and is mutually exclusive with `rank_directory`: it is
+// resolved into explicit endpoints (control = peers[r], data = peers[r].host : peers[r].port + 1000) with the nil
+// communicator id. New code and every N>2 world must use `rank_directory`.
 struct CommunicatorOptions
 {
     std::size_t rank = 0;
 
-    // world_size is peers.size(), not independently configurable
-    // (matching TcpWorldOptions). This version only implements the full
-    // async P2P/AllReduce data path for exactly 2 peers -- Communicator::create()
-    // returns ErrorCode::Unsupported for any other size rather than
-    // pretending to support it ("N>2 unsupported: report
-    // explicitly").
+    // 0 means "derive": rank_directory.entries.size(), or peers.size() for the legacy form. If set it must agree.
+    std::size_t world_size = 0;
+
+    // Shared by every rank of one communicator; a rank presenting a different id is rejected during the handshake.
+    // The nil id (the default) is valid and only distinguishes nothing.
+    CommunicatorId communicator_id;
+
+    RankDirectory rank_directory;
+
+    // Legacy world_size 1 or 2 form; see above.
     std::vector<CommunicatorPeerEndpoint> peers;
 
+    // Bounds the whole bootstrap (connect, accept, handshakes, capability exchange).
     std::chrono::milliseconds bootstrap_timeout{10000};
 };
 
