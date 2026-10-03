@@ -1135,6 +1135,23 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_algorithms_test PROPERTIES TIMEOUT 300)
     list(APPEND tbccl_dynamic_port_tests communicator_algorithms_test)
 
+    add_executable(communicator_allreduce_algorithms_test
+        tests/communicator_allreduce_algorithms_test.cpp
+    )
+    target_include_directories(communicator_allreduce_algorithms_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(communicator_allreduce_algorithms_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_allreduce_algorithms_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_allreduce_algorithms_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    # One run per forced algorithm (the algorithm names are accepted by TBCCL_ALLREDUCE_ALGORITHM).
+    foreach(algo reference tree)
+        add_test(NAME communicator_allreduce_${algo}_test COMMAND communicator_allreduce_algorithms_test ${algo})
+        set_tests_properties(communicator_allreduce_${algo}_test PROPERTIES TIMEOUT 900)
+        list(APPEND tbccl_dynamic_port_tests communicator_allreduce_${algo}_test)
+    endforeach()
+
     add_executable(collective_protocol_test
         tests/collective_protocol_test.cpp
     )

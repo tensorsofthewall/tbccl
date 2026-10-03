@@ -258,6 +258,54 @@ void reference_all_gather(
     }
 }
 
+// Binomial-tree all-reduce (Phase 51, latency oriented): rank 0 is the root. Reduce up the tree (a node receives each child's partial result into the provider's scratch
+// and reduces it into its own buffer, smallest subtree first), then broadcast the root's result down the same tree. 2*ceil(log2 N) sequential levels of whole-buffer
+// transfers; a fixed combination order for a fixed N, so the result is deterministic and identical on every rank (see docs/numerical_reduction_semantics.md).
+void tree_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
+{
+    if (run.world == 1 || total_bytes == 0) return;
+    constexpr std::size_t kRoot = 0;
+    const auto children = tree_children(run.rank, kRoot, run.world); // descending: the LAST entries are the smallest subtrees
+    AsyncMemoryBackend &primary = provider.primary_backend();
+    if (!children.empty())
+    {
+        AsyncMemoryBackend &scratch = provider.scratch_backend();
+        LocalReduceBackend &reduce = provider.reduce_backend();
+        for (auto it = children.rbegin(); it != children.rend(); ++it)
+        {
+            OpGroup group;
+            post(run, group, *it, TransferDirection::Recv, scratch, total_bytes, "tree all_reduce partial");
+            group.wait_all();
+            reduce.reduce_sum(count, datatype);
+        }
+    }
+    if (run.rank != kRoot)
+    {
+        const std::size_t parent = tree_parent(run.rank, kRoot, run.world);
+        OpGroup up;
+        post(run, up, parent, TransferDirection::Send, primary, total_bytes, "tree all_reduce partial");
+        up.wait_all();
+        OpGroup down;
+        post(run, down, parent, TransferDirection::Recv, primary, total_bytes, "tree all_reduce result");
+        down.wait_all();
+    }
+    if (primary.supports_direct_transport_access())
+    {
+        OpGroup group;
+        for (std::size_t child : children) post(run, group, child, TransferDirection::Send, primary, total_bytes, "tree all_reduce result");
+        group.wait_all();
+    }
+    else
+    {
+        for (std::size_t child : children)
+        {
+            OpGroup group;
+            post(run, group, child, TransferDirection::Send, primary, total_bytes, "tree all_reduce result");
+            group.wait_all();
+        }
+    }
+}
+
 void reference_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
 {
     if (run.world == 1 || total_bytes == 0) return;
@@ -401,6 +449,7 @@ void run_all_reduce(
     switch (algorithm)
     {
     case CommAlgorithm::Reference: reference_all_reduce(run, provider, total_bytes, count, datatype); return;
+    case CommAlgorithm::BinomialTree: tree_all_reduce(run, provider, total_bytes, count, datatype); return;
     default: not_implemented("all_reduce", algorithm);
     }
 }
