@@ -100,12 +100,21 @@ public:
         return *reduce_;
     }
 
+    LocalReduceBackend &reduce_backend_range(std::size_t byte_offset) override
+    {
+        scratch_backend();
+        range_reduce_ = std::make_unique<HostPointerReduceBackend>(
+            static_cast<std::byte *>(primary_.data()) + byte_offset, static_cast<const std::byte *>(scratch_->data()) + byte_offset);
+        return *range_reduce_;
+    }
+
 private:
     detail::HostPointerAsyncBackend primary_;
     std::size_t bytes_;
     std::vector<std::byte> scratch_storage_;
     std::unique_ptr<detail::HostPointerAsyncBackend> scratch_;
     std::unique_ptr<HostPointerReduceBackend> reduce_;
+    std::unique_ptr<HostPointerReduceBackend> range_reduce_;
 };
 
 // ---------------------------------------------------------------------

@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,15 @@ public:
     // before the broadcast-back leg is enqueued (matching
     // LocalReduceBackend's existing contract in hetero_allreduce.hpp).
     virtual LocalReduceBackend &reduce_backend() = 0;
+
+    // Like reduce_backend(), but for the byte range starting at `byte_offset` of the primary buffer, combining it with the scratch buffer at the SAME offset (primary[off
+    // ..] += scratch[off ..]). The N>2 ring all-reduce reduces one chunk at a time. The returned backend stays valid until the next call on this provider; calls are never
+    // concurrent. The built-in Host/MetalShared provider and the CUDA provider implement it. The default reports "unsupported", and a collective that needs it then fails
+    // on every rank before moving data.
+    virtual LocalReduceBackend &reduce_backend_range(std::size_t /*byte_offset*/)
+    {
+        throw std::runtime_error("unsupported: this memory provider cannot reduce a sub-range of its buffer (needed by the ring all_reduce)");
+    }
 };
 
 // Constructs a provider for one call's worth of work, wrapping `buffer`

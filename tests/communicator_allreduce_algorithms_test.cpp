@@ -205,7 +205,7 @@ namespace
     {
         for (std::size_t world : cfg.worlds)
         {
-            for (std::size_t count : {std::size_t{1}, std::size_t{2}, std::size_t{7}, std::size_t{17}, std::size_t{1000}, std::size_t{16384}, std::size_t{262144}})
+            for (std::size_t count : {std::size_t{1}, std::size_t{2}, world - 1, world, world + 1, std::size_t{7}, std::size_t{17}, std::size_t{1000}, std::size_t{16384}, std::size_t{262144}})
             {
                 for (bool in_place : {true, false})
                 {
@@ -225,6 +225,32 @@ namespace
             std::cout << "[PASS] all_reduce algorithm=" << cfg.algorithm << " world_size=" << world << ": Float32/Float64 vs the high-precision reference (random, positive, wide range, cancellation, subnormal, inf/NaN), "
                       << "rank agreement and determinism; Int32/Int64/Int8/UInt8 exact; in-place and out-of-place\n";
         }
+    }
+
+    // The data edges a run actually uses are exactly what the algorithm needs (descriptors and verdicts are on the control plane).
+    void test_edges(const Config &cfg)
+    {
+        if (cfg.algorithm == "reference") return;
+        for (std::size_t world : cfg.worlds)
+        {
+            std::vector<std::set<std::size_t>> edges(world);
+            std::vector<std::vector<float>> inputs;
+            for (std::size_t r = 0; r < world; ++r) inputs.push_back(make_inputs<float>(Kind::Random, r, 5000, 1));
+            run_all_reduce<float>(world, inputs, true, edges.data());
+            for (std::size_t r = 0; r < world; ++r)
+            {
+                std::set<std::size_t> want;
+                if (cfg.algorithm == "ring") { want.insert(tbccl::detail::ring_next(r, world)); want.insert(tbccl::detail::ring_prev(r, world)); }
+                else if (cfg.algorithm == "tree")
+                {
+                    for (std::size_t c : tbccl::detail::tree_children(r, 0, world)) want.insert(c);
+                    if (r != 0) want.insert(tbccl::detail::tree_parent(r, 0, world));
+                }
+                else for (std::size_t m = 1; m < world; m <<= 1) want.insert(r ^ m);
+                expect(edges[r] == want, "all_reduce " + cfg.algorithm + " world=" + std::to_string(world) + " rank " + std::to_string(r) + " uses exactly its algorithm's data edges");
+            }
+        }
+        std::cout << "[PASS] all_reduce " << cfg.algorithm << ": only the algorithm's own data edges are connected\n";
     }
 
     void test_low_precision_still_rejected(const Config &cfg)
@@ -287,6 +313,7 @@ int main(int argc, char **argv)
     try
     {
         run_matrix(cfg);
+        test_edges(cfg);
         test_low_precision_still_rejected(cfg);
         test_unsupported_forcing(cfg);
     }
