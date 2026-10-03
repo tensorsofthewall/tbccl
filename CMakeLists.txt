@@ -1215,6 +1215,43 @@ if(BUILD_TESTING)
     add_test(NAME c_api_functional_test COMMAND c_api_functional_test)
     set_tests_properties(c_api_functional_test PROPERTIES TIMEOUT 300)
 
+    # Test-only access to the private progress-pause hook for the pure-C submission test (never installed).
+    add_library(tbccl_c_test_hooks STATIC tests/c_api/c_test_hooks.cpp)
+    target_include_directories(tbccl_c_test_hooks PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/c_api ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(tbccl_c_test_hooks PUBLIC tbccl_c)
+    add_executable(c_api_submission_test tests/c_api/c_api_submission_test.c)
+    target_link_libraries(c_api_submission_test PRIVATE tbccl_c_test_hooks tbccl_c Threads::Threads)
+    target_include_directories(c_api_submission_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api)
+    if(NOT MSVC)
+        target_compile_options(c_api_submission_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME c_api_submission_test COMMAND c_api_submission_test)
+    set_tests_properties(c_api_submission_test PROPERTIES TIMEOUT 400)
+
+    add_executable(c_abi_layout_test tests/c_api/c_abi_layout_test.c)
+    target_link_libraries(c_abi_layout_test PRIVATE tbccl_c Threads::Threads)
+    target_include_directories(c_abi_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api)
+    if(NOT MSVC)
+        target_compile_options(c_abi_layout_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME c_abi_layout_test COMMAND c_abi_layout_test)
+    set_tests_properties(c_abi_layout_test PROPERTIES TIMEOUT 120)
+
+    add_executable(c_abi_header_cxx_test tests/c_api/c_abi_header_cxx_test.cpp)
+    target_link_libraries(c_abi_header_cxx_test PRIVATE tbccl_c Threads::Threads)
+    if(NOT MSVC)
+        target_compile_options(c_abi_header_cxx_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME c_abi_header_cxx_test COMMAND c_abi_header_cxx_test)
+
+    find_program(TBCCL_NM_PROGRAM NAMES nm llvm-nm)
+    if(TBCCL_NM_PROGRAM)
+        add_test(NAME c_abi_symbols_test COMMAND ${CMAKE_COMMAND}
+            -DNM=${TBCCL_NM_PROGRAM} -DLIB=$<TARGET_FILE:tbccl_c>
+            -DGOLDEN=${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api/abi_symbols_v1.txt
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api/check_symbols.cmake)
+    endif()
+
     add_executable(communicator_algorithms_test
         tests/communicator_algorithms_test.cpp
     )
