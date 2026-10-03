@@ -80,6 +80,8 @@ void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, 
 void ring_all_gather(
     const CollectiveRun &run, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes);
 void tree_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype);
+void ring_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype);
+void recursive_doubling_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype);
 void run_barrier(const CollectiveRun &run, CommAlgorithm algorithm);
 
 // The dissemination barrier (Phase 51): ceil(log2 N) rounds, each rank sends a token to (rank + 2^k) mod N and receives one from (rank - 2^k) mod N. There is no

@@ -4,6 +4,7 @@
 
 #include "collective_topology.hpp"
 #include "host_pointer_backend.hpp"
+#include "subrange_backend.hpp"
 #include "wire_protocol.hpp"
 
 #include <tbccl/communicator.hpp>
@@ -306,6 +307,65 @@ void tree_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider,
     }
 }
 
+// Ring all-reduce (Phase 51, bandwidth oriented) = ring reduce-scatter + ring all-gather over `count` elements split into N contiguous chunks that differ by at most
+// one element (any count, including count < N with empty chunks; chunk sizes are derived from `count` on every rank, so both ends of a transfer agree).
+//   reduce-scatter, N-1 steps: step s sends chunk (r - s - 1) mod N and receives chunk (r - s - 2) mod N (into the provider's scratch at the same offset), then
+//   reduces it into the local chunk; after the last step rank r owns the fully reduced chunk r.
+//   all-gather, N-1 steps: step s sends chunk (r - s) mod N and receives chunk (r - s - 1) mod N straight into the primary buffer.
+// Send and receive of a step are posted before either is waited for (two different peers' lanes). The combination order is fixed for a fixed N.
+void ring_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
+{
+    if (run.world == 1 || total_bytes == 0) return;
+    const std::size_t n = run.world, r = run.rank, es = datatype_size(datatype);
+    const std::size_t next = ring_next(r, n), prev = ring_prev(r, n);
+    AsyncMemoryBackend &primary = provider.primary_backend();
+    AsyncMemoryBackend &scratch = provider.scratch_backend();
+    auto bytes_of = [&](std::size_t c) { return chunk_elements(count, n, c) * es; };
+    auto offset_of = [&](std::size_t c) { return chunk_offset_elements(count, n, c) * es; };
+
+    for (std::size_t step = 0; step + 1 < n; ++step)
+    {
+        const std::size_t send_c = (r + n - step - 1) % n, recv_c = (r + n - step - 2) % n;
+        const std::size_t send_bytes = bytes_of(send_c), recv_bytes = bytes_of(recv_c);
+        SubRangeBackend send_view(primary, offset_of(send_c), send_bytes), recv_view(scratch, offset_of(recv_c), recv_bytes);
+        OpGroup group;
+        if (send_bytes) post(run, group, next, TransferDirection::Send, send_view, send_bytes, "ring reduce-scatter chunk " + std::to_string(send_c));
+        if (recv_bytes) post(run, group, prev, TransferDirection::Recv, recv_view, recv_bytes, "ring reduce-scatter chunk " + std::to_string(recv_c));
+        group.wait_all();
+        if (recv_bytes) provider.reduce_backend_range(offset_of(recv_c)).reduce_sum(chunk_elements(count, n, recv_c), datatype);
+    }
+    for (std::size_t step = 0; step + 1 < n; ++step)
+    {
+        const std::size_t send_c = (r + n - step) % n, recv_c = (r + n - step - 1) % n;
+        const std::size_t send_bytes = bytes_of(send_c), recv_bytes = bytes_of(recv_c);
+        SubRangeBackend send_view(primary, offset_of(send_c), send_bytes), recv_view(primary, offset_of(recv_c), recv_bytes);
+        OpGroup group;
+        if (send_bytes) post(run, group, next, TransferDirection::Send, send_view, send_bytes, "ring all_gather chunk " + std::to_string(send_c));
+        if (recv_bytes) post(run, group, prev, TransferDirection::Recv, recv_view, recv_bytes, "ring all_gather chunk " + std::to_string(recv_c));
+        group.wait_all();
+    }
+}
+
+// Recursive-doubling all-reduce (Phase 51), power-of-two worlds only: round k exchanges the WHOLE buffer with rank XOR 2^k and reduces what arrived; log2 N rounds.
+// Both partners compute the same commutative sum, so every rank ends with identical bits. The planner never selects it for another world size.
+void recursive_doubling_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
+{
+    if (run.world == 1 || total_bytes == 0) return;
+    if ((run.world & (run.world - 1)) != 0) throw std::runtime_error("internal_error: recursive doubling needs a power-of-two world");
+    AsyncMemoryBackend &primary = provider.primary_backend();
+    AsyncMemoryBackend &scratch = provider.scratch_backend();
+    LocalReduceBackend &reduce = provider.reduce_backend();
+    for (std::size_t mask = 1; mask < run.world; mask <<= 1)
+    {
+        const std::size_t partner = run.rank ^ mask;
+        OpGroup group;
+        post(run, group, partner, TransferDirection::Send, primary, total_bytes, "recursive-doubling exchange");
+        post(run, group, partner, TransferDirection::Recv, scratch, total_bytes, "recursive-doubling exchange");
+        group.wait_all();
+        reduce.reduce_sum(count, datatype);
+    }
+}
+
 void reference_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
 {
     if (run.world == 1 || total_bytes == 0) return;
@@ -450,6 +510,8 @@ void run_all_reduce(
     {
     case CommAlgorithm::Reference: reference_all_reduce(run, provider, total_bytes, count, datatype); return;
     case CommAlgorithm::BinomialTree: tree_all_reduce(run, provider, total_bytes, count, datatype); return;
+    case CommAlgorithm::Ring: ring_all_reduce(run, provider, total_bytes, count, datatype); return;
+    case CommAlgorithm::RecursiveDoubling: recursive_doubling_all_reduce(run, provider, total_bytes, count, datatype); return;
     default: not_implemented("all_reduce", algorithm);
     }
 }

@@ -53,12 +53,21 @@ public:
         return *reduce_;
     }
 
+    tbccl::LocalReduceBackend &reduce_backend_range(std::size_t byte_offset) override
+    {
+        scratch_backend();
+        range_reduce_ = std::make_unique<CudaExternalReduceBackend>(
+            static_cast<char *>(primary_.device_ptr()) + byte_offset, static_cast<const char *>(scratch_->device_ptr()) + byte_offset, nullptr);
+        return *range_reduce_;
+    }
+
 private:
     CudaExternalAsyncBackend primary_;
     std::size_t bytes_;
     std::shared_ptr<CudaStagingResources> resources_;
     std::unique_ptr<CudaExternalAsyncBackend> scratch_;
     std::unique_ptr<CudaExternalReduceBackend> reduce_;
+    std::unique_ptr<CudaExternalReduceBackend> range_reduce_;
 };
 
 } // namespace tbccl_bench::tensor
