@@ -186,7 +186,7 @@ collectives in the same order. Phase 51 selects the N>2 algorithm internally (ra
 | `all_gather(input, outputs)` | local copy | specialised pairwise exchange | ring |
 | `all_reduce(send, recv, count, dtype, op)` | local | specialised heterogeneous engine (unchanged) | recursive doubling (power-of-two N <= 4, small), binomial tree (small), ring reduce-scatter + all-gather from ~96 KiB x (N-2) |
 
-Data connections for N>2 are created lazily by the first transfer over an edge; the control plane stays a full mesh. `ExternalMemoryProvider` gained one **optional** virtual, `reduce_backend_range` (reduce a received sub-range into a buffer; default: unsupported, which makes the ring all-reduce unavailable for that provider and the planner fall back). Host and CUDA providers implement it. Package version 0.4.0, wire protocol version 3.
+Data connections for N>2 are created lazily by the first transfer over an edge; the control plane stays a full mesh. `ExternalMemoryProvider` gained one **optional** virtual, `reduce_backend_range` (reduce a received sub-range into a buffer; default: unsupported, which makes the ring all-reduce unavailable for that provider and the planner fall back). Host and CUDA providers implement it. Package version 0.4.0 at Phase 51 (0.5.0 from Phase 52), wire protocol version 3.
 
 `broadcast` and `all_gather` are byte-generic (any dtype, FP8, packed INT4, ...). `all_reduce` accepts `ReduceOp::Sum` of Float32, Float64, Int32, Int64 everywhere, Int8/UInt8 (modulo-256 sum, associative
 so it extends to N>2), and Float16/BFloat16 **only for N=2**: for N>2 they are rejected up front with `unsupported: ... N>2 reduction semantics are not defined`. The N=2 path keeps its
