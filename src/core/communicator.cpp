@@ -399,9 +399,6 @@ struct Communicator::Impl
     std::size_t rank = 0;
     std::size_t world_size = 0;
 
-    // One PeerChannel (control + data connection, duplex worker) per remote rank; no channel for world_size == 1.
-    std::unique_ptr<detail::ConnectionManager> mesh;
-    std::unique_ptr<CollectiveExecutor> collective_executor;
     Capabilities caps;
 
     // Collective sequence: assigned by the executor thread, in the order collectives actually run (read/written only there).
@@ -425,8 +422,10 @@ struct Communicator::Impl
     std::string reason;
     std::atomic<bool> failed{false};
 
-    // Non-blocking, idempotent, safe from any thread including workers (never joins).
-    void request_abort(const std::string &why)
+    // Non-blocking, idempotent, safe from any thread including workers (never joins). `origin` is the rank that first aborted (this rank
+    // unless the abort arrived from a peer); `raw` is its reason. The first caller wins and tells every peer before interrupting
+    // anything local, so a rank blocked on an unrelated peer learns about the failure too (communicator-wide abort).
+    void request_abort(const std::string &why, std::size_t origin, const std::string &raw)
     {
         int expected = static_cast<int>(State::Running);
         if (!state.compare_exchange_strong(expected, static_cast<int>(State::AbortRequested))) return;
@@ -435,10 +434,14 @@ struct Communicator::Impl
             reason = why;
         }
         failed.store(true, std::memory_order_release);
+        trace.line("abort: " + why);
+        if (mesh) mesh->broadcast_abort(origin, raw);
         // Interrupt first so the active transfer unwinds; then reject/drain queues.
         if (mesh) mesh->abort_transfers(why);
         if (collective_executor) collective_executor->abort(why);
     }
+
+    void request_abort(const std::string &why) { request_abort(why, rank, why); }
 
     std::string abort_message()
     {
@@ -472,6 +475,12 @@ struct Communicator::Impl
         outstanding.emplace_back(work, std::move(provider));
         return work;
     }
+
+    // Declared last so they are destroyed first: the watcher and worker threads they own call back into the state above, so those
+    // threads must be gone before any of it is destroyed. One PeerChannel (control + data connection, duplex worker) per remote
+    // rank; no channel for world_size == 1.
+    std::unique_ptr<detail::ConnectionManager> mesh;
+    std::unique_ptr<CollectiveExecutor> collective_executor;
 };
 
 Communicator::Communicator() : impl_(std::make_unique<Impl>()) {}
@@ -486,11 +495,14 @@ Communicator::~Communicator()
     }
     else
     {
-        // Idle: nothing can fail later, but make late fatal-handler calls (during member destruction) no-ops.
+        // Idle: nothing can fail later, but make late fatal-handler calls (during member destruction) no-ops, and tell the peers this is a
+        // clean departure (their watchers must not treat the sockets closing as a failure).
         int expected = static_cast<int>(Impl::State::Running);
-        impl.state.compare_exchange_strong(expected, static_cast<int>(Impl::State::Aborted));
+        if (impl.state.compare_exchange_strong(expected, static_cast<int>(Impl::State::Aborted)) && impl.mesh) impl.mesh->goodbye();
     }
-    // Members are destroyed executor -> worker -> transport: queues are empty/failed, so each join is prompt.
+    // Watcher threads call back into the state below (including the executor): join them before anything is destroyed.
+    if (impl.mesh) impl.mesh->stop_watchers();
+    // Members are destroyed executor -> mesh (watchers, workers, transports): queues are empty/failed, so each join is prompt.
 }
 
 void Communicator::abort(const std::string &reason)
@@ -538,6 +550,12 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
     impl.collective_executor->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
+    impl.mesh->start_watchers([&impl](std::size_t peer, std::size_t origin, const std::string &reason, bool peer_lost) {
+        if (peer_lost)
+            impl.request_abort("lost the control connection to rank " + std::to_string(peer) + " (" + reason + ")", impl.rank, "lost the control connection to rank " + std::to_string(peer));
+        else
+            impl.request_abort("rank " + std::to_string(origin) + " aborted the communicator: " + reason, origin, reason);
+    });
 
     return comm;
 }

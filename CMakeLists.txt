@@ -1090,6 +1090,19 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_nrank_collectives_test PROPERTIES TIMEOUT 300)
     list(APPEND tbccl_dynamic_port_tests communicator_nrank_collectives_test)
 
+    add_executable(communicator_nrank_failure_test
+        tests/communicator_nrank_failure_test.cpp
+    )
+    target_link_libraries(communicator_nrank_failure_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_nrank_failure_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_nrank_failure_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_nrank_failure_test COMMAND communicator_nrank_failure_test)
+    set_tests_properties(communicator_nrank_failure_test PROPERTIES TIMEOUT 320)
+    list(APPEND tbccl_dynamic_port_tests communicator_nrank_failure_test)
+
     add_executable(collective_protocol_test
         tests/collective_protocol_test.cpp
     )
