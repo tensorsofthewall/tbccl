@@ -68,6 +68,12 @@ void CudaReduceBackend::reduce_sum(std::size_t count, tbccl::DataType datatype)
     case tbccl::DataType::Int64:
         launch_sum<std::int64_t>(dst, src, count, stream);
         break;
+    case tbccl::DataType::Int8:
+        launch_sum<std::int8_t>(dst, src, count, stream);
+        break;
+    case tbccl::DataType::UInt8:
+        launch_sum<std::uint8_t>(dst, src, count, stream);
+        break;
     case tbccl::DataType::Float16:
         launch_sum<__half>(dst, src, count, stream);
         break;

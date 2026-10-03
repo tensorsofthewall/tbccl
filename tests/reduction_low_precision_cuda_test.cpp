@@ -1,4 +1,4 @@
-// real-GPU correctness of Float16 / BFloat16 SUM.
+// real-GPU correctness of Float16 / BFloat16 SUM and Int8 / UInt8 modulo-256 SUM.
 //
 //   1. Kernel level (CudaExternalReduceBackend, the provider behind Communicator::all_reduce on MemoryKind::Cuda): the device result equals the
 //      documented host semantics (float32 widen, one float32 add, round once, ties-to-even) BIT FOR BIT, for an edge-pattern cross product, random
@@ -234,6 +234,126 @@ namespace
         std::cout << "[PASS] test_communicator_shapes<" << F::name << ">\n";
     }
 
+
+    // ----- integer types (Int8 / UInt8): modulo-256 SUM, bit exact on device ----------------------------------------------------------------
+    template <class T>
+    struct IntTraits;
+    template <>
+    struct IntTraits<std::int8_t>
+    {
+        static constexpr const char *name = "int8";
+        static constexpr tbccl::DataType dt = tbccl::DataType::Int8;
+    };
+    template <>
+    struct IntTraits<std::uint8_t>
+    {
+        static constexpr const char *name = "uint8";
+        static constexpr tbccl::DataType dt = tbccl::DataType::UInt8;
+    };
+
+    template <class T>
+    T int_reference_sum(T a, T b)
+    {
+        return static_cast<T>(static_cast<std::uint8_t>((static_cast<unsigned>(static_cast<std::uint8_t>(a)) + static_cast<unsigned>(static_cast<std::uint8_t>(b))) & 0xFFu));
+    }
+
+    template <class T>
+    void test_int_kernel_all_pairs()
+    {
+        std::vector<T> a(65536), b(65536);
+        for (std::uint32_t i = 0; i < 65536; ++i)
+        {
+            a[i] = static_cast<T>(static_cast<std::uint8_t>(i >> 8));
+            b[i] = static_cast<T>(static_cast<std::uint8_t>(i & 0xFF));
+        }
+        DevBuf dst(a.size()), src(b.size());
+        cu(cudaMemcpy(dst.p, a.data(), a.size(), cudaMemcpyHostToDevice), "H2D");
+        cu(cudaMemcpy(src.p, b.data(), b.size(), cudaMemcpyHostToDevice), "H2D");
+        tbccl_bench::tensor::CudaExternalReduceBackend backend(dst.p, src.p, nullptr);
+        backend.reduce_sum(a.size(), IntTraits<T>::dt);
+        std::vector<T> got(a.size());
+        cu(cudaMemcpy(got.data(), dst.p, got.size(), cudaMemcpyDeviceToHost), "D2H");
+        for (std::size_t i = 0; i < got.size(); ++i)
+        {
+            expect(got[i] == int_reference_sum(a[i], b[i]), std::string(IntTraits<T>::name) + ": CUDA sum differs from the modulo-256 reference at pair " + std::to_string(i));
+        }
+        // plan overflow cases on device
+        const std::vector<T> x = {static_cast<T>(120), static_cast<T>(127), static_cast<T>(-128), static_cast<T>(-100), static_cast<T>(255), static_cast<T>(200)};
+        const std::vector<T> y = {static_cast<T>(100), static_cast<T>(1), static_cast<T>(-1), static_cast<T>(-100), static_cast<T>(1), static_cast<T>(100)};
+        DevBuf dx(x.size()), dy(y.size());
+        cu(cudaMemcpy(dx.p, x.data(), x.size(), cudaMemcpyHostToDevice), "H2D");
+        cu(cudaMemcpy(dy.p, y.data(), y.size(), cudaMemcpyHostToDevice), "H2D");
+        tbccl_bench::tensor::CudaExternalReduceBackend small(dx.p, dy.p, nullptr);
+        small.reduce_sum(x.size(), IntTraits<T>::dt);
+        std::vector<T> r(x.size());
+        cu(cudaMemcpy(r.data(), dx.p, r.size(), cudaMemcpyDeviceToHost), "D2H");
+        for (std::size_t i = 0; i < r.size(); ++i) expect(r[i] == int_reference_sum(x[i], y[i]), std::string(IntTraits<T>::name) + ": CUDA overflow case " + std::to_string(i));
+        std::cout << "[PASS] test_int_kernel_all_pairs<" << IntTraits<T>::name << "> (65536 pairs + overflow cases)\n";
+    }
+
+    template <class T>
+    void int_communicator_case(Kind k0, Kind k1, std::size_t count)
+    {
+        const Kind kinds[2] = {k0, k1};
+        std::vector<T> in0(count), in1(count);
+        std::uint32_t st0 = 5u + static_cast<std::uint32_t>(count), st1 = 71u + static_cast<std::uint32_t>(count);
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            in0[i] = static_cast<T>(lowp_test::next_random(st0) >> 9);
+            in1[i] = static_cast<T>(lowp_test::next_random(st1) >> 9);
+        }
+        std::vector<T> result[2];
+        auto rank_fn = [&](std::size_t rank) {
+            return [&, rank](tbccl::Communicator &comm) {
+                const auto &mine = rank == 0 ? in0 : in1;
+                if (kinds[rank] == Kind::Cuda)
+                {
+                    cudaStream_t s;
+                    cu(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking), "stream");
+                    DevBuf d(count);
+                    cu(cudaMemcpyAsync(d.p, mine.data(), count, cudaMemcpyHostToDevice, s), "H2D async");
+                    tbccl::ExecutionContext ctx{tbccl::ExecutionContextKind::CudaStream, s};
+                    tbccl::BufferView view{tbccl::MemoryKind::Cuda, d.p, count, 0};
+                    auto w = comm.all_reduce(view, view, count, IntTraits<T>::dt, tbccl::ReduceOp::Sum, ctx);
+                    w.wait();
+                    expect(!w.has_error(), std::string(IntTraits<T>::name) + " cuda all_reduce: " + w.error());
+                    result[rank].resize(count);
+                    cu(cudaMemcpy(result[rank].data(), d.p, count, cudaMemcpyDeviceToHost), "D2H");
+                    cudaStreamDestroy(s);
+                }
+                else
+                {
+                    std::vector<T> buf = mine;
+                    tbccl::BufferView view{tbccl::MemoryKind::Host, buf.data(), count, -1};
+                    auto w = comm.all_reduce(view, view, count, IntTraits<T>::dt, tbccl::ReduceOp::Sum);
+                    w.wait();
+                    expect(!w.has_error(), std::string(IntTraits<T>::name) + " host all_reduce: " + w.error());
+                    result[rank] = buf;
+                }
+            };
+        };
+        run_pair(take_port(), rank_fn(0), rank_fn(1));
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            const T want = int_reference_sum(in0[i], in1[i]);
+            expect(result[0][i] == want && result[1][i] == want, std::string(IntTraits<T>::name) + ": all_reduce mismatch (rank0=" + (k0 == Kind::Cuda ? "cuda" : "host") +
+                                                                     ", rank1=" + (k1 == Kind::Cuda ? "cuda" : "host") + ", count " + std::to_string(count) + ", index " + std::to_string(i) + ")");
+        }
+    }
+
+    template <class T>
+    void test_int_communicator_shapes()
+    {
+        // Element counts matching the [T, 1024] shapes (1 byte per element), odd sizes and 1 MiB.
+        for (std::size_t count : {std::size_t{1}, std::size_t{17}, std::size_t{1024}, std::size_t{4 * 1024}, std::size_t{12 * 1024}, std::size_t{128 * 1024}, std::size_t{1} << 20})
+        {
+            int_communicator_case<T>(Kind::Cuda, Kind::Host, count);
+            int_communicator_case<T>(Kind::Host, Kind::Cuda, count);
+            int_communicator_case<T>(Kind::Cuda, Kind::Cuda, count);
+        }
+        std::cout << "[PASS] test_int_communicator_shapes<" << IntTraits<T>::name << ">\n";
+    }
+
     // ----- 3. producer readiness ---------------------------------------------------------------------------------------------------------------
     template <class F>
     void test_delayed_producer()
@@ -330,6 +450,10 @@ int main()
         }
         timed("communicator fp16", [] { test_communicator_shapes<Fp16>(); });
         timed("communicator bf16", [] { test_communicator_shapes<Bf16>(); });
+        timed("int8 kernel", [] { test_int_kernel_all_pairs<std::int8_t>(); });
+        timed("uint8 kernel", [] { test_int_kernel_all_pairs<std::uint8_t>(); });
+        timed("int8 communicator", [] { test_int_communicator_shapes<std::int8_t>(); });
+        timed("uint8 communicator", [] { test_int_communicator_shapes<std::uint8_t>(); });
         timed("delayed fp16", [] { test_delayed_producer<Fp16>(); });
         timed("delayed bf16", [] { test_delayed_producer<Bf16>(); });
     }

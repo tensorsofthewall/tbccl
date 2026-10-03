@@ -1068,6 +1068,38 @@ if(BUILD_TESTING)
     )
     set_tests_properties(reduction_low_precision_test PROPERTIES TIMEOUT 300)
 
+    add_executable(reduction_int8_test
+        tests/reduction_int8_test.cpp
+    )
+
+    target_link_libraries(reduction_int8_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    target_include_directories(reduction_int8_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    if(MSVC)
+        target_compile_options(reduction_int8_test PRIVATE /W4)
+    else()
+        target_compile_options(reduction_int8_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME reduction_int8_test
+        COMMAND reduction_int8_test
+    )
+    set_tests_properties(reduction_int8_test PROPERTIES TIMEOUT 300)
+
     add_executable(reduce_scatter_test
         tests/reduce_scatter_test.cpp
     )
@@ -1838,7 +1870,7 @@ if(BUILD_TESTING)
         "bucket_allreduce_worker_test;communicator_test"
         "communicator_collectives_test;world_test"
         "all_reduce_ring_test;tensor_cuda_test"
-        "reduction_low_precision_test;reduction_low_precision_cuda_test")
+        "reduction_low_precision_test;reduction_low_precision_cuda_test;reduction_int8_test")
         list(GET pair 0 lock_first)
         string(MD5 lock_name "${pair}")
         foreach(t IN LISTS pair)
