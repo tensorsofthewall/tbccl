@@ -3,6 +3,7 @@
 
 #include "mesh_test_support.hpp"
 
+#include "collective_topology.hpp"
 #include "communicator_debug.hpp"
 
 #include <atomic>
@@ -90,6 +91,51 @@ namespace
         std::cout << "[PASS] barrier vs broadcast mismatch (" << label << ") world_size=" << world << ": every rank fails\n";
     }
 
+    // ---- binomial-tree broadcast -----------------------------------------------------------------------------------------------------------------
+
+    std::vector<std::uint8_t> payload(std::size_t seed, std::size_t n)
+    {
+        std::vector<std::uint8_t> v(n);
+        for (std::size_t i = 0; i < n; ++i) v[i] = static_cast<std::uint8_t>(seed * 37 + i * 11 + (i >> 9)); // every byte value occurs: FP8 NaN/-0 encodings, packed nibbles, anything
+        return v;
+    }
+
+    void test_tree_broadcast(std::size_t world)
+    {
+        ForceEnv env("TBCCL_BROADCAST_ALGORITHM", "tree");
+        for (std::size_t bytes : {std::size_t{0}, std::size_t{1}, std::size_t{17}, std::size_t{4096}, std::size_t{65536}, std::size_t{1} << 20, (std::size_t{5} << 20) + 3})
+        {
+            for (std::size_t root = 0; root < world; ++root)
+            {
+                run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
+                    auto buf = rank == root ? payload(root + 1, bytes) : std::vector<std::uint8_t>(bytes, 0xEE);
+                    auto w = comm.broadcast(view(buf.data(), buf.size()), root);
+                    w.wait();
+                    expect(!w.has_error(), "tree broadcast: " + w.error());
+                    expect(buf == payload(root + 1, bytes), "tree broadcast payload, rank " + std::to_string(rank) + " root " + std::to_string(root) + " bytes " + std::to_string(bytes));
+                });
+            }
+        }
+        std::cout << "[PASS] tree broadcast every root, 0 B .. 5 MiB, arbitrary bytes, world_size=" << world << "\n";
+    }
+
+    void test_tree_broadcast_edges(std::size_t world)
+    {
+        ForceEnv env("TBCCL_BROADCAST_ALGORITHM", "tree");
+        for (std::size_t root : {std::size_t{0}, world - 1})
+        {
+            run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
+                std::vector<std::uint8_t> buf(5000, rank == root ? 3 : 0);
+                comm.broadcast(view(buf.data(), buf.size()), root).wait();
+                std::set<std::size_t> want;
+                for (std::size_t c : tbccl::detail::tree_children(rank, root, world)) want.insert(c);
+                if (rank != root) want.insert(tbccl::detail::tree_parent(rank, root, world));
+                expect(peers(comm) == want, "tree broadcast uses only parent/children edges (rank " + std::to_string(rank) + ", root " + std::to_string(root) + ")");
+            });
+        }
+        std::cout << "[PASS] tree broadcast world_size=" << world << " uses only parent/children data edges\n";
+    }
+
     void test_abort_during_barrier(std::size_t world)
     {
         ForceEnv env("TBCCL_BARRIER_ALGORITHM", "dissemination");
@@ -129,6 +175,11 @@ int main()
         {
             test_dissemination_edges(world);
             test_abort_during_barrier(world);
+        }
+        for (std::size_t world : {std::size_t{3}, std::size_t{4}, std::size_t{5}, std::size_t{8}})
+        {
+            test_tree_broadcast(world);
+            test_tree_broadcast_edges(world);
         }
         for (std::size_t world : {std::size_t{3}, std::size_t{5}})
         {

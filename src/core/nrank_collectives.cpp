@@ -2,6 +2,7 @@
 
 #include "nrank_collectives.hpp"
 
+#include "collective_topology.hpp"
 #include "host_pointer_backend.hpp"
 #include "wire_protocol.hpp"
 
@@ -159,6 +160,37 @@ void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provi
         OpGroup group;
         post(run, group, root, TransferDirection::Recv, provider->primary_backend(), bytes, "broadcast");
         group.wait_all();
+    }
+}
+
+// Binomial-tree broadcast (the N>2 collective-selection work): ceil(log2 N) levels. A node receives the whole payload from its parent, then sends it to its children
+// (largest subtree first). Children are served concurrently when the backend can be read by several lanes at once (direct host access); otherwise one after the
+// other (a staged/CUDA backend is not shared between concurrently running lanes).
+void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root)
+{
+    if (bytes == 0 || run.world == 1) return;
+    AsyncMemoryBackend &backend = provider->primary_backend();
+    if (run.rank != root)
+    {
+        OpGroup group;
+        post(run, group, tree_parent(run.rank, root, run.world), TransferDirection::Recv, backend, bytes, "tree broadcast");
+        group.wait_all();
+    }
+    const auto children = tree_children(run.rank, root, run.world);
+    if (backend.supports_direct_transport_access())
+    {
+        OpGroup group;
+        for (std::size_t child : children) post(run, group, child, TransferDirection::Send, backend, bytes, "tree broadcast");
+        group.wait_all();
+    }
+    else
+    {
+        for (std::size_t child : children)
+        {
+            OpGroup group;
+            post(run, group, child, TransferDirection::Send, backend, bytes, "tree broadcast");
+            group.wait_all();
+        }
     }
 }
 
@@ -325,6 +357,7 @@ void run_broadcast(const CollectiveRun &run, CommAlgorithm algorithm, ExternalMe
     switch (algorithm)
     {
     case CommAlgorithm::Reference: reference_broadcast(run, provider, bytes, root); return;
+    case CommAlgorithm::BinomialTree: tree_broadcast(run, provider, bytes, root); return;
     default: not_implemented("broadcast", algorithm);
     }
 }

@@ -1163,6 +1163,13 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME collective_plan_test COMMAND collective_plan_test)
 
+    add_executable(collective_topology_test
+        tests/collective_topology_test.cpp
+    )
+    target_include_directories(collective_topology_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(collective_topology_test PRIVATE tbccl Threads::Threads)
+    add_test(NAME collective_topology_test COMMAND collective_topology_test)
+
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp
     )

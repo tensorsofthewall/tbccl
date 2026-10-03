@@ -76,6 +76,7 @@ void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provi
 
 // Execute the data phase of a collective with the algorithm rank 0 chose (the same on every rank). world_size > 2 only; an algorithm that is not
 // implemented for the collective is an internal_error (the planner never returns one).
+void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
 void run_barrier(const CollectiveRun &run, CommAlgorithm algorithm);
 
 // The dissemination barrier (the N>2 collective-selection work): ceil(log2 N) rounds, each rank sends a token to (rank + 2^k) mod N and receives one from (rank -
