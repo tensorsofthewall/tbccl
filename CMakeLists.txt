@@ -1098,6 +1098,32 @@ if(BUILD_TESTING)
     )
     set_tests_properties(reduction_int8_test PROPERTIES TIMEOUT 300)
 
+    add_executable(byte_transport_formats_test
+        tests/byte_transport_formats_test.cpp
+    )
+
+    target_link_libraries(byte_transport_formats_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    if(MSVC)
+        target_compile_options(byte_transport_formats_test PRIVATE /W4)
+    else()
+        target_compile_options(byte_transport_formats_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME byte_transport_formats_test
+        COMMAND byte_transport_formats_test
+    )
+    set_tests_properties(byte_transport_formats_test PROPERTIES TIMEOUT 300)
+
     add_executable(reduce_scatter_test
         tests/reduce_scatter_test.cpp
     )
@@ -1677,6 +1703,14 @@ if(BUILD_TESTING)
         )
         add_test(NAME reduction_low_precision_cuda_test COMMAND reduction_low_precision_cuda_test)
         set_tests_properties(reduction_low_precision_cuda_test PROPERTIES TIMEOUT 300)
+
+        add_executable(byte_transport_formats_cuda_test
+            tests/byte_transport_formats_test.cpp
+        )
+        target_compile_definitions(byte_transport_formats_cuda_test PRIVATE BYTE_TEST_WITH_CUDA)
+        target_link_libraries(byte_transport_formats_cuda_test PRIVATE tbccl_tensor_backend tbccl CUDA::cudart Threads::Threads)
+        add_test(NAME byte_transport_formats_cuda_test COMMAND byte_transport_formats_cuda_test)
+        set_tests_properties(byte_transport_formats_cuda_test PROPERTIES TIMEOUT 300)
 
         add_executable(communicator_cuda_test
             tests/communicator_cuda_test.cpp
