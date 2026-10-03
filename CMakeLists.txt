@@ -1139,6 +1139,20 @@ if(BUILD_TESTING)
     set_tests_properties(error_codes_test PROPERTIES TIMEOUT 180)
     list(APPEND tbccl_dynamic_port_tests error_codes_test)
 
+    add_executable(communicator_submission_test
+        tests/communicator_submission_test.cpp
+    )
+    target_include_directories(communicator_submission_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(communicator_submission_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_submission_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_submission_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_submission_test COMMAND communicator_submission_test)
+    set_tests_properties(communicator_submission_test PROPERTIES TIMEOUT 600)
+    list(APPEND tbccl_dynamic_port_tests communicator_submission_test)
+
     add_executable(communicator_algorithms_test
         tests/communicator_algorithms_test.cpp
     )
