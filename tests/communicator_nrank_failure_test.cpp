@@ -4,7 +4,7 @@
 // Abrupt rank death needs a real process: those cases fork one process per rank (the sockets are then closed by the kernel, with no Goodbye).
 // The parent pre-binds every rank's listeners, so ports are still dynamic. Cases that need no death use threads.
 
-#include "mesh_test_support.hpp"
+#include "mesh_fork_support.hpp"
 
 #include <tbccl/tcp.hpp>
 
@@ -56,100 +56,9 @@ namespace
         expect(threw, label + ": new operations are rejected");
     }
 
-    // ---- forked world ---------------------------------------------------------------------------------------------------------------------------
-
-    // Runs body(rank, comm) in one child process per rank. A child that returns normally exits 0; a thrown exception exits 1 (message on stderr);
-    // the body itself may _exit() to simulate an abrupt death. Returns each child's exit status after at most `limit`.
-    std::vector<int> run_forked(const std::function<void(std::size_t, tbccl::Communicator &)> &body, std::chrono::seconds limit = std::chrono::seconds(60))
-    {
-        const auto id = tbccl::CommunicatorId::generate();
-        std::vector<std::shared_ptr<tbccl::CommunicatorListeners>> listeners(kWorld);
-        tbccl::RankDirectory dir;
-        for (std::size_t r = 0; r < kWorld; ++r)
-        {
-            tbccl::RankEndpoint e;
-            e.rank = r;
-            if (tbccl::rank_accepts_connections(r, kWorld))
-            {
-                listeners[r] = tbccl::CommunicatorListeners::bind("127.0.0.1");
-                e.control = listeners[r]->control();
-                e.data = listeners[r]->data();
-            }
-            dir.entries.push_back(e);
-        }
-        std::cout.flush();
-        std::vector<pid_t> pids;
-        for (std::size_t r = 0; r < kWorld; ++r)
-        {
-            const pid_t pid = fork();
-            expect(pid >= 0, "fork failed");
-            if (pid == 0)
-            {
-                int code = 0;
-                try
-                {
-                    tbccl::CommunicatorOptions o;
-                    o.rank = r;
-                    o.world_size = kWorld;
-                    o.communicator_id = id;
-                    o.rank_directory = dir;
-                    o.listeners = listeners[r];
-                    o.bootstrap_timeout = std::chrono::seconds(15);
-                    auto comm = tbccl::Communicator::create(o);
-                    body(r, *comm);
-                }
-                catch (const std::exception &e)
-                {
-                    std::cerr << "  child rank " << r << ": " << e.what() << "\n";
-                    code = 1;
-                }
-                std::cerr.flush();
-                _exit(code);
-            }
-            pids.push_back(pid);
-        }
-        listeners.clear();
-        std::vector<int> status(kWorld, -1);
-        const auto deadline = Clock::now() + limit;
-        std::size_t done = 0;
-        while (done < kWorld && Clock::now() < deadline)
-        {
-            for (std::size_t r = 0; r < kWorld; ++r)
-            {
-                if (status[r] != -1) continue;
-                int st = 0;
-                if (waitpid(pids[r], &st, WNOHANG) == pids[r])
-                {
-                    status[r] = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + WTERMSIG(st);
-                    ++done;
-                }
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
-        for (std::size_t r = 0; r < kWorld; ++r)
-        {
-            if (status[r] == -1)
-            {
-                kill(pids[r], SIGKILL);
-                waitpid(pids[r], nullptr, 0);
-                status[r] = 999; // hung
-            }
-        }
-        return status;
-    }
-
-    void expect_children_ok(const std::vector<int> &status, std::size_t dead_rank, const std::string &label)
-    {
-        for (std::size_t r = 0; r < kWorld; ++r)
-        {
-            if (r == dead_rank) continue;
-            expect(status[r] == 0, label + ": healthy rank " + std::to_string(r) + " exit status " + std::to_string(status[r]) + (status[r] == 999 ? " (HUNG)" : ""));
-        }
-    }
-
     void test_rank_dies_during_barrier()
     {
-        const auto status = run_forked([](std::size_t rank, tbccl::Communicator &comm) {
+        const auto status = run_forked(kWorld, [](std::size_t rank, tbccl::Communicator &comm) {
             if (rank == 2)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -162,13 +71,13 @@ namespace
             expect_terminal(comm, "barrier");
             expect(since(t0) < 8, "bounded");
         });
-        expect_children_ok(status, 2, "rank 2 exits during barrier");
+        expect_children_ok(status, kWorld, 2, "rank 2 exits during barrier");
         std::cout << "[PASS] rank 2 exits during barrier: ranks 0, 1, 3 all leave it with an error\n";
     }
 
     void test_rank_dies_during_all_reduce()
     {
-        const auto status = run_forked([](std::size_t rank, tbccl::Communicator &comm) {
+        const auto status = run_forked(kWorld, [](std::size_t rank, tbccl::Communicator &comm) {
             std::vector<std::int32_t> data(16u << 20, static_cast<std::int32_t>(rank)); // 64 MiB
             if (rank == 2)
             {
@@ -179,7 +88,7 @@ namespace
             expect_failed(w, "all_reduce");
             expect_terminal(comm, "all_reduce");
         });
-        expect_children_ok(status, 2, "rank 2 exits during all_reduce");
+        expect_children_ok(status, kWorld, 2, "rank 2 exits during all_reduce");
         std::cout << "[PASS] rank 2 exits during all_reduce: ranks 0, 1, 3 all leave it with an error\n";
     }
 
@@ -188,7 +97,7 @@ namespace
     void test_rank_silent_during_p2p_ring()
     {
         const std::size_t bytes = 64u << 20;
-        const auto status = run_forked([bytes](std::size_t rank, tbccl::Communicator &comm) {
+        const auto status = run_forked(kWorld, [bytes](std::size_t rank, tbccl::Communicator &comm) {
             const std::size_t next = (rank + 1) % kWorld, prev = (rank + kWorld - 1) % kWorld;
             if (rank == 2)
             {
@@ -217,7 +126,7 @@ namespace
             expect(has(blocked.error(), "rank 0") || has(blocked.error(), "rank 2") || has(blocked.error(), "aborted") || has(blocked.error(), "closed"), "the error says why: " + blocked.error());
             expect(since(t0) < 6, "bounded");
         });
-        expect_children_ok(status, 2, "rank 2 silent during the P2P ring");
+        expect_children_ok(status, kWorld, 2, "rank 2 silent during the P2P ring");
         std::cout << "[PASS] rank 2 silent during the P2P ring: rank 0's abort reaches ranks 1 and 3, all leave the blocked operation\n";
     }
 

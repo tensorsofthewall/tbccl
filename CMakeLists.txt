@@ -1141,6 +1141,20 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_algorithms_test PROPERTIES TIMEOUT 300)
     list(APPEND tbccl_dynamic_port_tests communicator_algorithms_test)
 
+    add_executable(communicator_algorithm_failure_test
+        tests/communicator_algorithm_failure_test.cpp
+    )
+    target_include_directories(communicator_algorithm_failure_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(communicator_algorithm_failure_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_algorithm_failure_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_algorithm_failure_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_algorithm_failure_test COMMAND communicator_algorithm_failure_test)
+    set_tests_properties(communicator_algorithm_failure_test PROPERTIES TIMEOUT 700 ENVIRONMENT "TSAN_OPTIONS=die_after_fork=0")
+    list(APPEND tbccl_dynamic_port_tests communicator_algorithm_failure_test)
+
     add_executable(communicator_allreduce_algorithms_test
         tests/communicator_allreduce_algorithms_test.cpp
     )
