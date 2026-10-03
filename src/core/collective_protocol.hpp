@@ -17,6 +17,7 @@
 // Wire format: fixed-size, big-endian (wire_protocol.hpp helpers). The N=2 specialised paths (all_reduce / broadcast / all_gather at
 // world_size 2) deliberately skip the exchange: its extra round trip would regress them. Their sequence counter still advances.
 
+#include <tbccl/error.hpp>
 #include <tbccl/reduction.hpp>
 #include <tbccl/types.hpp>
 
@@ -93,17 +94,17 @@ CollectiveVerdict decode_verdict(const VerdictWire &in);
 CollectiveVerdict judge_collective(const std::vector<CollectiveDescriptor> &by_rank);
 
 // Thrown on every rank after an Unsupported verdict: the Work fails, the communicator is NOT poisoned.
-class CollectiveRejected : public std::runtime_error
+class CollectiveRejected : public Error
 {
 public:
-    using std::runtime_error::runtime_error;
+    explicit CollectiveRejected(const std::string &message, ErrorCode code = ErrorCode::Unsupported) : Error(code, message) {}
 };
 
 // Thrown after a Mismatch verdict: fatal, the executor poisons and aborts the communicator.
-class CollectiveMismatch : public std::runtime_error
+class CollectiveMismatch : public Error
 {
 public:
-    using std::runtime_error::runtime_error;
+    explicit CollectiveMismatch(const std::string &message) : Error(ErrorCode::ProtocolMismatch, message) {}
 };
 
 } // namespace tbccl::detail

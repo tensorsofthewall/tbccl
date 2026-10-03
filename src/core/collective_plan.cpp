@@ -1,5 +1,6 @@
 // CollectivePlanner (collective_plan.hpp).
 
+#include <tbccl/error.hpp>
 #include "collective_plan.hpp"
 
 #include <cstdlib>
@@ -50,7 +51,7 @@ CommAlgorithm parse_override(const char *variable)
     if (v == "ring") return CommAlgorithm::Ring;
     if (v == "dissemination") return CommAlgorithm::Dissemination;
     if (v == "auto") return CommAlgorithm::Unspecified;
-    throw std::runtime_error(
+    throw Error(ErrorCode::InvalidArgument, 
         std::string("invalid_argument: ") + variable + "='" + v + "' is not one of reference, tree, recursive, ring, dissemination, auto");
 }
 
@@ -113,7 +114,7 @@ CollectivePlan plan_collective(
         std::string why;
         if (!algorithm_supported(kind, forced, world_size, &why))
         {
-            throw std::runtime_error(
+            throw Error(ErrorCode::Unsupported, 
                 std::string("unsupported: forced algorithm '") + comm_algorithm_name(forced) + "' cannot run " + collective_kind_name(kind) + " at world_size " +
                 std::to_string(world_size) + ": " + why);
         }

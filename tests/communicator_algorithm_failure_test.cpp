@@ -2,6 +2,7 @@
 // running must take the communicator down as a unit: every healthy rank leaves the blocked operation with an error, no Work becomes terminal while a transport thread can
 // still touch its buffer (the buffers are freed right after the Work: ASan/TSan would flag any later access), and teardown is bounded.
 
+#include <tbccl/error.hpp>
 #include "mesh_fork_support.hpp"
 #include "collective_topology.hpp"
 
@@ -119,9 +120,17 @@ namespace
             const auto t0 = Clock::now();
             for (;;)
             {
-                auto w = comm.barrier();
-                w.wait();
-                if (w.has_error()) break; // the death was noticed
+                try
+                {
+                    auto w = comm.barrier();
+                    w.wait();
+                    if (w.has_error()) break; // the death was noticed
+                }
+                catch (const tbccl::Error &e) // submission on an already-aborted communicator: the death was noticed before this call
+                {
+                    expect(e.code() == tbccl::ErrorCode::Aborted, std::string("unexpected submission failure: ") + e.what());
+                    break;
+                }
                 if (rank != 3 && since(t0) > 20) throw std::runtime_error("the barrier loop was never interrupted"); // rank 3 just keeps looping until it is killed
             }
             expect(comm.failed(), "terminal");

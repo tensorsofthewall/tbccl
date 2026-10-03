@@ -13,4 +13,7 @@ namespace tbccl::detail
 // establishment has connected so far). The control plane is always a full mesh and is not reported here.
 std::vector<std::size_t> debug_connected_data_peers(const Communicator &comm);
 
+// Test hook: the next `count` P2P admissions on this communicator fail as if allocation failed (ErrorCode::ResourceExhausted).
+void debug_fail_next_admissions(const Communicator &comm, int count);
+
 } // namespace tbccl::detail

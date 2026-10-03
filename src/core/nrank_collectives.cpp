@@ -7,6 +7,7 @@
 #include "subrange_backend.hpp"
 #include "wire_protocol.hpp"
 
+#include <tbccl/error.hpp>
 #include <tbccl/communicator.hpp>
 
 #include <algorithm>
@@ -50,7 +51,7 @@ void OpGroup::wait_all()
     for (auto &c : children_) c.work.wait();
     for (auto &c : children_)
     {
-        if (c.work.has_error()) throw std::runtime_error("transport_error: " + c.what + ": " + c.work.error());
+        if (c.work.has_error()) throw Error(c.work.error_code(), "transport_error: " + c.what + ": " + c.work.error());
     }
     children_.clear();
 }
@@ -354,7 +355,7 @@ void ring_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider,
 void recursive_doubling_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
 {
     if (run.world == 1 || total_bytes == 0) return;
-    if ((run.world & (run.world - 1)) != 0) throw std::runtime_error("internal_error: recursive doubling needs a power-of-two world");
+    if ((run.world & (run.world - 1)) != 0) throw Error(ErrorCode::InternalError, "internal_error: recursive doubling needs a power-of-two world");
     AsyncMemoryBackend &primary = provider.primary_backend();
     AsyncMemoryBackend &scratch = provider.scratch_backend();
     LocalReduceBackend &reduce = provider.reduce_backend();
@@ -470,7 +471,7 @@ namespace
 {
 [[noreturn]] void not_implemented(const char *kind, CommAlgorithm a)
 {
-    throw std::runtime_error(std::string("internal_error: ") + kind + " algorithm '" + comm_algorithm_name(a) + "' is not implemented");
+    throw Error(ErrorCode::InternalError, std::string("internal_error: ") + kind + " algorithm '" + comm_algorithm_name(a) + "' is not implemented");
 }
 } // namespace
 
@@ -480,7 +481,7 @@ void run_barrier(const CollectiveRun &, CommAlgorithm algorithm)
     {
     case CommAlgorithm::N2FastPath: // barrier has no specialised N=2 engine: it is the same exchange
     case CommAlgorithm::Reference: return; // the descriptor exchange (gather at rank 0, verdict back) is the barrier
-    case CommAlgorithm::Dissemination: throw std::runtime_error("internal_error: the dissemination barrier does not run after a verdict exchange");
+    case CommAlgorithm::Dissemination: throw Error(ErrorCode::InternalError, "internal_error: the dissemination barrier does not run after a verdict exchange");
     default: not_implemented("barrier", algorithm);
     }
 }

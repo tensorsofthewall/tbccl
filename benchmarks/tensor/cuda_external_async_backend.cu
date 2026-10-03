@@ -1,5 +1,7 @@
 #include "cuda_external_async_backend.hpp"
 
+#include <tbccl/error.hpp>
+
 #include <cuda_runtime.h>
 
 #include "cuda_reduce_ops.cuh"
@@ -23,8 +25,8 @@ namespace
     {
         if (status != cudaSuccess)
         {
-            throw std::runtime_error(
-                std::string("CUDA error in ") + what + ": " + cudaGetErrorString(status));
+            throw tbccl::Error(tbccl::ErrorCode::DeviceError,
+                std::string("device_error: CUDA error in ") + what + ": " + cudaGetErrorString(status));
         }
     }
 
@@ -70,12 +72,12 @@ void CudaStagingResources::with_pinned(std::size_t bytes, const std::function<vo
         if (s_->fail_next_growth)
         {
             s_->fail_next_growth = false;
-            throw std::runtime_error("device_error: pinned staging growth failed (injected)");
+            throw tbccl::Error(tbccl::ErrorCode::DeviceError, "device_error: pinned staging growth failed (injected)");
         }
         const cudaError_t status = cudaMallocHost(&fresh, bytes);
         if (status != cudaSuccess)
         {
-            throw std::runtime_error(
+            throw tbccl::Error(tbccl::ErrorCode::DeviceError,
                 std::string("device_error: pinned staging growth to ") + std::to_string(bytes) +
                 " bytes failed: " + cudaGetErrorString(status));
         }
@@ -167,8 +169,8 @@ CudaExternalAsyncBackend::CudaExternalAsyncBackend(
     const cudaError_t status = cudaGetDeviceCount(&device_count);
     if (status != cudaSuccess || device_count == 0)
     {
-        throw std::runtime_error(
-            "CudaExternalAsyncBackend: no CUDA device available at runtime: " +
+        throw tbccl::Error(tbccl::ErrorCode::DeviceError,
+            "device_error: CudaExternalAsyncBackend: no CUDA device available at runtime: " +
             std::string(cudaGetErrorString(status)));
     }
 
@@ -224,7 +226,7 @@ void CudaExternalAsyncBackend::stage_source_chunk(const tbccl::Chunk &chunk, voi
     if (chunk.size == 0) return;
     if (chunk.offset + chunk.size > impl_->bytes)
     {
-        throw std::runtime_error("CudaExternalAsyncBackend::stage_source_chunk: chunk exceeds buffer bytes");
+        throw tbccl::Error(tbccl::ErrorCode::InternalError, "CudaExternalAsyncBackend::stage_source_chunk: chunk exceeds buffer bytes");
     }
 
     auto *source = static_cast<const std::uint8_t *>(impl_->device_ptr) + chunk.offset;
@@ -242,7 +244,7 @@ void CudaExternalAsyncBackend::commit_destination_chunk(const tbccl::Chunk &chun
     if (chunk.size == 0) return;
     if (chunk.offset + chunk.size > impl_->bytes)
     {
-        throw std::runtime_error("CudaExternalAsyncBackend::commit_destination_chunk: chunk exceeds buffer bytes");
+        throw tbccl::Error(tbccl::ErrorCode::InternalError, "CudaExternalAsyncBackend::commit_destination_chunk: chunk exceeds buffer bytes");
     }
 
     auto *destination = static_cast<std::uint8_t *>(impl_->device_ptr) + chunk.offset;
@@ -362,7 +364,7 @@ void CudaExternalReduceBackend::reduce_sum(std::size_t count, tbccl::DataType da
     case tbccl::DataType::Float16: launch_sum<__half>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::BFloat16: launch_sum<__nv_bfloat16>(local_and_output_, peer_, count, stream); break;
     default:
-        throw std::runtime_error("CudaExternalReduceBackend: unrecognized DataType");
+        throw tbccl::Error(tbccl::ErrorCode::InternalError, "CudaExternalReduceBackend: unrecognized DataType");
     }
     check_cuda(cudaStreamSynchronize(stream), "cudaStreamSynchronize after sum_inplace_kernel");
 }

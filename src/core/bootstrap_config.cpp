@@ -1,5 +1,6 @@
 // CommunicatorOptions -> explicit, validated world description (bootstrap_config.hpp).
 
+#include <tbccl/error.hpp>
 #include "bootstrap_config.hpp"
 
 #include <stdexcept>
@@ -11,7 +12,7 @@ namespace tbccl::detail
 namespace
 {
 
-[[noreturn]] void invalid(const std::string &message) { throw std::runtime_error("invalid_argument: " + message); }
+[[noreturn]] void invalid(const std::string &message) { throw Error(ErrorCode::InvalidArgument, "invalid_argument: " + message); }
 
 } // namespace
 
@@ -36,7 +37,7 @@ ResolvedBootstrap resolve_bootstrap(const CommunicatorOptions &options)
         out.legacy_peers = true;
         if (options.peers.size() > 2)
         {
-            throw std::runtime_error(
+            throw Error(ErrorCode::Unsupported, 
                 "unsupported: the legacy CommunicatorOptions::peers list supports world_size 1 or 2 (got " + std::to_string(options.peers.size()) +
                 "); describe an N-rank world with rank_directory");
         }
