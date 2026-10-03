@@ -3,6 +3,7 @@
 #include "nrank_collectives.hpp"
 
 #include "host_pointer_backend.hpp"
+#include "wire_protocol.hpp"
 
 #include <tbccl/communicator.hpp>
 
@@ -235,6 +236,71 @@ void reference_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &prov
     }
 }
 
+void run_dissemination_barrier(const CollectiveRun &run, const CollectiveDescriptor &mine)
+{
+    const std::size_t n = run.world, r = run.rank;
+    CollectiveMailbox &mailbox = run.mesh->mailbox();
+    auto trace = [&](const std::string &text) {
+        if (run.trace && run.trace->on()) run.trace->line("work=" + std::to_string(run.work_id) + " #" + std::to_string(run.sequence) + " " + text);
+    };
+    trace("barrier (dissemination) begin");
+
+    struct Current
+    {
+        CollectiveMailbox &m;
+        bool on;
+        ~Current()
+        {
+            if (on) m.clear_current();
+        }
+    } current{mailbox, r == 0};
+    if (r == 0) mailbox.set_current(mine, run.fatal ? *run.fatal : std::function<void(const std::string &)>());
+    else
+    {
+        const DescriptorWire wire = encode_descriptor(mine);
+        run.mesh->send_collective_frame(0, /*is_verdict=*/false, std::vector<std::uint8_t>(wire.begin(), wire.end()));
+    }
+
+    std::size_t round = 0;
+    for (std::size_t dist = 1; dist < n; dist <<= 1, ++round)
+    {
+        const std::size_t to = (r + dist) % n, from = (r + n - dist) % n;
+        std::uint8_t out[16], in[16] = {};
+        put_u64(out, run.sequence);
+        put_u32(out + 8, static_cast<std::uint32_t>(mine.kind));
+        put_u32(out + 12, static_cast<std::uint32_t>(round));
+        HostPointerAsyncBackend send_backend(out, sizeof(out)), recv_backend(in, sizeof(in));
+        OpGroup group;
+        post(run, group, to, TransferDirection::Send, send_backend, sizeof(out), "barrier token");
+        post(run, group, from, TransferDirection::Recv, recv_backend, sizeof(in), "barrier token");
+        group.wait_all();
+        if (get_u64(in) != run.sequence || get_u32(in + 8) != static_cast<std::uint32_t>(mine.kind) || get_u32(in + 12) != static_cast<std::uint32_t>(round))
+        {
+            throw CollectiveMismatch(
+                "protocol_mismatch: barrier token from rank " + std::to_string(from) + " in round " + std::to_string(round) + " does not match this rank's collective #" +
+                std::to_string(run.sequence) + " (" + collective_kind_name(mine.kind) + "): it carries #" + std::to_string(get_u64(in)));
+        }
+    }
+
+    if (r == 0)
+    {
+        // Consume (and judge) the descriptors every rank handed over, so the control-plane queue stays aligned with the next collective.
+        std::vector<CollectiveDescriptor> by_rank(n);
+        by_rank[0] = mine;
+        for (std::size_t p = 1; p < n; ++p)
+        {
+            const auto bytes = mailbox.wait_descriptor(p);
+            DescriptorWire wire{};
+            std::copy_n(bytes.begin(), std::min(bytes.size(), wire.size()), wire.begin());
+            by_rank[p] = decode_descriptor(wire);
+            by_rank[p].rank = static_cast<std::uint32_t>(p);
+        }
+        const auto verdict = judge_collective(by_rank);
+        if (verdict.status == VerdictStatus::Mismatch) throw CollectiveMismatch("protocol_mismatch: " + verdict.text);
+    }
+    trace("barrier (dissemination) done");
+}
+
 namespace
 {
 [[noreturn]] void not_implemented(const char *kind, CommAlgorithm a)
@@ -249,6 +315,7 @@ void run_barrier(const CollectiveRun &, CommAlgorithm algorithm)
     {
     case CommAlgorithm::N2FastPath: // barrier has no specialised N=2 engine: it is the same exchange
     case CommAlgorithm::Reference: return; // the descriptor exchange (gather at rank 0, verdict back) is the barrier
+    case CommAlgorithm::Dissemination: throw std::runtime_error("internal_error: the dissemination barrier does not run after a verdict exchange");
     default: not_implemented("barrier", algorithm);
     }
 }
