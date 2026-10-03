@@ -1755,6 +1755,24 @@ if(BUILD_TESTING)
             PROPERTIES TIMEOUT 90)
     endif()
 
+    # Pairs of tests that hard-code the SAME base port (a bind collision, "Address already in use", whenever ctest runs them
+    # in parallel). Serializing each pair keeps `ctest -j` reliable without renumbering ports; a test is only locked if it is
+    # registered in this configuration (CUDA/Metal/Python tests are conditional).
+    foreach(pair
+        "raw_io_worker_test;tensor_backend_async_adapter_test"
+        "hetero_allreduce_test;metal_shared_direct_async_backend_test"
+        "bucket_allreduce_worker_test;communicator_test"
+        "communicator_collectives_test;world_test"
+        "all_reduce_ring_test;tensor_cuda_test")
+        list(GET pair 0 lock_first)
+        string(MD5 lock_name "${pair}")
+        foreach(t IN LISTS pair)
+            if(TEST ${t})
+                set_property(TEST ${t} APPEND PROPERTY RESOURCE_LOCK "tbccl_shared_port_${lock_name}")
+            endif()
+        endforeach()
+    endforeach()
+
 endif()
 
 # ---------------------------------------------------------------------------
