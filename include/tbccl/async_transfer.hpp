@@ -308,6 +308,11 @@ struct TransferRequest
     // never reads more than `total_bytes`, so it can never overrun its buffer). Both sides of a transfer must agree on the flag.
     // On the direct path the header and payload share one system call (Transport::send_framed/recv_framed).
     bool framed = false;
+
+    // Phase 50: in a duplex worker, queue this Recv on the same FIFO lane as the sends instead of the independent receive lane. The N=2
+    // specialised engines (all_reduce / broadcast / all_gather) issue strictly sequential transfers and keep exactly the single-lane
+    // behaviour (and cost) they had before duplex lanes existed. Ignored by a single-lane worker.
+    bool shared_lane = false;
 };
 
 // ---------------------------------------------------------------------
@@ -336,8 +341,9 @@ public:
     // see the .cpp for the caching logic. `queue_depth` bounds how many
     // TransferRequests may be waiting; enqueue() blocks (Part AG) once
     // full rather than growing unbounded.
-    // Phase 50: `duplex` gives Recv requests their own independent lane (queue, network thread, lazily created staging
-    // thread) so a pending send never delays a receive on the same transport and vice versa; each lane is still strictly FIFO.
+    // Phase 50: `duplex` adds a second lane (queue, network thread, lazily created staging thread). A lane serves one direction at a time and a
+    // direction keeps its FIFO order on one lane, so a pending send never delays a receive on the same transport and vice versa; with a single
+    // direction in flight everything runs on the first lane, as in the single-lane worker.
     // The default (false) keeps the single FIFO lane every pre-Phase-50 user relies on. `queue_depth` applies per lane.
     explicit TensorCommWorker(
         std::size_t pipeline_depth = 2,
@@ -382,6 +388,7 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
     std::unique_ptr<Impl> recv_impl_; // non-null only in duplex mode
+    std::mutex route_mutex_;          // serializes lane choice in duplex mode
 };
 
 } // namespace tbccl

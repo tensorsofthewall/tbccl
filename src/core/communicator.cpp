@@ -711,6 +711,7 @@ void run_transfer(
     request.transport = &transport;
     request.total_bytes = bytes;
     request.chunk_hint = 0;
+    request.shared_lane = true; // N=2 specialised path: strictly sequential, single FIFO as before duplex lanes
     TransferWork work = worker.enqueue(request);
     work.wait();
     if (work.has_error()) throw std::runtime_error(std::string("transport_error: ") + what + ": " + work.error());
@@ -789,7 +790,7 @@ Work Communicator::all_reduce(
             constexpr std::size_t kRoot = 0; // Part X: fixed internal policy, never exposed.
             detail::PeerChannel &sole = impl->sole_channel();
             AsyncMemoryBackend &primary = provider->primary_backend();
-            impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_reduce n2 fast path bytes=" + std::to_string(total_bytes) +
+            if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_reduce n2 fast path bytes=" + std::to_string(total_bytes) +
                              " dtype=" + datatype_label(datatype));
             if (rank == kRoot)
             {
@@ -848,7 +849,7 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
             // N=2 fast path: one transfer, no descriptor exchange.
             if (bytes == 0) return;
             detail::PeerChannel &sole = impl->sole_channel();
-            impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " broadcast n2 fast path bytes=" + std::to_string(bytes));
+            if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " broadcast n2 fast path bytes=" + std::to_string(bytes));
             run_transfer(*sole.worker, *sole.data, provider->primary_backend(), rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
             return;
         }
@@ -918,7 +919,7 @@ Work Communicator::all_gather(
             detail::PeerChannel &sole = impl->sole_channel();
             const std::size_t peer = sole.peer_rank;
             if (out_providers[rank]) detail::copy_through_providers(*in_provider, *out_providers[rank], bytes);
-            impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_gather n2 fast path bytes=" + std::to_string(bytes));
+            if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_gather n2 fast path bytes=" + std::to_string(bytes));
             if (rank == 0)
             {
                 run_transfer(*sole.worker, *sole.data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
