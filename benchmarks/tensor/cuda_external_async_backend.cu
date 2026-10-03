@@ -2,6 +2,8 @@
 
 #include <cuda_runtime.h>
 
+#include "cuda_reduce_ops.cuh"
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -264,15 +266,7 @@ namespace
     {
         const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
         if (i >= count) return;
-        if constexpr (std::is_integral_v<T>)
-        {
-            using U = std::make_unsigned_t<T>;
-            dst[i] = static_cast<T>(static_cast<U>(dst[i]) + static_cast<U>(src[i]));
-        }
-        else
-        {
-            dst[i] = dst[i] + src[i];
-        }
+        dst[i] = cuda_reduce::sum_elem<T>(dst[i], src[i]);
     }
 
     template <typename T>
@@ -363,6 +357,8 @@ void CudaExternalReduceBackend::reduce_sum(std::size_t count, tbccl::DataType da
     case tbccl::DataType::Float64: launch_sum<double>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::Int32: launch_sum<std::int32_t>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::Int64: launch_sum<std::int64_t>(local_and_output_, peer_, count, stream); break;
+    case tbccl::DataType::Float16: launch_sum<__half>(local_and_output_, peer_, count, stream); break;
+    case tbccl::DataType::BFloat16: launch_sum<__nv_bfloat16>(local_and_output_, peer_, count, stream); break;
     default:
         throw std::runtime_error("CudaExternalReduceBackend: unrecognized DataType");
     }
