@@ -431,6 +431,11 @@ int main()
         std::cerr << "[FAIL] watchdog: a collective test hung\n";
         std::_Exit(2);
     }).detach();
+    // This file is the Phase 50 REFERENCE-algorithm suite (rank-ordered fold, root fan-out): since Phase 51 the default selection picks other algorithms, so pin the reference.
+    setenv("TBCCL_ALLREDUCE_ALGORITHM", "reference", 1);
+    setenv("TBCCL_BROADCAST_ALGORITHM", "reference", 1);
+    setenv("TBCCL_ALLGATHER_ALGORITHM", "reference", 1);
+    setenv("TBCCL_BARRIER_ALGORITHM", "reference", 1);
     try
     {
         for (std::size_t world = 1; world <= 4; ++world)

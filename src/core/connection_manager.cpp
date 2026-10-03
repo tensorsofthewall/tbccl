@@ -43,12 +43,21 @@ std::unique_ptr<Listener> ListenersAccess::take_data(CommunicatorListeners &l) {
 // for its acceptor thread to install the incoming connection. Both happen on the lane worker thread, never on the caller's thread, so send()/recv() on the
 // Communicator stay non-blocking. Waiting for the peer to dial is unbounded (like any receive) and is ended by abort(). Exactly one connection can ever exist: only
 // one side dials, and the acceptor rejects a second connection for the same rank.
+struct DialSpec
+{
+    bool enabled = false; // false on the accepting (lower-rank) side
+    Endpoint endpoint;
+    Hello hello;
+    std::size_t peer = 0;
+    std::chrono::milliseconds timeout{10000};
+};
+
+std::unique_ptr<Connection> dial_data_peer(const DialSpec &spec, const std::function<bool()> &cancelled, const std::function<void(Connection *)> &registered);
+
 class LazyDataTransport final : public Transport
 {
 public:
-    using Dial = std::function<std::unique_ptr<Connection>()>;
-
-    explicit LazyDataTransport(Dial dial) : dial_(std::move(dial)) {}
+    explicit LazyDataTransport(DialSpec dial) : dial_(std::move(dial)) {}
 
     void install(std::unique_ptr<Connection> connection)
     {
@@ -83,6 +92,7 @@ public:
         aborted_ = true;
         reason_ = reason;
         if (inner_) inner_->abort(reason);
+        if (dialing_conn_) dialing_conn_->abort(reason); // a handshake in progress is interrupted too
         cv_.notify_all();
     }
 
@@ -106,23 +116,28 @@ private:
         {
             if (aborted_) throw_aborted();
             if (inner_) return *inner_;
-            if (dial_ && !dialing_)
+            if (dial_.enabled && !dialing_)
             {
                 dialing_ = true;
                 lock.unlock();
                 std::unique_ptr<Connection> connection;
                 try
                 {
-                    connection = dial_();
+                    // The dial is interruptible by abort(): the retry loop checks the flag, and the connection (once it exists) is registered so abort() can shut it down.
+                    connection = dial_data_peer(
+                        dial_, [this] { std::lock_guard<std::mutex> l(mutex_); return aborted_; },
+                        [this](Connection *c) { std::lock_guard<std::mutex> l(mutex_); dialing_conn_ = c; if (aborted_ && c) c->abort(reason_); });
                 }
                 catch (const std::exception &e)
                 {
                     lock.lock();
                     dialing_ = false;
+                    dialing_conn_ = nullptr;
                     if (aborted_) throw_aborted();
                     throw std::runtime_error(std::string("transport_error: lazy data connection failed: ") + e.what());
                 }
                 lock.lock();
+                dialing_conn_ = nullptr;
                 if (aborted_) throw_aborted();
                 inner_ = std::make_unique<TcpTransport>(std::move(connection));
                 cv_.notify_all();
@@ -132,7 +147,8 @@ private:
         }
     }
 
-    Dial dial_; // empty on the accepting (lower-rank) side
+    DialSpec dial_;
+    Connection *dialing_conn_ = nullptr; // the connection of a dial in progress (guarded by mutex_), so abort() can interrupt its handshake
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     std::unique_ptr<TcpTransport> inner_;
@@ -170,6 +186,27 @@ std::unique_ptr<Connection> connect_with_retry(const Endpoint &endpoint, Clock::
         if (left.count() <= 0)
             throw std::runtime_error("timeout: bootstrap timed out connecting to " + what + " at " + endpoint.host + ":" + std::to_string(endpoint.port) + " (" + last + ")");
         std::this_thread::sleep_for(std::min(left, std::chrono::milliseconds(20)));
+    }
+}
+
+std::unique_ptr<Connection> connect_with_retry_cancellable(const Endpoint &endpoint, Clock::time_point deadline, const std::string &what, const std::function<bool()> &cancelled)
+{
+    std::string last;
+    for (;;)
+    {
+        if (cancelled()) throw std::runtime_error("aborted: communicator aborted");
+        try
+        {
+            return tcp_connect(endpoint.host, endpoint.port, {});
+        }
+        catch (const std::exception &e)
+        {
+            last = e.what();
+        }
+        const auto left = remaining(deadline);
+        if (left.count() <= 0)
+            throw std::runtime_error("timeout: lazy data connection timed out connecting to " + what + " at " + endpoint.host + ":" + std::to_string(endpoint.port) + " (" + last + ")");
+        std::this_thread::sleep_for(std::min(left, std::chrono::milliseconds(10)));
     }
 }
 
@@ -278,6 +315,17 @@ NegotiationResult fold_negotiation(const std::vector<NegotiationResult> &results
 
 } // namespace
 
+std::unique_ptr<Connection> dial_data_peer(const DialSpec &spec, const std::function<bool()> &cancelled, const std::function<void(Connection *)> &registered)
+{
+    const auto deadline = Clock::now() + spec.timeout;
+    auto connection = connect_with_retry_cancellable(spec.endpoint, deadline, "rank " + std::to_string(spec.peer) + " data endpoint", cancelled);
+    registered(connection.get());
+    connection->set_io_timeout(std::max(std::chrono::milliseconds(1), remaining(deadline)));
+    dial_handshake(*connection, spec.hello, spec.peer);
+    connection->set_io_timeout(std::chrono::milliseconds(0));
+    return connection;
+}
+
 std::unique_ptr<ConnectionManager> ConnectionManager::establish(
     const ResolvedBootstrap &boot, std::chrono::milliseconds timeout, CommunicatorListeners *prebound, const PeerCapabilities &local,
     NegotiationResult &aggregate_negotiation)
@@ -354,19 +402,14 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         }
         else
         {
-            LazyDataTransport::Dial dial;
+            DialSpec dial;
             if (peer < boot.rank) // this rank is the higher one: it dials the lower rank's data listener on first use
             {
-                const Endpoint endpoint = boot.directory.entries[peer].data;
-                const Hello hello{kWireProtocolVersion, boot.communicator_id, static_cast<std::uint32_t>(boot.rank), static_cast<std::uint32_t>(boot.world_size), ConnectionRole::Data};
-                dial = [endpoint, hello, peer, timeout]() {
-                    const auto deadline = Clock::now() + timeout;
-                    auto connection = connect_with_retry(endpoint, deadline, "rank " + std::to_string(peer) + " data endpoint");
-                    connection->set_io_timeout(std::max(std::chrono::milliseconds(1), remaining(deadline)));
-                    dial_handshake(*connection, hello, peer);
-                    connection->set_io_timeout(std::chrono::milliseconds(0));
-                    return connection;
-                };
+                dial.enabled = true;
+                dial.endpoint = boot.directory.entries[peer].data;
+                dial.hello = Hello{kWireProtocolVersion, boot.communicator_id, static_cast<std::uint32_t>(boot.rank), static_cast<std::uint32_t>(boot.world_size), ConnectionRole::Data};
+                dial.peer = peer;
+                dial.timeout = timeout;
             }
             channel->data = std::make_unique<LazyDataTransport>(std::move(dial));
         }
