@@ -154,6 +154,13 @@ namespace
                         }
                         w.wait();
                         failed = w.has_error();
+                        // A tree-broadcast root can legitimately finish (its sends are delivered) before the abort arrives; its communicator must still become terminal.
+                        if (!failed && std::string(label).find("broadcast") != std::string::npos)
+                        {
+                            const auto w0 = Clock::now();
+                            while (!comm.aborted() && since(w0) < 8) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                            failed = comm.aborted();
+                        }
                     }
                     catch (const std::exception &) // a slow rank can see the abort before it even submits (sanitizer builds)
                     {
