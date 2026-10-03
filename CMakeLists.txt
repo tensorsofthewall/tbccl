@@ -39,6 +39,8 @@ add_library(tbccl STATIC
     src/core/wire_protocol.cpp
     src/core/bootstrap_config.cpp
     src/core/connection_manager.cpp
+    src/core/nrank_collectives.cpp
+    src/core/collective_protocol.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -1071,6 +1073,31 @@ if(BUILD_TESTING)
     add_test(NAME communicator_p2p_nrank_test COMMAND communicator_p2p_nrank_test)
     set_tests_properties(communicator_p2p_nrank_test PROPERTIES TIMEOUT 240)
     list(APPEND tbccl_dynamic_port_tests communicator_p2p_nrank_test)
+
+    add_executable(communicator_nrank_collectives_test
+        tests/communicator_nrank_collectives_test.cpp
+    )
+    target_link_libraries(communicator_nrank_collectives_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_nrank_collectives_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_nrank_collectives_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_nrank_collectives_test COMMAND communicator_nrank_collectives_test)
+    set_tests_properties(communicator_nrank_collectives_test PROPERTIES TIMEOUT 300)
+    list(APPEND tbccl_dynamic_port_tests communicator_nrank_collectives_test)
+
+    add_executable(collective_protocol_test
+        tests/collective_protocol_test.cpp
+    )
+    target_include_directories(collective_protocol_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(collective_protocol_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(collective_protocol_test PRIVATE /W4)
+    else()
+        target_compile_options(collective_protocol_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME collective_protocol_test COMMAND collective_protocol_test)
 
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp

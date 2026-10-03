@@ -327,6 +327,10 @@ public:
         const std::vector<BufferView> &outputs,
         const ExecutionContext &context = {});
 
+    // Phase 50: a barrier over every rank (no payload). The Work completes once every rank has entered the same barrier. Runs in the
+    // same FIFO ordering domain as the other collectives. world_size 1 completes immediately.
+    Work barrier();
+
 private:
     Communicator();
 
