@@ -180,8 +180,10 @@ static void concurrent_body(int rank, int world, tbcclComm_t comm, void *user)
     pthread_t t[THREADS];
     Submitter sub[THREADS];
     tbcclWork_t *all = (tbcclWork_t *)calloc((size_t)THREADS * PER, sizeof(tbcclWork_t));
-    static uint8_t send_buf[BYTES], recv_buf[THREADS][BYTES];
-    memset(send_buf, 0x6B, sizeof(send_buf));
+    /* per-rank buffers: both ranks of this test are threads of one process, so nothing may be static */
+    uint8_t *send_buf = (uint8_t *)malloc(BYTES), (*recv_buf)[BYTES] = (uint8_t (*)[BYTES])calloc(THREADS, BYTES);
+    CHECK(send_buf && recv_buf);
+    memset(send_buf, 0x6B, BYTES);
     for (int i = 0; i < THREADS; ++i) {
         sub[i].comm = comm;
         sub[i].send = (rank == 0);
@@ -197,6 +199,8 @@ static void concurrent_body(int rank, int world, tbcclComm_t comm, void *user)
         for (int i = 0; i < THREADS; ++i) CHECK(recv_buf[i][0] == 0x6B && recv_buf[i][BYTES - 1] == 0x6B);
     for (int i = 0; i < THREADS * PER; ++i) CHECK_OK(tbcclWorkDestroy(all[i]));
     free(all);
+    free(send_buf);
+    free(recv_buf);
 }
 
 static void test_concurrent_submitters(void)
@@ -226,8 +230,10 @@ static void query_body(int rank, int world, tbcclComm_t comm, void *user)
 {
     Ctx *c = (Ctx *)user;
     CHECK(world == 2);
-    static uint8_t buf[1 << 20];
-    tbcclBuffer b = host_buffer(buf, sizeof(buf));
+    enum { QBYTES = 1 << 20 };
+    uint8_t *buf = (uint8_t *)calloc(QBYTES, 1); /* per rank: the two ranks are threads of one process */
+    CHECK(buf != NULL);
+    tbcclBuffer b = host_buffer(buf, QBYTES);
     tbcclWork_t w = NULL;
     pthread_t t[6];
     Querier q[6];
@@ -238,12 +244,13 @@ static void query_body(int rank, int world, tbcclComm_t comm, void *user)
         for (int i = 0; i < 6; ++i) { pthread_join(t[i], NULL); CHECK(q[i].done == 1 && q[i].result == TBCCL_SUCCESS); }
         CHECK_OK(tbcclWorkDestroy(w));
     } else {
-        memset(buf, 1, sizeof(buf));
+        memset(buf, 1, QBYTES);
         barrier_wait(&c->gate);
         CHECK_OK(tbcclSend(comm, &b, 1, NULL, &w));
         CHECK(wait_result(w) == TBCCL_SUCCESS);
         CHECK_OK(tbcclWorkDestroy(w));
     }
+    free(buf);
 }
 
 static void test_concurrent_queries(void)
