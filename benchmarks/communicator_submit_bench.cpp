@@ -259,13 +259,16 @@ void run_c(const char *which, std::size_t world, int iters)
 int main(int argc, char **argv)
 {
     const int iters = argc > 1 ? std::atoi(argv[1]) : 2000;
+    const char *only = std::getenv("BENCH_ONLY"); // optional: run a single case ("idle", "busy", ...)
     for (const char *which : {"idle", "busy"})
     {
+        if (only != nullptr && std::string(only) != which) continue;
         run_cpp(which, 2, iters);
 #ifndef TBCCL_BENCH_BASELINE
         run_c(which, 2, iters);
 #endif
     }
+    if (only != nullptr) return 0;
 #ifndef TBCCL_BENCH_BASELINE
     run_cpp("deep", 2, iters);
     run_c("deep", 2, iters);
