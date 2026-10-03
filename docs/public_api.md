@@ -128,6 +128,18 @@ Omitting `context` (the default) means "already synchronized, safe to
 read now" -- the convention every prior phase's benchmark-owned tensor
 already used.
 
+## Datatypes: reduction types vs byte transport (Phase 49)
+
+`tbccl::DataType` names the element type of an **arithmetic** collective only: `Int32, Int64, Float32, Float64` (original values 0-3, never changed) and, appended in
+Phase 49, `Int8 = 4, UInt8 = 5, Float16 = 6, BFloat16 = 7`. `datatype_size()` is the single size table; `reduction_supported(datatype, op)` is the single support
+predicate; `validate_reduction()` throws `unsupported: reduction dtype=... op=... (supported ops for this dtype: ...)` before any communication.
+`Communicator::capabilities().supports_collective_all_reduce(kind, datatype, op)` answers per memory kind. Float16/BFloat16 SUM widens to float32, adds once and rounds once
+(ties-to-even); Int8/UInt8 SUM is addition modulo 256; neither provides Product/Min/Max. FP8, packed INT4/FP4 and any other quantized payload are **not** `DataType`s: they travel as
+opaque bytes through `send`/`recv`, `broadcast` and `all_gather`. See `docs/quantized_payloads.md`.
+
+For P2P, `count` and `datatype` are only a size check (`count * datatype_size(datatype) <= view.bytes`); the transfer moves `view.bytes`. Describe an opaque payload as
+`DataType::UInt8` with `count = bytes`.
+
 ## P2P
 
 ```cpp
@@ -155,7 +167,10 @@ auto work = comm->all_reduce(send_view, recv_view, count, datatype, tbccl::Reduc
   first -- Host/MetalShared only; out-of-place is not supported for
   `MemoryKind::Cuda` buffers this phase, pass the same view for both).
 - Only `ReduceOp::Sum` is supported this phase; anything else returns
-  `Unsupported`.
+  `Unsupported`. Supported element types: Int8, UInt8, Float16, BFloat16,
+  Int32, Int64, Float32, Float64 on Host memory and on CUDA memory
+  (MetalShared: the original four only); an unsupported type/op pair
+  throws before any communication.
 - The root is always rank 0 internally -- there is no caller-visible
   root parameter. (The older, internal `tbccl::n2_all_reduce_tensor()`
   entry point still exposes a `root` parameter for benchmark
