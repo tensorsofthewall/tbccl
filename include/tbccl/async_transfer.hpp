@@ -326,9 +326,13 @@ public:
     // see the .cpp for the caching logic. `queue_depth` bounds how many
     // TransferRequests may be waiting; enqueue() blocks once
     // full rather than growing unbounded.
+    // `duplex` gives Recv requests their own independent lane (queue, network thread, lazily created staging
+    // thread) so a pending send never delays a receive on the same transport and vice versa; each lane is still strictly FIFO.
+    // The default (false) keeps the single FIFO lane every earlier user relies on. `queue_depth` applies per lane.
     explicit TensorCommWorker(
         std::size_t pipeline_depth = 2,
-        std::size_t queue_depth = 8);
+        std::size_t queue_depth = 8,
+        bool duplex = false);
 
     ~TensorCommWorker();
 
@@ -366,6 +370,7 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    std::unique_ptr<Impl> recv_impl_; // non-null only in duplex mode
 };
 
 } // namespace tbccl

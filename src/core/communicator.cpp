@@ -7,6 +7,7 @@
 #include <tbccl/transport.hpp>
 
 #include "bootstrap_config.hpp"
+#include "connection_manager.hpp"
 #include "reduction_internal.hpp"
 
 #include <algorithm>
@@ -418,12 +419,19 @@ struct Communicator::Impl
 
     std::size_t rank = 0;
     std::size_t world_size = 0;
-    std::size_t other_peer = 0; // the only valid P2P peer index (world_size==2)
 
-    std::unique_ptr<TcpTransport> transport;
-    std::unique_ptr<TensorCommWorker> comm_worker;
+    // One PeerChannel (control + data connection, duplex worker) per remote rank; no channel for world_size == 1.
+    std::unique_ptr<detail::ConnectionManager> mesh;
     std::unique_ptr<CollectiveExecutor> collective_executor;
     Capabilities caps;
+
+    // The N=2 specialised paths (all_reduce / broadcast / all_gather) talk to the one remote rank.
+    detail::PeerChannel &sole_channel()
+    {
+        for (const auto &c : mesh->channels())
+            if (c) return *c;
+        throw std::runtime_error("internal_error: sole_channel() on a communicator without peers");
+    }
 
     // Running -> AbortRequested -> Aborted. The first transition's reason wins. Lock order: nothing is held
     // across calls out of request_abort() (it only takes each component's own short mutex, one at a time).
@@ -444,8 +452,7 @@ struct Communicator::Impl
         }
         failed.store(true, std::memory_order_release);
         // Interrupt first so the active transfer unwinds; then reject/drain queues.
-        if (transport) transport->abort(why);
-        if (comm_worker) comm_worker->abort(why);
+        if (mesh) mesh->abort_transfers(why);
         if (collective_executor) collective_executor->abort(why);
     }
 
@@ -487,8 +494,7 @@ Communicator::Communicator() : impl_(std::make_unique<Impl>()) {}
 Communicator::~Communicator()
 {
     auto &impl = *impl_;
-    const bool busy = (impl.comm_worker && impl.comm_worker->busy()) ||
-                      (impl.collective_executor && impl.collective_executor->busy());
+    const bool busy = (impl.mesh && impl.mesh->busy()) || (impl.collective_executor && impl.collective_executor->busy());
     if (busy)
     {
         // Outstanding operations on a (possibly silent) peer: abandon them instead of waiting for it forever.
@@ -509,7 +515,7 @@ void Communicator::abort(const std::string &reason)
     impl.request_abort(reason.empty() ? "abort() called" : reason);
     // Wait (event-driven) until no local TBCCL thread can touch user buffers any more.
     impl.collective_executor->wait_idle();
-    impl.comm_worker->wait_idle();
+    if (impl.mesh) impl.mesh->wait_idle();
     impl.state.store(static_cast<int>(Impl::State::Aborted));
 }
 
@@ -527,49 +533,25 @@ std::string Communicator::abort_reason() const
 std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
 {
     const detail::ResolvedBootstrap boot = detail::resolve_bootstrap(options);
-    if (boot.world_size != 2)
-    {
-        throw std::runtime_error(
-            "unsupported: Communicator::create() supports exactly 2 ranks until the multi-peer runtime lands (world_size=" +
-            std::to_string(boot.world_size) + ")");
-    }
 
     auto comm = std::unique_ptr<Communicator>(new Communicator());
     auto &impl = *comm->impl_;
     impl.rank = boot.rank;
     impl.world_size = boot.world_size;
-    impl.other_peer = 1 - boot.rank;
-
-    // Readiness barrier via TcpWorld, then a separate data-path
-    // connection -- the exact pattern used to avoid
-    // the sleep-based startup race, reused unchanged for every benchmark
-    // since (tbccl_hetero_allreduce_bench.cpp, tbccl_bucketed_allreduce_bench.cpp).
-    TcpWorldOptions world_opts;
-    world_opts.rank = boot.rank;
-    world_opts.bootstrap_timeout = options.bootstrap_timeout;
-    for (const auto &entry : boot.directory.entries) world_opts.peers.push_back({entry.control.host, entry.control.port});
-    auto world = create_tcp_world(world_opts);
-
-    std::unique_ptr<Connection> connection;
-    std::unique_ptr<Listener> listener;
-    const Endpoint &data = boot.directory.entries[0].data;
-    if (boot.rank == 0) listener = tcp_listen(data.host, data.port, {});
-    barrier(*world);
-    if (boot.rank == 0) connection = listener->accept();
-    else connection = tcp_connect(data.host, data.port, {});
 
     impl.caps.local_ = local_capabilities();
-    impl.caps.remote_ = exchange_capabilities(*connection, impl.caps.local_);
-    impl.caps.negotiation_ = negotiate(impl.caps.local_, impl.caps.remote_);
-    if (!impl.caps.negotiation_.ok)
+    impl.mesh = detail::ConnectionManager::establish(
+        boot, options.bootstrap_timeout, options.listeners.get(), impl.caps.local_, impl.caps.negotiation_);
+    impl.caps.rank_capabilities_.resize(boot.world_size);
+    for (std::size_t r = 0; r < boot.world_size; ++r)
     {
-        throw std::runtime_error("transport_error: capability negotiation failed: " + impl.caps.negotiation_.failure_reason);
+        const auto &channel = impl.mesh->channels()[r];
+        impl.caps.rank_capabilities_[r] = channel ? channel->capabilities : impl.caps.local_;
     }
+    impl.caps.remote_ = impl.caps.rank_capabilities_[boot.world_size == 1 ? 0 : (boot.rank == 0 ? 1 : 0)];
 
-    impl.transport = std::make_unique<TcpTransport>(std::move(connection));
-    impl.comm_worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, /*queue_depth=*/8);
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
-    impl.comm_worker->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
+    impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
     impl.collective_executor->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
 
     return comm;
@@ -605,10 +587,7 @@ Work Communicator::send(
     const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer, const ExecutionContext &context)
 {
     require_not_failed(*this);
-    if (peer != impl_->other_peer)
-    {
-        throw std::runtime_error("invalid_argument: peer must be this communicator's single other rank");
-    }
+    detail::PeerChannel &channel = impl_->mesh->channel(peer); // throws invalid_argument for self / out of range
     validate_buffer_view(buffer, count, datatype);
 
     std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context, impl_->provider_slots);
@@ -617,13 +596,13 @@ Work Communicator::send(
     TransferRequest request;
     request.direction = TransferDirection::Send;
     request.backend = &backend;
-    request.transport = impl_->transport.get();
+    request.transport = channel.data.get();
     request.total_bytes = buffer.bytes;
     request.chunk_hint = 0;
 
     try
     {
-        Work work = impl_->comm_worker->enqueue(request);
+        Work work = channel.worker->enqueue(request);
         return impl_->track(work, std::move(provider));
     }
     catch (...)
@@ -637,10 +616,7 @@ Work Communicator::recv(
     const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer, const ExecutionContext &context)
 {
     require_not_failed(*this);
-    if (peer != impl_->other_peer)
-    {
-        throw std::runtime_error("invalid_argument: peer must be this communicator's single other rank");
-    }
+    detail::PeerChannel &channel = impl_->mesh->channel(peer);
     validate_buffer_view(buffer, count, datatype);
 
     std::shared_ptr<ExternalMemoryProvider> provider = make_provider(buffer, context, impl_->provider_slots);
@@ -649,13 +625,13 @@ Work Communicator::recv(
     TransferRequest request;
     request.direction = TransferDirection::Recv;
     request.backend = &backend;
-    request.transport = impl_->transport.get();
+    request.transport = channel.data.get();
     request.total_bytes = buffer.bytes;
     request.chunk_hint = 0;
 
     try
     {
-        Work work = impl_->comm_worker->enqueue(request);
+        Work work = channel.worker->enqueue(request);
         return impl_->track(work, std::move(provider));
     }
     catch (...)
@@ -720,8 +696,9 @@ Work Communicator::all_reduce(
         std::memcpy(recv_buf.data, send_buf.data, recv_buf.bytes);
     }
 
-    Transport *transport = impl_->transport.get();
-    TensorCommWorker *worker = impl_->comm_worker.get();
+    detail::PeerChannel &sole = impl_->sole_channel();
+    Transport *transport = sole.data.get();
+    TensorCommWorker *worker = sole.worker.get();
 
     auto run = [transport, worker, provider, rank, total_bytes, count, datatype]() {
         AsyncMemoryBackend &primary = provider->primary_backend();
@@ -792,8 +769,9 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
     std::shared_ptr<ExternalMemoryProvider> provider;
     if (bytes > 0) provider = make_provider(buffer, context, impl_->provider_slots);
 
-    Transport *transport = impl_->transport.get();
-    TensorCommWorker *worker = impl_->comm_worker.get();
+    detail::PeerChannel &sole = impl_->sole_channel();
+    Transport *transport = sole.data.get();
+    TensorCommWorker *worker = sole.worker.get();
     auto run = [transport, worker, provider, rank, root, bytes]() {
         if (bytes == 0) return;
         run_transfer(
@@ -830,7 +808,7 @@ Work Communicator::all_gather(
     }
 
     const std::size_t rank = impl_->rank;
-    const std::size_t peer = impl_->other_peer;
+    const std::size_t peer = impl_->sole_channel().peer_rank;
     std::shared_ptr<ExternalMemoryProvider> in_provider, local_out_provider, peer_out_provider;
     if (bytes > 0)
     {
@@ -839,8 +817,9 @@ Work Communicator::all_gather(
         if (outputs[rank].data != input.data) local_out_provider = make_provider(outputs[rank], context, impl_->provider_slots);
     }
 
-    Transport *transport = impl_->transport.get();
-    TensorCommWorker *worker = impl_->comm_worker.get();
+    detail::PeerChannel &sole = impl_->sole_channel();
+    Transport *transport = sole.data.get();
+    TensorCommWorker *worker = sole.worker.get();
     auto run = [transport, worker, in_provider, local_out_provider, peer_out_provider, rank, bytes]() {
         if (bytes == 0) return;
         if (local_out_provider)

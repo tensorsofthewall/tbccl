@@ -38,6 +38,7 @@ add_library(tbccl STATIC
     src/core/rank_directory.cpp
     src/core/wire_protocol.cpp
     src/core/bootstrap_config.cpp
+    src/core/connection_manager.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -1047,6 +1048,20 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME bootstrap_config_test COMMAND bootstrap_config_test)
 
+    # The N-rank runtime work multi-rank tests: dynamic ports only (kernel-assigned, pre-bound listeners), so they need no
+    # shared-port lock.
+    add_executable(communicator_mesh_test
+        tests/communicator_mesh_test.cpp
+    )
+    target_link_libraries(communicator_mesh_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_mesh_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_mesh_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_mesh_test COMMAND communicator_mesh_test)
+    list(APPEND tbccl_dynamic_port_tests communicator_mesh_test)
+
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp
     )
@@ -1934,13 +1949,16 @@ if(BUILD_TESTING)
     endif()
 
     # Every test binds fixed loopback ports (and the Python harness tests spawn tools on dynamic ones), and the ranges are dense: pairs of tests hard-code the
-    # SAME base (28820, 28900, 29100, 29550, 32100), and Communicator-based tests also bind a data port at control port + 1000 that lands inside other
-    # tests' ranges (e.g. communicator_test 29100 -> 30100 vs reduce_test 30100). Run in parallel they intermittently fail with "bind failed ... Address
+    # SAME base (28820, 28900, 29100, 29550, 32100), and Communicator-based tests also bind a data port at control port + 1000 that lands inside other tests'
+    # ranges (e.g. communicator_test 29100 -> 30100 vs reduce_test 30100). Run in parallel they intermittently fail with "bind failed ... Address already in
     # use" (seen as a Mac hetero_allreduce_test failure in vLLM pipeline-parallel study, tensor_backend_async_adapter_test and, in low-precision datatype,
-    # Linux). One shared RESOURCE_LOCK makes ctest run them one at a time whatever -j says, and covers tests added later automatically.
+    # reduce_test on Linux). One shared RESOURCE_LOCK makes ctest run them one at a time whatever -j says, and covers tests added later automatically. The
+    # N-rank runtime work tests allocate every port dynamically (listed in tbccl_dynamic_port_tests) and are left out of the lock.
     get_property(tbccl_all_tests DIRECTORY PROPERTY TESTS)
     foreach(t IN LISTS tbccl_all_tests)
-        set_property(TEST ${t} APPEND PROPERTY RESOURCE_LOCK "tbccl_loopback_ports")
+        if(NOT t IN_LIST tbccl_dynamic_port_tests)
+            set_property(TEST ${t} APPEND PROPERTY RESOURCE_LOCK "tbccl_loopback_ports")
+        endif()
     endforeach()
 
 endif()

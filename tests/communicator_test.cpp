@@ -5,6 +5,7 @@
 // TB4/CUDA/Metal coverage lives in separate test files.
 
 #include <tbccl/communicator.hpp>
+#include <tbccl/tcp.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -316,19 +317,29 @@ void test_errors_invalid_buffer()
 
 void test_errors_unsupported_world_size()
 {
+    // world_size 1 is a real world (and opens no socket); a world beyond the full-mesh limit is refused up front.
     tbccl::CommunicatorOptions opts;
     opts.rank = 0;
     opts.peers = {{"127.0.0.1", kBasePort + 500}};
+    {
+        auto comm = tbccl::Communicator::create(opts);
+        expect(comm->world_size() == 1 && comm->rank() == 0, "world_size 1 communicator");
+        auto probe = tbccl::tcp_listen("127.0.0.1", kBasePort + 500, {}); // would throw if the communicator had bound it
+        auto probe_data = tbccl::tcp_listen("127.0.0.1", kBasePort + 1500, {});
+    }
+    tbccl::CommunicatorOptions too_big;
+    for (std::size_t r = 0; r < tbccl::kMaxFullMeshWorldSize + 1; ++r)
+        too_big.rank_directory.entries.push_back({r, {"127.0.0.1", static_cast<std::uint16_t>(kBasePort + 520 + 2 * r)}, {"127.0.0.1", static_cast<std::uint16_t>(kBasePort + 521 + 2 * r)}});
     bool threw = false;
     try
     {
-        tbccl::Communicator::create(opts);
+        tbccl::Communicator::create(too_big);
     }
-    catch (const std::exception &)
+    catch (const std::exception &e)
     {
-        threw = true;
+        threw = std::string(e.what()).find("unsupported") != std::string::npos;
     }
-    expect(threw, "Communicator::create() with world_size!=2 must throw (scope limit)");
+    expect(threw, "Communicator::create() beyond the full-mesh limit must throw unsupported");
     std::cout << "[PASS] test_errors_unsupported_world_size\n";
 }
 
