@@ -77,6 +77,8 @@ void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provi
 // Phase 51: execute the data phase of a collective with the algorithm rank 0 chose (the same on every rank). world_size > 2 only; an algorithm that is not
 // implemented for the collective is an internal_error (the planner never returns one).
 void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
+void ring_all_gather(
+    const CollectiveRun &run, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes);
 void run_barrier(const CollectiveRun &run, CommAlgorithm algorithm);
 
 // The dissemination barrier (Phase 51): ceil(log2 N) rounds, each rank sends a token to (rank + 2^k) mod N and receives one from (rank - 2^k) mod N. There is no

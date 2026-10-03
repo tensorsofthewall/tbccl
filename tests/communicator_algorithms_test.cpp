@@ -136,6 +136,51 @@ namespace
         std::cout << "[PASS] tree broadcast world_size=" << world << " uses only parent/children data edges\n";
     }
 
+    // ---- ring all-gather -----------------------------------------------------------------------------------------------------------------------
+
+    void test_ring_all_gather(std::size_t world)
+    {
+        ForceEnv env("TBCCL_ALLGATHER_ALGORITHM", "ring");
+        for (std::size_t bytes : {std::size_t{0}, std::size_t{1}, std::size_t{17}, std::size_t{4093}, std::size_t{65537}, (std::size_t{1} << 20) + 5})
+        {
+            for (bool aliased : {false, true})
+            {
+                run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
+                    auto input = payload(rank + 10, bytes);
+                    std::vector<std::vector<std::uint8_t>> out(world, std::vector<std::uint8_t>(bytes, 0xEE));
+                    if (aliased) out[rank] = input; // outputs[rank] is the input memory
+                    std::vector<BufferView> outs;
+                    for (auto &o : out) outs.push_back(view(o.data(), bytes));
+                    auto w = comm.all_gather(aliased ? outs[rank] : view(input.data(), bytes), outs);
+                    w.wait();
+                    expect(!w.has_error(), "ring all_gather: " + w.error());
+                    for (std::size_t q = 0; q < world; ++q)
+                        expect(out[q] == payload(q + 10, bytes), "ring all_gather slot " + std::to_string(q) + " on rank " + std::to_string(rank) + " bytes " + std::to_string(bytes));
+                });
+            }
+        }
+        std::cout << "[PASS] ring all_gather world_size=" << world << ": rank order exact, odd sizes, in-place and out-of-place, arbitrary bytes\n";
+    }
+
+    void test_ring_all_gather_edges_and_overlap(std::size_t world)
+    {
+        ForceEnv env("TBCCL_ALLGATHER_ALGORITHM", "ring");
+        const std::size_t bytes = std::size_t{40} << 20; // far beyond the socket buffers: a send that had to finish before the receive was posted would deadlock the ring
+        run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
+            std::vector<std::uint8_t> in(bytes, static_cast<std::uint8_t>(rank + 1));
+            std::vector<std::vector<std::uint8_t>> out(world, std::vector<std::uint8_t>(bytes, 0));
+            std::vector<BufferView> outs;
+            for (auto &o : out) outs.push_back(view(o.data(), bytes));
+            auto w = comm.all_gather(view(in.data(), bytes), outs);
+            w.wait();
+            expect(!w.has_error(), "large ring all_gather: " + w.error());
+            for (std::size_t q = 0; q < world; ++q) expect(out[q].front() == q + 1 && out[q].back() == q + 1, "large slot " + std::to_string(q));
+            const std::set<std::size_t> want{(rank + 1) % world, (rank + world - 1) % world};
+            expect(peers(comm) == want, "ring all_gather uses only its predecessor and successor edges (rank " + std::to_string(rank) + ")");
+        }, std::chrono::seconds(60));
+        std::cout << "[PASS] ring all_gather world_size=" << world << ": 40 MiB per rank (send/receive overlap), only ring edges\n";
+    }
+
     void test_abort_during_barrier(std::size_t world)
     {
         ForceEnv env("TBCCL_BARRIER_ALGORITHM", "dissemination");
@@ -180,6 +225,11 @@ int main()
         {
             test_tree_broadcast(world);
             test_tree_broadcast_edges(world);
+        }
+        for (std::size_t world : {std::size_t{3}, std::size_t{4}, std::size_t{5}, std::size_t{8}})
+        {
+            test_ring_all_gather(world);
+            if (world <= 5) test_ring_all_gather_edges_and_overlap(world);
         }
         for (std::size_t world : {std::size_t{3}, std::size_t{5}})
         {
