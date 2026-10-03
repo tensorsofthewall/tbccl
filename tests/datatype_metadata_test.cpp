@@ -32,9 +32,6 @@ namespace
     using tbccl::DataType;
     using tbccl::ReduceOp;
 
-    constexpr std::array<DataType, 8> kAllTypes = {
-        DataType::Int32, DataType::Int64, DataType::Float32, DataType::Float64,
-        DataType::Int8, DataType::UInt8, DataType::Float16, DataType::BFloat16};
     constexpr std::array<DataType, 4> kOriginalTypes = {DataType::Int32, DataType::Int64, DataType::Float32, DataType::Float64};
     constexpr std::array<DataType, 4> kNewTypes = {DataType::Int8, DataType::UInt8, DataType::Float16, DataType::BFloat16};
     constexpr std::array<ReduceOp, 4> kAllOps = {ReduceOp::Sum, ReduceOp::Product, ReduceOp::Min, ReduceOp::Max};
