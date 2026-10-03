@@ -35,6 +35,7 @@ add_library(tbccl STATIC
     src/core/types.cpp
     src/core/buffer.cpp
     src/core/communicator.cpp
+    src/core/rank_directory.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -1008,6 +1009,17 @@ if(BUILD_TESTING)
         NAME all_reduce_test
         COMMAND all_reduce_test
     )
+
+    add_executable(rank_directory_test
+        tests/rank_directory_test.cpp
+    )
+    target_link_libraries(rank_directory_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(rank_directory_test PRIVATE /W4)
+    else()
+        target_compile_options(rank_directory_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME rank_directory_test COMMAND rank_directory_test)
 
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp
