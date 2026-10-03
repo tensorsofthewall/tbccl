@@ -16,4 +16,7 @@ std::vector<std::size_t> debug_connected_data_peers(const Communicator &comm);
 // Test hook: the next `count` P2P admissions on this communicator fail as if allocation failed (ErrorCode::ResourceExhausted).
 void debug_fail_next_admissions(const Communicator &comm, int count);
 
+// Test hook: while paused, no peer lane starts a queued P2P transfer (the progress threads idle). Submission must keep working; resuming lets everything run.
+void debug_set_progress_paused(const Communicator &comm, bool paused);
+
 } // namespace tbccl::detail

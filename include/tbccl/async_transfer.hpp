@@ -353,6 +353,11 @@ public:
     // direction keeps its FIFO order on one lane, so a pending send never delays a receive on the same transport and vice versa; with a single
     // direction in flight everything runs on the first lane, as in the single-lane worker.
     // The default (false) keeps the single FIFO lane every pre-Phase-50 user relies on. `queue_depth` applies per lane.
+    // Phase 52: `queue_depth == kUnboundedAdmission (0)` makes enqueue() NEVER wait for capacity: the request joins a growing queue of lightweight
+    // descriptors (FIFO per lane) and the lane's persistent network thread moves it to the bounded active/staging resources when its turn comes. The
+    // Communicator uses this for every peer lane; a non-zero depth keeps the pre-Phase-52 blocking backpressure for standalone users.
+    static constexpr std::size_t kUnboundedAdmission = 0;
+
     explicit TensorCommWorker(
         std::size_t pipeline_depth = 2,
         std::size_t queue_depth = 8,
@@ -368,6 +373,10 @@ public:
     // Transport (done by the owner); it becomes terminal only after the staging/network threads have stopped touching
     // its buffers.
     void abort(const std::string &reason);
+
+    // Test/diagnostic hook (private use): while paused, no lane starts a queued request (the network threads idle); enqueue() still admits. Lets a test
+    // prove that submission does not depend on progress. Resuming wakes the lanes. A paused worker still fails queued requests on abort.
+    void set_progress_paused(bool paused);
 
     // True while a request is queued or being processed.
     bool busy() const;

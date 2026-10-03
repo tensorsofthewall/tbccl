@@ -422,7 +422,7 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
             }
             channel->data = std::make_unique<LazyDataTransport>(std::move(dial));
         }
-        channel->worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, /*queue_depth=*/8, /*duplex=*/true);
+        channel->worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, TensorCommWorker::kUnboundedAdmission, /*duplex=*/true);
         mgr->channels_[peer] = std::move(channel);
     }
     aggregate_negotiation = fold_negotiation(negotiations, negotiated_ranks);
@@ -749,6 +749,12 @@ bool ConnectionManager::data_connected(std::size_t peer) const
     if (!c) return false;
     if (const auto *lazy = dynamic_cast<const LazyDataTransport *>(c->data.get())) return lazy->connected();
     return true;
+}
+
+void ConnectionManager::set_progress_paused(bool paused)
+{
+    for (const auto &c : channels_)
+        if (c && c->worker) c->worker->set_progress_paused(paused);
 }
 
 std::vector<std::size_t> ConnectionManager::connected_data_peers() const

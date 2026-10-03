@@ -484,14 +484,22 @@ struct Communicator::Impl
     std::mutex outstanding_mutex;
     std::vector<std::pair<Work, std::shared_ptr<ExternalMemoryProvider>>> outstanding;
 
+    // Pruning is amortized: completed entries are swept only when the list has doubled since the last sweep, so a burst of N submissions costs O(N)
+    // in total (a sweep per call made it quadratic).
+    std::size_t prune_threshold = 64;
+
     Work track(Work work, std::shared_ptr<ExternalMemoryProvider> provider)
     {
         std::lock_guard<std::mutex> lock(outstanding_mutex);
-        outstanding.erase(
-            std::remove_if(
-                outstanding.begin(), outstanding.end(),
-                [](const auto &entry) { return entry.first.is_completed(); }),
-            outstanding.end());
+        if (outstanding.size() >= prune_threshold)
+        {
+            outstanding.erase(
+                std::remove_if(
+                    outstanding.begin(), outstanding.end(),
+                    [](const auto &entry) { return entry.first.is_completed(); }),
+                outstanding.end());
+            prune_threshold = std::max<std::size_t>(64, outstanding.size() * 2);
+        }
         outstanding.emplace_back(work, std::move(provider));
         return work;
     }
@@ -1041,10 +1049,12 @@ struct CommunicatorAccess
 {
     static std::vector<std::size_t> connected_data_peers(const Communicator &comm) { return comm.impl_->mesh->connected_data_peers(); }
     static void fail_next_admissions(const Communicator &comm, int n) { comm.impl_->debug_fail_admission.store(n); }
+    static void pause_progress(const Communicator &comm, bool paused) { comm.impl_->mesh->set_progress_paused(paused); }
 };
 
 std::vector<std::size_t> debug_connected_data_peers(const Communicator &comm) { return CommunicatorAccess::connected_data_peers(comm); }
 void debug_fail_next_admissions(const Communicator &comm, int count) { CommunicatorAccess::fail_next_admissions(comm, count); }
+void debug_set_progress_paused(const Communicator &comm, bool paused) { CommunicatorAccess::pause_progress(comm, paused); }
 } // namespace detail
 
 } // namespace tbccl
