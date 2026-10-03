@@ -320,9 +320,17 @@ std::unique_ptr<Connection> dial_data_peer(const DialSpec &spec, const std::func
     const auto deadline = Clock::now() + spec.timeout;
     auto connection = connect_with_retry_cancellable(spec.endpoint, deadline, "rank " + std::to_string(spec.peer) + " data endpoint", cancelled);
     registered(connection.get());
-    connection->set_io_timeout(std::max(std::chrono::milliseconds(1), remaining(deadline)));
-    dial_handshake(*connection, spec.hello, spec.peer);
-    connection->set_io_timeout(std::chrono::milliseconds(0));
+    try
+    {
+        connection->set_io_timeout(std::max(std::chrono::milliseconds(1), remaining(deadline)));
+        dial_handshake(*connection, spec.hello, spec.peer);
+        connection->set_io_timeout(std::chrono::milliseconds(0));
+    }
+    catch (...)
+    {
+        registered(nullptr); // unregister (under the caller's lock) before the connection is destroyed, so a concurrent abort never touches it
+        throw;
+    }
     return connection;
 }
 

@@ -129,14 +129,23 @@ namespace
                     std::vector<std::uint8_t> buf(std::size_t{96} << 20, static_cast<std::uint8_t>(rank));
                     std::vector<std::vector<std::uint8_t>> extra;
                     allocated.arrive_and_wait(); // everyone has its buffers: the operation is posted at (about) the same time on every rank
-                    auto w = start(comm, rank, buf, extra);
-                    if (rank == world / 2)
+                    bool failed = false;
+                    try
                     {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(8));
-                        comm.abort("explicit abort during the " + std::string(label));
+                        auto w = start(comm, rank, buf, extra);
+                        if (rank == world / 2)
+                        {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                            comm.abort("explicit abort during the " + std::string(label));
+                        }
+                        w.wait();
+                        failed = w.has_error();
                     }
-                    w.wait();
-                    expect(w.has_error(), "rank " + std::to_string(rank) + ": the Work must fail");
+                    catch (const std::exception &) // a slow rank can see the abort before it even submits (sanitizer builds)
+                    {
+                        failed = true;
+                    }
+                    expect(failed, "rank " + std::to_string(rank) + ": the Work must fail");
                     // buf and extra are destroyed here: TBCCL must not touch them any more
                 }
                 expect(comm.aborted(), "terminal");
