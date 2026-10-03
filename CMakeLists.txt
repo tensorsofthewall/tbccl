@@ -1032,6 +1032,40 @@ if(BUILD_TESTING)
         COMMAND datatype_metadata_test
     )
 
+    add_executable(reduction_low_precision_test
+        tests/reduction_low_precision_test.cpp
+    )
+
+    target_link_libraries(reduction_low_precision_test
+        PRIVATE
+            tbccl
+            Threads::Threads
+    )
+
+    # low_precision.hpp / reduction_internal.hpp / all_reduce_internal.hpp are not part of the public API; this path is private to
+    # this one test target (not installed/exported).
+    target_include_directories(reduction_low_precision_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/collectives
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    if(MSVC)
+        target_compile_options(reduction_low_precision_test PRIVATE /W4)
+    else()
+        target_compile_options(reduction_low_precision_test PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+        )
+    endif()
+
+    add_test(
+        NAME reduction_low_precision_test
+        COMMAND reduction_low_precision_test
+    )
+    set_tests_properties(reduction_low_precision_test PROPERTIES TIMEOUT 300)
+
     add_executable(reduce_scatter_test
         tests/reduce_scatter_test.cpp
     )

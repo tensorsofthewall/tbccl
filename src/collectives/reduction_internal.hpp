@@ -13,6 +13,8 @@
 
 #include <tbccl/reduction.hpp>
 
+#include "low_precision.hpp"
+
 namespace tbccl::detail
 {
 
@@ -35,10 +37,10 @@ void visit_reduction_type(DataType datatype, Fn &&fn)
     case DataType::Int64: fn(TypeTag<std::int64_t>{}); return;
     case DataType::Float32: fn(TypeTag<float>{}); return;
     case DataType::Float64: fn(TypeTag<double>{}); return;
+    case DataType::Float16: fn(TypeTag<lowp::Half>{}); return;
+    case DataType::BFloat16: fn(TypeTag<lowp::BFloat16>{}); return;
     case DataType::Int8:
     case DataType::UInt8:
-    case DataType::Float16:
-    case DataType::BFloat16:
         break;
     }
     throw std::runtime_error("unsupported: no reduction arithmetic for this DataType");

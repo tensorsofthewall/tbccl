@@ -93,6 +93,11 @@ namespace
                 expect(!tbccl::reduction_supported(type, op), "new types support Sum only");
             }
         }
+        for (DataType type : {DataType::Float16, DataType::BFloat16})
+        {
+            expect(tbccl::reduction_supported(type, ReduceOp::Sum), "16-bit floats support Sum");
+            tbccl::validate_reduction(type, ReduceOp::Sum);
+        }
         expect(!tbccl::reduction_supported(static_cast<DataType>(99), ReduceOp::Sum), "unknown dtype is unsupported");
         std::cout << "[PASS] test_support_matrix\n";
     }
@@ -109,7 +114,7 @@ namespace
             threw = true;
             const std::string message = error.what();
             expect(message.rfind("unsupported: reduction dtype=float16 op=product", 0) == 0, "message prefix: " + message);
-            expect(message.find("supported ops for this dtype:") != std::string::npos, "message lists supported ops: " + message);
+            expect(message.find("supported ops for this dtype: sum") != std::string::npos, "message lists supported ops: " + message);
         }
         expect(threw, "float16 + product must be rejected");
         std::cout << "[PASS] test_validation_message\n";

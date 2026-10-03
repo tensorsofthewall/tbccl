@@ -87,11 +87,13 @@ namespace tbccl
         case DataType::Float64:
             return op == ReduceOp::Sum || op == ReduceOp::Product || op == ReduceOp::Min || op == ReduceOp::Max;
 
-        case DataType::Int8:
-        case DataType::UInt8:
         case DataType::Float16:
         case DataType::BFloat16:
-            return false; // enabled together with their arithmetic (Phase 49 follow-up commits)
+            return op == ReduceOp::Sum;
+
+        case DataType::Int8:
+        case DataType::UInt8:
+            return false; // enabled together with their arithmetic (Phase 49 follow-up commit)
         }
         return false;
     }
