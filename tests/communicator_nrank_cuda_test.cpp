@@ -272,6 +272,13 @@ namespace
 
     // The producer of the CUDA rank's operand is a delayed kernel on a NON-BLOCKING stream that the caller never synchronizes: the optimized all_reduce must wait for it through the
     // stream event (no host synchronization before submission, no device-wide synchronization inside), whichever algorithm runs and wherever the CUDA rank sits.
+    // Spin length of the delayed producer kernel; compute-sanitizer runs shrink it (an instrumented spin loop is ~1000x slower).
+    unsigned long long delay_cycles()
+    {
+        const char *v = std::getenv("TBCCL_TEST_DELAY_CYCLES");
+        return v ? std::strtoull(v, nullptr, 10) : 2'000'000ull;
+    }
+
     void test_delayed_producer(const char *algorithm, std::size_t world)
     {
         ForceEnv env("TBCCL_ALLREDUCE_ALGORITHM", algorithm);
@@ -282,7 +289,7 @@ namespace
             cu(cudaMemset(d.p, 0, count * 4), "memset");
             cu(cudaDeviceSynchronize(), "device sync after the setup memset");
             // delayed kernel writes the 32-bit word 7 into every element on its own stream
-            void *producer = tbccl_bench::tensor::cuda_external_test_launch_delayed_write_i32(d.p, count, 7, 2'000'000ull, /*non_blocking=*/true);
+            void *producer = tbccl_bench::tensor::cuda_external_test_launch_delayed_write_i32(d.p, count, 7, delay_cycles(), /*non_blocking=*/true);
             std::vector<std::int32_t> expected(count, 0);
             run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
                 if (rank == cuda_rank)
