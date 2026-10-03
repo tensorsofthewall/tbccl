@@ -443,7 +443,7 @@ void ConnectionManager::start_data_acceptor()
             std::unique_ptr<Connection> connection;
             try
             {
-                connection = data_listener_->accept_for(std::chrono::hours(1));
+                connection = data_listener_->accept_for(std::chrono::milliseconds(25)); // short poll: shutdown must not depend on a wake-up connection succeeding
             }
             catch (const std::exception &)
             {
@@ -491,14 +491,6 @@ void ConnectionManager::stop_watchers()
     closing_.store(true);
     if (data_acceptor_.joinable())
     {
-        try
-        {
-            // wake the acceptor blocked in accept_for(): a throwaway connection to our own listener (it is dropped by the handshake)
-            auto wake = tcp_connect(data_listener_endpoint_.host, data_listener_->local_port(), {});
-        }
-        catch (const std::exception &)
-        {
-        }
         data_acceptor_.join();
     }
     for (const auto &c : channels_)
