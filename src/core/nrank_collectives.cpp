@@ -194,6 +194,29 @@ void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, 
     }
 }
 
+// Ring all-gather (the N>2 collective-selection work): N-1 steps. At step s every rank sends the chunk it received in the previous step (its own at s = 0) to its
+// successor and, AT THE SAME TIME, receives the next chunk from its predecessor: both transfers are posted before either is waited for, on the two independent
+// lanes of two different peers. Output slot q always holds rank q's input whatever the traversal order. Chunks are the per-rank buffers themselves, so any byte
+// count works.
+void ring_all_gather(
+    const CollectiveRun &run, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes)
+{
+    if (bytes == 0 || run.world == 1) return;
+    const std::size_t n = run.world, r = run.rank;
+    if (outputs[r]) copy_through_providers(*in, *outputs[r], bytes);
+    // Where chunk q lives on this rank: its output slot, or (the in-place case) the caller's input buffer.
+    auto backend_of = [&](std::size_t q) -> AsyncMemoryBackend & { return (q == r && !outputs[r]) ? in->primary_backend() : outputs[q]->primary_backend(); };
+    const std::size_t next = ring_next(r, n), prev = ring_prev(r, n);
+    for (std::size_t step = 0; step + 1 < n; ++step)
+    {
+        const std::size_t send_chunk = (r + n - step) % n, recv_chunk = (r + n - step - 1) % n;
+        OpGroup group;
+        post(run, group, next, TransferDirection::Send, backend_of(send_chunk), bytes, "ring all_gather chunk " + std::to_string(send_chunk));
+        post(run, group, prev, TransferDirection::Recv, backend_of(recv_chunk), bytes, "ring all_gather chunk " + std::to_string(recv_chunk));
+        group.wait_all();
+    }
+}
+
 void reference_all_gather(
     const CollectiveRun &run, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes)
 {
@@ -368,6 +391,7 @@ void run_all_gather(
     switch (algorithm)
     {
     case CommAlgorithm::Reference: reference_all_gather(run, in, outputs, bytes); return;
+    case CommAlgorithm::Ring: ring_all_gather(run, in, outputs, bytes); return;
     default: not_implemented("all_gather", algorithm);
     }
 }
