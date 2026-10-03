@@ -28,6 +28,8 @@ std::string error_code_name(ErrorCode code)
     case ErrorCode::Timeout: return "timeout";
     case ErrorCode::DeviceError: return "device_error";
     case ErrorCode::InternalError: return "internal_error";
+    case ErrorCode::Aborted: return "aborted";
+    case ErrorCode::ProtocolMismatch: return "protocol_mismatch";
     }
     throw std::runtime_error("error_code_name: unrecognized ErrorCode");
 }
