@@ -560,6 +560,8 @@ add_executable(communicator_n2_bench benchmarks/communicator_n2_bench.cpp)
 target_link_libraries(communicator_n2_bench PRIVATE tbccl Threads::Threads)
 add_executable(communicator_algo_bench benchmarks/communicator_algo_bench.cpp)
 target_link_libraries(communicator_algo_bench PRIVATE tbccl Threads::Threads)
+add_executable(communicator_posting_probe benchmarks/communicator_posting_probe.cpp)
+target_link_libraries(communicator_posting_probe PRIVATE tbccl Threads::Threads)
 add_executable(communicator_nrank_bench benchmarks/communicator_nrank_bench.cpp)
 target_link_libraries(communicator_nrank_bench PRIVATE tbccl Threads::Threads)
 

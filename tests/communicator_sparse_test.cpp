@@ -6,6 +6,7 @@
 #include "communicator_debug.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <set>
 
@@ -37,6 +38,8 @@ namespace
     // A reference broadcast from rank 0: rank 0 needs an edge to every rank, every other rank only to rank 0.
     void test_edges_follow_the_algorithm(std::size_t world)
     {
+        setenv("TBCCL_BROADCAST_ALGORITHM", "reference", 1); // the default is now the tree; this test is about the reference fan-out's edges
+        struct Restore { ~Restore() { unsetenv("TBCCL_BROADCAST_ALGORITHM"); } } restore;
         run_world(world, [world](std::size_t rank, tbccl::Communicator &comm) {
             std::vector<std::uint8_t> buf(1000, rank == 0 ? 7 : 0);
             auto w = comm.broadcast(view(buf), 0);

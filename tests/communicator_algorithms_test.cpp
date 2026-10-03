@@ -82,9 +82,16 @@ namespace
         const auto t0 = std::chrono::steady_clock::now();
         run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
             std::vector<std::uint8_t> buf(64, 1);
-            tbccl::Work w = rank == odd_rank ? comm.broadcast(view(buf.data(), buf.size()), 0) : comm.barrier();
-            w.wait();
-            expect(w.has_error(), std::string(label) + ": rank " + std::to_string(rank) + " must fail");
+            try
+            {
+                tbccl::Work w = rank == odd_rank ? comm.broadcast(view(buf.data(), buf.size()), 0) : comm.barrier();
+                w.wait();
+                expect(w.has_error(), std::string(label) + ": rank " + std::to_string(rank) + " must fail");
+            }
+            catch (const std::runtime_error &)
+            {
+                // the mismatch was already detected elsewhere before this rank got to submit: the call throws on a terminal communicator
+            }
             expect(comm.failed(), std::string(label) + ": poisoned");
         });
         expect(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(10), std::string(label) + ": no hang");
