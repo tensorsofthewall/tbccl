@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -126,6 +127,61 @@ namespace
             [&](tbccl::Communicator &c) { tbccl::BufferView v{tbccl::MemoryKind::Host, r1.data(), n, -1}; auto w = c.all_reduce(v, v, n, dt, tbccl::ReduceOp::Sum); w.wait(); expect(!w.has_error(), w.error()); });
         for (std::size_t i = 0; i < n; ++i) expect(r0[i] == std::uint8_t(a[i] + b[i]) && r1[i] == r0[i], "8-bit sum mismatch at " + std::to_string(i));
     }
+
+    // The installed headers expose the N-rank API (rank directory, communicator id, pre-bound listeners, barrier). Three ranks on loopback with
+    // kernel-assigned ports; all_reduce Float32 SUM of 1+2+3, plus a rejected Float16 reduction (N>2 semantics are not defined).
+    void three_ranks()
+    {
+        constexpr std::size_t n = 3;
+        const auto id = tbccl::CommunicatorId::generate();
+        std::vector<std::shared_ptr<tbccl::CommunicatorListeners>> listeners(n);
+        tbccl::RankDirectory dir;
+        for (std::size_t r = 0; r < n; ++r)
+        {
+            tbccl::RankEndpoint e;
+            e.rank = r;
+            if (tbccl::rank_accepts_connections(r, n))
+            {
+                listeners[r] = tbccl::CommunicatorListeners::bind("127.0.0.1");
+                e.control = listeners[r]->control();
+                e.data = listeners[r]->data();
+            }
+            dir.entries.push_back(e);
+        }
+        std::vector<std::string> errors(n);
+        std::vector<std::thread> threads;
+        for (std::size_t r = 0; r < n; ++r)
+            threads.emplace_back([&, r] {
+                try
+                {
+                    tbccl::CommunicatorOptions o;
+                    o.rank = r;
+                    o.world_size = n;
+                    o.communicator_id = id;
+                    o.rank_directory = dir;
+                    o.listeners = listeners[r];
+                    auto comm = tbccl::Communicator::create(o);
+                    expect(comm->world_size() == n && comm->capabilities().world_size() == n, "world size 3");
+                    comm->barrier().wait();
+                    std::vector<float> v(64, static_cast<float>(r + 1));
+                    tbccl::BufferView view{tbccl::MemoryKind::Host, v.data(), v.size() * 4, 0};
+                    auto w = comm->all_reduce(view, view, v.size(), tbccl::DataType::Float32, tbccl::ReduceOp::Sum);
+                    w.wait();
+                    expect(!w.has_error() && v[0] == 6.0f && v[63] == 6.0f, "3-rank all_reduce");
+                    bool rejected = false;
+                    try { comm->all_reduce(view, view, 32, tbccl::DataType::Float16, tbccl::ReduceOp::Sum); }
+                    catch (const std::runtime_error &e) { rejected = std::string(e.what()).find("N>2") != std::string::npos; }
+                    expect(rejected, "Float16 N>2 rejected");
+                    comm->barrier().wait();
+                }
+                catch (const std::exception &e)
+                {
+                    errors[r] = e.what();
+                }
+            });
+        for (auto &t : threads) t.join();
+        for (std::size_t r = 0; r < n; ++r) expect(errors[r].empty(), "rank " + std::to_string(r) + ": " + errors[r]);
+    }
 } // namespace
 
 int main()
@@ -141,6 +197,7 @@ int main()
         try { tbccl::validate_reduction(tbccl::DataType::Float16, tbccl::ReduceOp::Product); } catch (const std::runtime_error &e) { rejected = std::string(e.what()).rfind("unsupported:", 0) == 0; }
         expect(rejected, "validate_reduction message");
 
+        three_ranks();
         std::uint16_t port = 29270;
         sum16(tbccl::DataType::BFloat16, false, port); port += 2;
         sum16(tbccl::DataType::Float16, false, port); port += 2;
