@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
     tbccl
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Thunderbolt Collective Communication Library"
     LANGUAGES CXX
 )
@@ -2071,7 +2071,7 @@ install(EXPORT TBCCLTargets
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/TBCCLConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMinorVersion
+    COMPATIBILITY SameMajorVersion
 )
 
 configure_package_config_file(

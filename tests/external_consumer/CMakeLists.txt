@@ -4,7 +4,9 @@ project(tbccl_external_consumer CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(TBCCL CONFIG REQUIRED)
+# Phase 50: the package uses SameMajorVersion, so a consumer written against an older 0.x release (default 0.1) keeps finding a newer 0.y install.
+set(TBCCL_REQUIRED_VERSION 0.1 CACHE STRING "minimum TBCCL version this consumer asks for")
+find_package(TBCCL ${TBCCL_REQUIRED_VERSION} CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 add_executable(consumer main.cpp)
