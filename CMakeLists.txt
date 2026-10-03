@@ -1097,7 +1097,7 @@ if(BUILD_TESTING)
         target_compile_options(communicator_nrank_failure_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME communicator_nrank_failure_test COMMAND communicator_nrank_failure_test)
-    set_tests_properties(communicator_nrank_failure_test PROPERTIES TIMEOUT 320)
+    set_tests_properties(communicator_nrank_failure_test PROPERTIES TIMEOUT 320 ENVIRONMENT "TSAN_OPTIONS=die_after_fork=0")
     list(APPEND tbccl_dynamic_port_tests communicator_nrank_failure_test)
 
     add_executable(collective_protocol_test
@@ -1796,6 +1796,14 @@ if(BUILD_TESTING)
         target_link_libraries(communicator_collectives_cuda_test PRIVATE tbccl_tensor_backend CUDA::cudart Threads::Threads)
         add_test(NAME communicator_collectives_cuda_test COMMAND communicator_collectives_cuda_test)
         set_tests_properties(communicator_collectives_cuda_test PROPERTIES TIMEOUT 120)
+
+        add_executable(communicator_nrank_cuda_test
+            tests/communicator_nrank_cuda_test.cpp
+        )
+        target_link_libraries(communicator_nrank_cuda_test PRIVATE tbccl_tensor_backend tbccl CUDA::cudart Threads::Threads)
+        add_test(NAME communicator_nrank_cuda_test COMMAND communicator_nrank_cuda_test)
+        set_tests_properties(communicator_nrank_cuda_test PROPERTIES TIMEOUT 300)
+        list(APPEND tbccl_dynamic_port_tests communicator_nrank_cuda_test)
 
         add_executable(reduction_low_precision_cuda_test
             tests/reduction_low_precision_cuda_test.cpp
