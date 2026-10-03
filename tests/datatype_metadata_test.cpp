@@ -93,9 +93,9 @@ namespace
                 expect(!tbccl::reduction_supported(type, op), "new types support Sum only");
             }
         }
-        for (DataType type : {DataType::Float16, DataType::BFloat16})
+        for (DataType type : kNewTypes)
         {
-            expect(tbccl::reduction_supported(type, ReduceOp::Sum), "16-bit floats support Sum");
+            expect(tbccl::reduction_supported(type, ReduceOp::Sum), "every Phase 49 type supports Sum");
             tbccl::validate_reduction(type, ReduceOp::Sum);
         }
         expect(!tbccl::reduction_supported(static_cast<DataType>(99), ReduceOp::Sum), "unknown dtype is unsupported");

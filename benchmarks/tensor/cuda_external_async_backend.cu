@@ -357,6 +357,8 @@ void CudaExternalReduceBackend::reduce_sum(std::size_t count, tbccl::DataType da
     case tbccl::DataType::Float64: launch_sum<double>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::Int32: launch_sum<std::int32_t>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::Int64: launch_sum<std::int64_t>(local_and_output_, peer_, count, stream); break;
+    case tbccl::DataType::Int8: launch_sum<std::int8_t>(local_and_output_, peer_, count, stream); break;
+    case tbccl::DataType::UInt8: launch_sum<std::uint8_t>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::Float16: launch_sum<__half>(local_and_output_, peer_, count, stream); break;
     case tbccl::DataType::BFloat16: launch_sum<__nv_bfloat16>(local_and_output_, peer_, count, stream); break;
     default:

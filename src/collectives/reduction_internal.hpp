@@ -39,9 +39,8 @@ void visit_reduction_type(DataType datatype, Fn &&fn)
     case DataType::Float64: fn(TypeTag<double>{}); return;
     case DataType::Float16: fn(TypeTag<lowp::Half>{}); return;
     case DataType::BFloat16: fn(TypeTag<lowp::BFloat16>{}); return;
-    case DataType::Int8:
-    case DataType::UInt8:
-        break;
+    case DataType::Int8: fn(TypeTag<std::int8_t>{}); return;
+    case DataType::UInt8: fn(TypeTag<std::uint8_t>{}); return;
     }
     throw std::runtime_error("unsupported: no reduction arithmetic for this DataType");
 }
@@ -51,6 +50,18 @@ namespace reduction_detail
 
     template <typename T>
     struct UnsignedOf;
+
+    template <>
+    struct UnsignedOf<std::int8_t>
+    {
+        using type = std::uint8_t;
+    };
+
+    template <>
+    struct UnsignedOf<std::uint8_t>
+    {
+        using type = std::uint8_t;
+    };
 
     template <>
     struct UnsignedOf<std::int32_t>
@@ -71,14 +82,17 @@ namespace reduction_detail
     T wrapping_add(T a, T b)
     {
         using U = typename UnsignedOf<T>::type;
-        return static_cast<T>(static_cast<U>(a) + static_cast<U>(b));
+        // The inner cast narrows the (possibly int-promoted, for 8-bit operands) sum back to U, which is modulo 2^N by definition.
+        return static_cast<T>(static_cast<U>(static_cast<U>(a) + static_cast<U>(b)));
     }
 
     template <typename T>
     T wrapping_mul(T a, T b)
     {
         using U = typename UnsignedOf<T>::type;
-        return static_cast<T>(static_cast<U>(a) * static_cast<U>(b));
+        // Unsigned 8-bit operands promote to int; multiply through a wide enough unsigned type so the product can never overflow int.
+        using W = std::conditional_t<(sizeof(U) < sizeof(unsigned)), unsigned, U>;
+        return static_cast<T>(static_cast<U>(static_cast<W>(a) * static_cast<W>(b)));
     }
 
 } // namespace reduction_detail
