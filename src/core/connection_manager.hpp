@@ -24,8 +24,11 @@
 #include <tbccl/tcp.hpp>
 #include <tbccl/transport.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <functional>
+#include <mutex>
+#include <thread>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,7 +44,16 @@ struct PeerChannel
     std::unique_ptr<TcpTransport> data;
     std::unique_ptr<TensorCommWorker> worker;
     PeerCapabilities capabilities;
+
+    // Control-channel state. The watcher thread is the only reader of `control`; writers (Abort / Goodbye frames) take the mutex.
+    std::mutex control_send_mutex;
+    std::thread watcher;
+    std::atomic<bool> departed{false}; // the peer said Goodbye: a later EOF on its sockets is not a failure
 };
+
+// What a control-channel watcher reports to the Communicator. `origin` is the rank that first aborted (the peer itself, or a rank
+// the peer is relaying for); `peer_lost` means the control connection broke without a Goodbye or an Abort frame.
+using PeerEventHandler = std::function<void(std::size_t peer, std::size_t origin, const std::string &reason, bool peer_lost)>;
 
 class ConnectionManager
 {
@@ -76,10 +88,21 @@ public:
     // Interrupts every data transport (a blocked send/recv unwinds) and fails every queued request. Idempotent.
     void abort_transfers(const std::string &reason);
 
+    // One persistent thread per peer reads that peer's control connection. An Abort frame or a control connection that breaks
+    // without a Goodbye is reported through `handler` (from the watcher thread; it must not block). Call once, after bootstrap.
+    void start_watchers(PeerEventHandler handler);
+    // Stops and joins every watcher thread (idempotent). The Communicator calls it before any of its own state is destroyed, because
+    // a watcher calls back into that state.
+    void stop_watchers();
+    // Best effort, never blocks on a dead peer: tells every peer this rank is aborting (`origin` = the rank that first aborted).
+    void broadcast_abort(std::size_t origin, const std::string &reason);
+    // Best effort: tells every peer this rank is leaving cleanly, so the sockets closing afterwards is not reported as a failure.
+    void goodbye();
+
 private:
     ConnectionManager() = default;
-
     std::size_t rank_ = 0;
+    std::atomic<bool> closing_{false};
     std::vector<std::unique_ptr<PeerChannel>> channels_;
 };
 

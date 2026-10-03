@@ -264,13 +264,16 @@ void test_peer_death_and_remote_abort_observed()
         try { ar(*p.c0, a); } catch (const std::exception &) { threw = true; }
         expect(threw, "later submission rejected");
     }
-    { // remote abort: peer sees the connection terminate when it next does I/O and poisons itself
+    { // remote abort (Phase 50): the abort frame reaches the peer's control watcher, which poisons it without any I/O of its own
         Pair p; healthy_allreduce(p);
         p.c0->abort("remote");
+        bounded("remote-abort propagation", milliseconds(5000), [&] { while (!p.c1->aborted()) std::this_thread::sleep_for(milliseconds(2)); return 0; });
+        expect(p.c1->abort_reason().find("rank 0 aborted") != std::string::npos && p.c1->abort_reason().find("remote") != std::string::npos,
+               "the peer's reason names the originating rank and its reason: " + p.c1->abort_reason());
         std::vector<float> b(1024, 1);
-        Work w = ar(*p.c1, b);
-        bounded("remote-abort observation", milliseconds(5000), [&] { w.wait(); return 0; });
-        expect(w.has_error() && p.c1->aborted(), "peer observed termination and poisoned itself: " + w.error());
+        bool threw = false;
+        try { ar(*p.c1, b); } catch (const std::exception &e) { threw = std::string(e.what()).find("abort") != std::string::npos; }
+        expect(threw, "the poisoned peer rejects new operations");
     }
 }
 

@@ -247,7 +247,97 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
     return mgr;
 }
 
-ConnectionManager::~ConnectionManager() = default;
+ConnectionManager::~ConnectionManager()
+{
+    stop_watchers();
+}
+
+void ConnectionManager::stop_watchers()
+{
+    closing_.store(true);
+    for (const auto &c : channels_)
+    {
+        if (c && c->control) c->control->abort("communicator closing"); // shutdown(): wakes the watcher blocked in recv
+    }
+    for (const auto &c : channels_)
+    {
+        if (c && c->watcher.joinable()) c->watcher.join();
+    }
+}
+
+void ConnectionManager::start_watchers(PeerEventHandler handler)
+{
+    for (const auto &c : channels_)
+    {
+        if (!c) continue;
+        PeerChannel *channel = c.get();
+        channel->watcher = std::thread([this, channel, handler] {
+            try
+            {
+                for (;;)
+                {
+                    const ControlFrame frame = recv_control_frame(*channel->control);
+                    if (frame.type == ControlFrameType::Goodbye)
+                    {
+                        channel->departed.store(true);
+                        return;
+                    }
+                    if (frame.type == ControlFrameType::Abort)
+                    {
+                        handler(channel->peer_rank, frame.origin_rank, frame.reason, /*peer_lost=*/false);
+                        return;
+                    }
+                    // Unknown frame types are ignored: a newer peer may add some.
+                }
+            }
+            catch (const std::exception &e)
+            {
+                if (closing_.load() || channel->departed.load()) return;
+                handler(channel->peer_rank, channel->peer_rank, e.what(), /*peer_lost=*/true);
+            }
+        });
+    }
+}
+
+void ConnectionManager::broadcast_abort(std::size_t origin, const std::string &reason)
+{
+    for (const auto &c : channels_)
+    {
+        if (!c) continue;
+        try
+        {
+            std::lock_guard<std::mutex> lock(c->control_send_mutex);
+            ControlFrame frame;
+            frame.type = ControlFrameType::Abort;
+            frame.origin_rank = static_cast<std::uint32_t>(origin);
+            frame.reason = reason;
+            send_control_frame(*c->control, frame);
+        }
+        catch (const std::exception &)
+        {
+            // The peer is gone or unreachable: nothing more to tell it.
+        }
+    }
+}
+
+void ConnectionManager::goodbye()
+{
+    for (const auto &c : channels_)
+    {
+        if (!c) continue;
+        try
+        {
+            std::lock_guard<std::mutex> lock(c->control_send_mutex);
+            ControlFrame frame;
+            frame.type = ControlFrameType::Goodbye;
+            frame.origin_rank = static_cast<std::uint32_t>(rank_);
+            send_control_frame(*c->control, frame);
+        }
+        catch (const std::exception &)
+        {
+        }
+    }
+}
 
 PeerChannel &ConnectionManager::channel(std::size_t peer)
 {
