@@ -6,6 +6,7 @@
 #include <tbccl/tcp_world.hpp>
 #include <tbccl/transport.hpp>
 
+#include "bootstrap_config.hpp"
 #include "reduction_internal.hpp"
 
 #include <algorithm>
@@ -524,40 +525,37 @@ std::string Communicator::abort_reason() const
 
 std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
 {
-    if (options.peers.size() != 2)
+    const detail::ResolvedBootstrap boot = detail::resolve_bootstrap(options);
+    if (boot.world_size != 2)
     {
         throw std::runtime_error(
-            "unsupported: Communicator::create() requires exactly 2 peers this phase (world_size=" +
-            std::to_string(options.peers.size()) + "); see docs/framework_integration_architecture.md");
-    }
-    if (options.rank >= options.peers.size())
-    {
-        throw std::runtime_error("invalid_argument: options.rank out of range for peers.size()");
+            "unsupported: Communicator::create() supports exactly 2 ranks until the multi-peer runtime lands (world_size=" +
+            std::to_string(boot.world_size) + ")");
     }
 
     auto comm = std::unique_ptr<Communicator>(new Communicator());
     auto &impl = *comm->impl_;
-    impl.rank = options.rank;
-    impl.world_size = options.peers.size();
-    impl.other_peer = 1 - options.rank;
+    impl.rank = boot.rank;
+    impl.world_size = boot.world_size;
+    impl.other_peer = 1 - boot.rank;
 
     // Readiness barrier via TcpWorld, then a separate data-path
     // connection -- the exact pattern established in Phase 38 to avoid
     // the sleep-based startup race, reused unchanged for every benchmark
     // since (tbccl_hetero_allreduce_bench.cpp, tbccl_bucketed_allreduce_bench.cpp).
     TcpWorldOptions world_opts;
-    world_opts.rank = options.rank;
+    world_opts.rank = boot.rank;
     world_opts.bootstrap_timeout = options.bootstrap_timeout;
-    for (const auto &p : options.peers) world_opts.peers.push_back({p.host, p.port});
+    for (const auto &entry : boot.directory.entries) world_opts.peers.push_back({entry.control.host, entry.control.port});
     auto world = create_tcp_world(world_opts);
 
     std::unique_ptr<Connection> connection;
     std::unique_ptr<Listener> listener;
-    const auto data_port = static_cast<std::uint16_t>(options.peers[0].port + 1000);
-    if (options.rank == 0) listener = tcp_listen(options.peers[0].host, data_port, {});
+    const Endpoint &data = boot.directory.entries[0].data;
+    if (boot.rank == 0) listener = tcp_listen(data.host, data.port, {});
     barrier(*world);
-    if (options.rank == 0) connection = listener->accept();
-    else connection = tcp_connect(options.peers[0].host, data_port, {});
+    if (boot.rank == 0) connection = listener->accept();
+    else connection = tcp_connect(data.host, data.port, {});
 
     impl.caps.local_ = local_capabilities();
     impl.caps.remote_ = exchange_capabilities(*connection, impl.caps.local_);
