@@ -74,7 +74,7 @@ typedef struct tbcclBuffer_st {            /* sizeof 48 on LP64 */
     uint64_t reserved1[2];                 /* must be 0 */
 } tbcclBuffer;
 
-typedef struct tbcclExecContext_st {       /* sizeof 32 on LP64 */
+typedef struct tbcclExecContext_st {       /* sizeof 24 on LP64 */
     uint32_t struct_size;
     tbcclExecKind_t kind;
     void    *native_handle;
