@@ -14,6 +14,7 @@
 #include <cuda_runtime.h>
 #endif
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -26,8 +27,9 @@
 namespace
 {
 
-    std::uint64_t g_checks = 0;       // number of byte-exactness assertions evaluated
-    std::uint64_t g_bytes_checked = 0; // total payload bytes those assertions covered
+    // expect() is called from both rank threads, so the counters are atomic.
+    std::atomic<std::uint64_t> g_checks{0};        // number of byte-exactness assertions evaluated
+    std::atomic<std::uint64_t> g_bytes_checked{0}; // total payload bytes those assertions covered
 
     void expect(bool condition, const std::string &message)
     {
@@ -331,6 +333,6 @@ int main()
         std::cerr << "[FAIL] " << error.what() << "\n";
         return 1;
     }
-    std::cout << "All byte transport format tests passed (" << g_checks << " assertions, " << g_bytes_checked << " payload bytes compared).\n";
+    std::cout << "All byte transport format tests passed (" << g_checks.load() << " assertions, " << g_bytes_checked.load() << " payload bytes compared).\n";
     return 0;
 }
