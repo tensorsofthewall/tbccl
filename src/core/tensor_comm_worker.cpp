@@ -458,17 +458,20 @@ struct TensorCommWorker::Impl
     std::thread staging_thread;
     std::thread network_thread;
 
-    bool staging_thread_created = false;
+    // Phase 50: the staging thread is created on the first request that needs the staged path (never for a Host-only
+    // communicator, which is always direct), so an N-rank communicator with two lanes per peer does not pay for threads
+    // it never uses. Only the network thread creates it, and ~Impl reads it after joining the network thread.
+    const bool staging_allowed = !no_staging_thread_enabled();
+
+    void ensure_staging_thread()
+    {
+        if (!staging_thread.joinable()) staging_thread = std::thread([this]() { staging_loop(); });
+    }
 
     Impl(std::size_t pipeline_depth_, std::size_t queue_depth_)
         : pipeline_depth(std::max<std::size_t>(1, pipeline_depth_)),
           queue_depth(std::max<std::size_t>(1, queue_depth_))
     {
-        if (!no_staging_thread_enabled())
-        {
-            staging_thread = std::thread([this]() { staging_loop(); });
-            staging_thread_created = true;
-        }
         network_thread = std::thread([this]() { network_loop(); });
     }
 
@@ -701,7 +704,7 @@ struct TensorCommWorker::Impl
             return;
         }
 
-        if (!staging_thread_created)
+        if (!staging_allowed)
         {
             // Safety net: TBCCL_ASYNC_NO_STAGING_THREAD was set but this
             // request needs the staged path, which would otherwise
@@ -743,6 +746,7 @@ struct TensorCommWorker::Impl
             }
             StagingPool &pool = *cached_pool;
             ChunkProgress progress(chunks.size());
+            ensure_staging_thread();
 
             if (request.direction == TransferDirection::Send)
             {
@@ -803,8 +807,9 @@ struct TensorCommWorker::Impl
 // TensorCommWorker
 // ---------------------------------------------------------------------
 
-TensorCommWorker::TensorCommWorker(std::size_t pipeline_depth, std::size_t queue_depth)
-    : impl_(std::make_unique<Impl>(pipeline_depth, queue_depth))
+TensorCommWorker::TensorCommWorker(std::size_t pipeline_depth, std::size_t queue_depth, bool duplex)
+    : impl_(std::make_unique<Impl>(pipeline_depth, queue_depth)),
+      recv_impl_(duplex ? std::make_unique<Impl>(pipeline_depth, queue_depth) : nullptr)
 {
 }
 
@@ -812,6 +817,7 @@ TensorCommWorker::~TensorCommWorker() = default;
 
 TransferWork TensorCommWorker::enqueue(TransferRequest request)
 {
+    Impl &lane = (recv_impl_ && request.direction == TransferDirection::Recv) ? *recv_impl_ : *impl_;
     TransferWork work;
 
     if (timing_enabled())
@@ -821,26 +827,26 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
     }
 
     {
-        std::unique_lock<std::mutex> lock(impl_->queue_mutex);
-        impl_->queue_cv.wait(
+        std::unique_lock<std::mutex> lock(lane.queue_mutex);
+        lane.queue_cv.wait(
             lock,
-            [&]() { return impl_->aborted.load() || impl_->queue.size() < impl_->queue_depth; });
-        if (impl_->aborted.load())
+            [&]() { return lane.aborted.load() || lane.queue.size() < lane.queue_depth; });
+        if (lane.aborted.load())
         {
             throw std::runtime_error(
                 "aborted: communicator aborted" +
-                (impl_->abort_reason.empty() ? "" : " (" + impl_->abort_reason + ")"));
+                (lane.abort_reason.empty() ? "" : " (" + lane.abort_reason + ")"));
         }
 
-        impl_->queue.emplace_back(std::move(request), work.state_);
+        lane.queue.emplace_back(std::move(request), work.state_);
     }
 
     {
-        std::lock_guard<std::mutex> lock(impl_->stats_mutex);
-        ++impl_->stats.submitted;
+        std::lock_guard<std::mutex> lock(lane.stats_mutex);
+        ++lane.stats.submitted;
     }
 
-    impl_->queue_cv.notify_all();
+    lane.queue_cv.notify_all();
 
     return work;
 }
@@ -848,29 +854,48 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
 void TensorCommWorker::abort(const std::string &reason)
 {
     impl_->request_abort(reason);
+    if (recv_impl_) recv_impl_->request_abort(reason);
 }
 
 bool TensorCommWorker::busy() const
 {
-    std::lock_guard<std::mutex> lock(impl_->queue_mutex);
-    return impl_->active || !impl_->queue.empty();
+    for (Impl *lane : {impl_.get(), recv_impl_.get()})
+    {
+        if (lane == nullptr) continue;
+        std::lock_guard<std::mutex> lock(lane->queue_mutex);
+        if (lane->active || !lane->queue.empty()) return true;
+    }
+    return false;
 }
 
 void TensorCommWorker::wait_idle()
 {
-    std::unique_lock<std::mutex> lock(impl_->queue_mutex);
-    impl_->queue_cv.wait(lock, [&]() { return !impl_->active && impl_->queue.empty(); });
+    for (Impl *lane : {impl_.get(), recv_impl_.get()})
+    {
+        if (lane == nullptr) continue;
+        std::unique_lock<std::mutex> lock(lane->queue_mutex);
+        lane->queue_cv.wait(lock, [&]() { return !lane->active && lane->queue.empty(); });
+    }
 }
 
 void TensorCommWorker::set_fatal_handler(std::function<void(const std::string &)> handler)
 {
+    if (recv_impl_) recv_impl_->on_fatal = handler;
     impl_->on_fatal = std::move(handler);
 }
 
 TensorCommWorker::Stats TensorCommWorker::stats() const
 {
-    std::lock_guard<std::mutex> lock(impl_->stats_mutex);
-    return impl_->stats;
+    Stats total;
+    for (Impl *lane : {impl_.get(), recv_impl_.get()})
+    {
+        if (lane == nullptr) continue;
+        std::lock_guard<std::mutex> lock(lane->stats_mutex);
+        total.submitted += lane->stats.submitted;
+        total.completed += lane->stats.completed;
+        total.failed += lane->stats.failed;
+    }
+    return total;
 }
 
 } // namespace tbccl

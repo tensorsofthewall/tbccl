@@ -35,6 +35,13 @@
 namespace tbccl
 {
 
+namespace detail
+{
+struct ListenersAccess;
+} // namespace detail
+
+class CommunicatorListeners;
+
 // ---------------------------------------------------------------------
 // Memory provider extension point (Part D/I/N)
 // ---------------------------------------------------------------------
@@ -141,8 +148,36 @@ struct CommunicatorOptions
     // Legacy world_size 1 or 2 form; see above.
     std::vector<CommunicatorPeerEndpoint> peers;
 
+    // Optional pre-bound listeners (see CommunicatorListeners). When set, the rank's own directory entry may carry zero
+    // ports: the actual bound endpoints are used. Not used by a rank that does not accept connections.
+    std::shared_ptr<CommunicatorListeners> listeners;
+
     // Bounds the whole bootstrap (connect, accept, handshakes, capability exchange).
     std::chrono::milliseconds bootstrap_timeout{10000};
+};
+
+// Phase 50: control and data listeners bound ahead of Communicator::create(), so a rank can learn its ACTUAL ports (bind with
+// port 0), publish them through whatever bootstrap it uses, collect the other ranks' endpoints, and only then create the
+// communicator. Pass it as CommunicatorOptions::listeners; create() uses it instead of binding the directory entry
+// and consumes it. Only a rank that accepts connections (rank_accepts_connections()) needs one.
+class CommunicatorListeners
+{
+public:
+    // Binds a control and a data listener on `host`; a port of 0 asks the kernel for a free one. Throws on bind failure.
+    static std::unique_ptr<CommunicatorListeners> bind(const std::string &host, std::uint16_t control_port = 0, std::uint16_t data_port = 0);
+    ~CommunicatorListeners();
+    CommunicatorListeners(const CommunicatorListeners &) = delete;
+    CommunicatorListeners &operator=(const CommunicatorListeners &) = delete;
+
+    // The endpoints actually bound.
+    Endpoint control() const;
+    Endpoint data() const;
+
+private:
+    CommunicatorListeners();
+    friend struct detail::ListenersAccess;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 // ---------------------------------------------------------------------
@@ -163,15 +198,23 @@ public:
     bool supports_collective_all_gather(MemoryKind kind) const noexcept;
     std::size_t effective_max_chunk() const noexcept { return negotiation_.effective_max_chunk; }
     std::size_t effective_alignment() const noexcept { return negotiation_.effective_alignment; }
+    // For world_size > 2 this is the fold over every peer: common memory backends intersected, smallest non-zero chunk, largest alignment.
     const NegotiationResult &negotiation() const noexcept { return negotiation_; }
     const PeerCapabilities &local() const noexcept { return local_; }
+    // The single peer's capabilities when world_size == 2 (the lowest other rank otherwise; the local capabilities when
+    // world_size == 1). Prefer for_rank() in code that handles more than two ranks.
     const PeerCapabilities &remote() const noexcept { return remote_; }
+    // Phase 50: the capabilities advertised by `rank` during the handshake (this rank's own for its own index). Heterogeneous
+    // worlds keep per-rank information; nothing is collapsed to one boolean. Throws std::out_of_range for rank >= world_size.
+    const PeerCapabilities &for_rank(std::size_t rank) const { return rank_capabilities_.at(rank); }
+    std::size_t world_size() const noexcept { return rank_capabilities_.size(); }
 
 private:
     friend class Communicator;
     NegotiationResult negotiation_;
     PeerCapabilities local_;
     PeerCapabilities remote_;
+    std::vector<PeerCapabilities> rank_capabilities_;
 };
 
 // ---------------------------------------------------------------------
