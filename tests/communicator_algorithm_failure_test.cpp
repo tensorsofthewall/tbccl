@@ -144,27 +144,25 @@ namespace
                     std::vector<std::vector<std::uint8_t>> extra;
                     allocated.arrive_and_wait(); // everyone has its buffers: the operation is posted at (about) the same time on every rank
                     bool failed = false;
-                    try
+                    const auto loop_start = Clock::now();
+                    // Repeat until the abort is noticed: a fast machine can finish one pass before the abort lands (no hard-coded duration assumption).
+                    for (bool first = true; !failed && since(loop_start) < 20; first = false)
                     {
-                        auto w = start(comm, rank, buf, extra);
-                        if (rank == world / 2)
+                        try
                         {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(8));
-                            comm.abort("explicit abort during the " + std::string(label));
+                            auto w = start(comm, rank, buf, extra);
+                            if (rank == world / 2 && first)
+                            {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                                comm.abort("explicit abort during the " + std::string(label));
+                            }
+                            w.wait();
+                            failed = w.has_error();
                         }
-                        w.wait();
-                        failed = w.has_error();
-                        // A tree-broadcast root can legitimately finish (its sends are delivered) before the abort arrives; its communicator must still become terminal.
-                        if (!failed && std::string(label).find("broadcast") != std::string::npos)
+                        catch (const std::exception &) // submission on an already-terminal communicator
                         {
-                            const auto w0 = Clock::now();
-                            while (!comm.aborted() && since(w0) < 8) std::this_thread::sleep_for(std::chrono::milliseconds(2));
-                            failed = comm.aborted();
+                            failed = true;
                         }
-                    }
-                    catch (const std::exception &) // a slow rank can see the abort before it even submits (sanitizer builds)
-                    {
-                        failed = true;
                     }
                     expect(failed, "rank " + std::to_string(rank) + ": the Work must fail");
                     // buf and extra are destroyed here: TBCCL must not touch them any more
