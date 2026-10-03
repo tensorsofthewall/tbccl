@@ -4,12 +4,15 @@ project(
     tbccl
     VERSION 0.4.0
     DESCRIPTION "Thunderbolt Collective Communication Library"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
@@ -186,6 +189,52 @@ endif()
 
 if(TBCCL_ENABLE_METAL)
     target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/metal_backend.mm)
+endif()
+
+# ---------------------------------------------------------------------------
+# Phase 52: the stable C ABI shim (docs/c_abi_v1.md). include/tbccl/tbccl.h plus the symbols of TBCCL::tbccl_c are the ABI; TBCCL::tbccl stays the C++
+# target. The shim is written in C++ internally, wraps the final asynchronous runtime and reimplements nothing. A host-only build and a CUDA build export
+# the SAME symbol set (tbcclRegisterCudaSupport exists in both; the host-only one returns TBCCL_UNSUPPORTED).
+# ---------------------------------------------------------------------------
+add_library(tbccl_c STATIC
+    src/c_api/c_core.cpp
+    src/c_api/c_work.cpp
+    src/c_api/c_bootstrap.cpp
+    src/c_api/c_ops.cpp
+)
+set_target_properties(tbccl_c PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(tbccl_c
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/c_api
+)
+target_link_libraries(tbccl_c PUBLIC tbccl Threads::Threads)
+target_compile_definitions(tbccl_c PRIVATE
+    TBCCL_PACKAGE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    TBCCL_PACKAGE_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    TBCCL_PACKAGE_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+)
+if(MSVC)
+    target_compile_options(tbccl_c PRIVATE /W4)
+else()
+    target_compile_options(tbccl_c PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+# A pure C consumer links this static library without CMake knowing it contains C++: carry the C++ runtime in the exported link interface (libstdc++ on
+# GNU/Linux, libc++ on macOS) so no consumer ever guesses -lstdc++ / -lc++.
+set(TBCCL_CXX_RUNTIME_LIBS "")
+foreach(_lib IN LISTS CMAKE_CXX_IMPLICIT_LINK_LIBRARIES)
+    if(_lib MATCHES "^(stdc\\+\\+|c\\+\\+|c\\+\\+abi|supc\\+\\+)$")
+        list(APPEND TBCCL_CXX_RUNTIME_LIBS ${_lib})
+    endif()
+endforeach()
+if(TBCCL_CXX_RUNTIME_LIBS)
+    target_link_libraries(tbccl_c INTERFACE ${TBCCL_CXX_RUNTIME_LIBS})
+endif()
+if(TBCCL_ENABLE_CUDA)
+    target_compile_definitions(tbccl_c PRIVATE TBCCL_C_WITH_CUDA)
+    target_link_libraries(tbccl_c PUBLIC tbccl_cuda)
 endif()
 
 # benchmarks/ (not benchmarks/tensor/) is the public include root, so
@@ -2170,7 +2219,18 @@ endif()
 
 install(DIRECTORY include/tbccl
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp"
+    FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
+)
+
+# Phase 52: the C ABI shim (TBCCL::tbccl_c), exported separately so it may depend on the optional CUDA component's export.
+install(TARGETS tbccl_c
+    EXPORT TBCCLCTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(EXPORT TBCCLCTargets
+    FILE TBCCLCTargets.cmake
+    NAMESPACE TBCCL::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TBCCL
 )
 
 install(EXPORT TBCCLTargets
