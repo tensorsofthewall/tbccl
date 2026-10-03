@@ -21,7 +21,7 @@ static double us_since(Clock::time_point t) { return std::chrono::duration<doubl
 int main(int argc, char **argv)
 {
     const int iters = argc > 1 ? std::atoi(argv[1]) : 300;
-    for (std::size_t world = 2; world <= 4; ++world)
+    for (std::size_t world : {std::size_t{2}, std::size_t{3}, std::size_t{4}, std::size_t{8}})
     {
         std::vector<std::shared_ptr<CommunicatorListeners>> ls(world);
         RankDirectory dir;
@@ -84,7 +84,8 @@ int main(int argc, char **argv)
             });
         }
         std::vector<std::vector<float>> gathered(world);
-        run("all_gather", 4096, [&](std::size_t r, std::vector<float> &b) {
+        for (std::size_t ag_bytes : {std::size_t{4096}, std::size_t{1048576}})
+        run("all_gather", ag_bytes, [&](std::size_t r, std::vector<float> &b) {
             static thread_local std::vector<std::vector<float>> out;
             out.assign(world, std::vector<float>(b.size()));
             std::vector<BufferView> outs;
