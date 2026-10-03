@@ -80,6 +80,15 @@ The C++ API reports failures as `std::runtime_error` with a tagged message (`"<t
 * exceptions as the only error channel: every C entry point must catch everything and return a code.
 * `Work::wait()` blocking forever: the C API should add a timed wait.
 
+## 6b. Phase 51 re-check
+
+* Collective algorithms (tree, ring, recursive doubling, dissemination), the planner and lazy data connections are **internal**: no C type, call or error code depends on them. The only caller-visible effects are performance and the float-reduction contract (`numerical_reduction_semantics.md`: results identical on every rank, deterministic per version/algorithm/N, not bit-equal across algorithms).
+* Bootstrap is unchanged (`RankDirectory`, `CommunicatorId`, explicit control/data endpoints); wire protocol version is 3 and must be checked at connect time, not exposed.
+* Lazy data edges mean `CommInitRank` completion does not imply every data edge exists; a first-use dial failure surfaces as a `transport_error` on that operation's `Work`. The C API must not promise "init succeeded => any peer reachable on the data path".
+* **Posting is not unbounded** (`docs/grouped_operations_audit.md`): more than ~9 large outstanding sends per peer block the posting call. The C API must either state a bounded-outstanding contract, or Phase 52 must first make posting non-blocking / add a group object. A `Work` poll/test call and a timed wait remain required.
+* `ExternalMemoryProvider::reduce_backend_range` stays C++-only: C exposes fixed built-in providers.
+* Datatype rules at N>2 (FP16/BF16 rejected) must appear in the C error documentation as `unsupported`.
+
 ## 7. Open points for Phase 52 (not decided here)
 
 * thread-safety contract per handle (today: collectives are serialized by the executor; P2P posts may come from any thread; `abort()` from any thread);

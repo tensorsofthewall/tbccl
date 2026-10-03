@@ -42,4 +42,13 @@ dtype, op, bytes, forced algorithm) abort the communicator on every rank; they a
 
 ## Default selection
 
-See `docs/phase51_results.md` for the measured crossovers. The thresholds are a generic local-loopback heuristic, **not** Thunderbolt-tuned constants.
+Pure function of `{kind, world_size, bytes, dtype}` evaluated on rank 0 (`src/core/collective_plan.cpp`); N=1 local, N=2 fast path always.
+
+| collective | rule |
+|---|---|
+| broadcast | binomial tree |
+| all_gather | ring |
+| all_reduce | ring if `bytes >= 96 KiB x (N-2)`; else recursive doubling if N is a power of two and N <= 4; else binomial tree |
+| barrier | dissemination if N >= 9, else reference |
+
+Measured crossovers (local loopback, N=3/4/8, `docs/phase51_results.md`): ring all_reduce wins from about 64-256 KiB at N=3,4 and from about 1 MiB at N=8 (tree wins below that); recursive doubling beats tree/ring only at N=4 up to 64 KiB; tree broadcast beats the root fan-out at every size from N=3 (0.46-0.92x); ring all_gather beats the reference at every size. The dissemination barrier is **slower** than the control-plane reference at N=3, 4, 8 on loopback (e.g. 144 vs 66 us at N=8) because the reference exchange is already one control round trip; it is kept for large N where the rank-0 serial point would dominate and is selected only from N=9 (unmeasured on loopback; documented, not claimed as a win). The thresholds are a generic local-loopback heuristic, **not** Thunderbolt-tuned constants.

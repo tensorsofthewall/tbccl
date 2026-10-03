@@ -177,21 +177,23 @@ P2P to the same peer in an order that differs between ranks.
 ## Collectives
 
 All collectives are asynchronous (`Work`), run in call order on every rank (one collective executes at a time per communicator), and share the ordering contract: every rank issues the same
-collectives in the same order. Phase 50's N>2 algorithms are conservative **reference** implementations built for correctness and runtime structure, not speed (Phase 51 owns optimized ones):
+collectives in the same order. Phase 51 selects the N>2 algorithm internally (rank 0 decides per collective and every rank runs the same plan; N=2 keeps its specialised path and is never rerouted). Phase 50's root-based algorithms remain as the `reference` fallback (debug override only). Full table and thresholds: `docs/collective_algorithms.md`; floating-point reduction semantics: `docs/numerical_reduction_semantics.md`.
 
-| call | N=1 | N=2 | N>2 reference algorithm |
+| call | N=1 | N=2 | N>2 default algorithm |
 |---|---|---|---|
-| `barrier()` | completes locally | descriptor exchange | every rank -> rank 0, verdict back |
-| `broadcast(buffer, root)` | no-op | specialised single transfer | root sends to every other rank, sequentially |
-| `all_gather(input, outputs)` | local copy | specialised pairwise exchange | every rank -> rank 0, rank 0 assembles in rank order and sends to every rank |
-| `all_reduce(send, recv, count, dtype, op)` | local | specialised heterogeneous engine (unchanged) | every rank -> rank 0, reduced in rank order 1..N-1, result sent to every rank |
+| `barrier()` | completes locally | descriptor exchange | reference (control-plane gather/release) below N=9; dissemination from N=9 |
+| `broadcast(buffer, root)` | no-op | specialised single transfer | binomial tree |
+| `all_gather(input, outputs)` | local copy | specialised pairwise exchange | ring |
+| `all_reduce(send, recv, count, dtype, op)` | local | specialised heterogeneous engine (unchanged) | recursive doubling (power-of-two N <= 4, small), binomial tree (small), ring reduce-scatter + all-gather from ~96 KiB x (N-2) |
+
+Data connections for N>2 are created lazily by the first transfer over an edge; the control plane stays a full mesh. `ExternalMemoryProvider` gained one **optional** virtual, `reduce_backend_range` (reduce a received sub-range into a buffer; default: unsupported, which makes the ring all-reduce unavailable for that provider and the planner fall back). Host and CUDA providers implement it. Package version 0.4.0, wire protocol version 3.
 
 `broadcast` and `all_gather` are byte-generic (any dtype, FP8, packed INT4, ...). `all_reduce` accepts `ReduceOp::Sum` of Float32, Float64, Int32, Int64 everywhere, Int8/UInt8 (modulo-256 sum, associative
 so it extends to N>2), and Float16/BFloat16 **only for N=2**: for N>2 they are rejected up front with `unsupported: ... N>2 reduction semantics are not defined`. The N=2 path keeps its
 descriptor-free wire format and cost.
 
 **Collective sequence and descriptors (N != 2, and `barrier` at any N).** Each collective starts with every rank sending a small descriptor (sequence number, kind, root, count, dtype, op, bytes,
-local memory kind, and whether this rank can run it) to rank 0, which answers every rank with a verdict before any payload moves:
+local memory kind, forced algorithm, and whether this rank can run it) to rank 0 **over the control plane**, which answers every rank with a verdict carrying the chosen algorithm before any payload moves (the dissemination barrier validates descriptors at rank 0 asynchronously instead of waiting for a verdict):
 a rank-local capability problem (an unregistered memory kind, an Int8 reduction on a `MemoryKind::MetalShared` buffer) fails the collective on **every** rank with `unsupported:` naming the rank,
 without poisoning the communicator; a disagreement on sequence, kind, root, element count, dtype, op or byte count fails every rank with `protocol_mismatch:` and aborts the communicator. Set `TBCCL_TRACE=1` for a
 per-rank log of sequence, kind, bytes, dtype, peer and verdict.

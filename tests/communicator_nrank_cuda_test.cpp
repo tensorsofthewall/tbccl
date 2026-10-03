@@ -312,7 +312,8 @@ namespace
 int main()
 {
     std::thread([] {
-        std::this_thread::sleep_for(std::chrono::seconds(240));
+        const char *w = std::getenv("TBCCL_TEST_WATCHDOG_S"); // memcheck/racecheck runs are 10-100x slower
+        std::this_thread::sleep_for(std::chrono::seconds(w ? std::atoi(w) : 240));
         std::cerr << "[FAIL] watchdog: a CUDA N-rank test hung\n";
         std::_Exit(2);
     }).detach();
