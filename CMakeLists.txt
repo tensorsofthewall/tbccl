@@ -1858,23 +1858,14 @@ if(BUILD_TESTING)
             PROPERTIES TIMEOUT 90)
     endif()
 
-    # Pairs of tests that hard-code the SAME base port (a bind collision, "Address already in use", whenever ctest runs them
-    # in parallel). Serializing each pair keeps `ctest -j` reliable without renumbering ports; a test is only locked if it is
-    # registered in this configuration (CUDA/Metal/Python tests are conditional).
-    foreach(pair
-        "raw_io_worker_test;tensor_backend_async_adapter_test"
-        "hetero_allreduce_test;metal_shared_direct_async_backend_test"
-        "bucket_allreduce_worker_test;communicator_test"
-        "communicator_collectives_test;world_test"
-        "all_reduce_ring_test;tensor_cuda_test"
-        "reduction_low_precision_test;reduction_low_precision_cuda_test;reduction_int8_test")
-        list(GET pair 0 lock_first)
-        string(MD5 lock_name "${pair}")
-        foreach(t IN LISTS pair)
-            if(TEST ${t})
-                set_property(TEST ${t} APPEND PROPERTY RESOURCE_LOCK "tbccl_shared_port_${lock_name}")
-            endif()
-        endforeach()
+    # Every test binds fixed loopback ports (and the Python harness tests spawn tools on dynamic ones), and the ranges are dense: pairs of tests hard-code the
+    # SAME base (28820, 28900, 29100, 29550, 32100), and Communicator-based tests also bind a data port at control port + 1000 that lands inside other
+    # tests' ranges (e.g. communicator_test 29100 -> 30100 vs reduce_test 30100). Run in parallel they intermittently fail with "bind failed ... Address
+    # already in use" (seen as a Mac hetero_allreduce_test failure in Phase 48, tensor_backend_async_adapter_test and, in Phase 49, reduce_test on
+    # Linux). One shared RESOURCE_LOCK makes ctest run them one at a time whatever -j says, and covers tests added later automatically.
+    get_property(tbccl_all_tests DIRECTORY PROPERTY TESTS)
+    foreach(t IN LISTS tbccl_all_tests)
+        set_property(TEST ${t} APPEND PROPERTY RESOURCE_LOCK "tbccl_loopback_ports")
     endforeach()
 
 endif()
