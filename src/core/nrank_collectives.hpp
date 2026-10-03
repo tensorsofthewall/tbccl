@@ -12,6 +12,7 @@
 // All of them run on the Communicator's single collective-executor thread (the collective ordering domain) and post their transfers to
 // PeerChannel lanes. A child failure never leaves another child running against the caller's buffer: OpGroup waits for every child.
 
+#include "collective_plan.hpp"
 #include "collective_protocol.hpp"
 #include "connection_manager.hpp"
 #include "trace.hpp"
@@ -33,6 +34,7 @@ struct CollectiveRun
     std::uint64_t sequence = 0;
     std::uint64_t work_id = 0;
     const Trace *trace = nullptr;
+    const PlannerThresholds *thresholds = nullptr; // used by rank 0 only
 };
 
 // The children of one collective. wait_all() waits for EVERY child (even after the first failure) and then throws the first error in
@@ -64,10 +66,20 @@ TransferWork post_transfer(PeerChannel &channel, TransferDirection direction, As
 // Copies `bytes` bytes from `from` to `to` through the providers' staging interface (no device code here).
 void copy_through_providers(ExternalMemoryProvider &from, ExternalMemoryProvider &to, std::size_t bytes);
 
-// Descriptor exchange with rank 0 and the verdict. Returns on Ok; throws CollectiveRejected (Unsupported) or CollectiveMismatch.
-void run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescriptor &mine);
+// Descriptor exchange with rank 0 and the verdict. Returns the algorithm rank 0 chose (the same on every rank) on Ok; throws CollectiveRejected (Unsupported) or
+// CollectiveMismatch.
+CommAlgorithm run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescriptor &mine);
 
 void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
+
+// Phase 51: execute the data phase of a collective with the algorithm rank 0 chose (the same on every rank). world_size > 2 only; an algorithm that is not
+// implemented for the collective is an internal_error (the planner never returns one).
+void run_barrier(const CollectiveRun &run, CommAlgorithm algorithm);
+void run_broadcast(const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
+void run_all_gather(
+    const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes);
+void run_all_reduce(
+    const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype);
 
 // `outputs[r]` receives rank r's input on every rank; `in` and the outputs are never null when bytes > 0.
 void reference_all_gather(

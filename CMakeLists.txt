@@ -41,6 +41,7 @@ add_library(tbccl STATIC
     src/core/connection_manager.cpp
     src/core/nrank_collectives.cpp
     src/core/collective_protocol.cpp
+    src/core/collective_plan.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -1106,6 +1107,20 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_nrank_failure_test PROPERTIES TIMEOUT 320 ENVIRONMENT "TSAN_OPTIONS=die_after_fork=0")
     list(APPEND tbccl_dynamic_port_tests communicator_nrank_failure_test)
 
+    add_executable(communicator_sparse_test
+        tests/communicator_sparse_test.cpp
+    )
+    target_include_directories(communicator_sparse_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(communicator_sparse_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_sparse_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_sparse_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_sparse_test COMMAND communicator_sparse_test)
+    set_tests_properties(communicator_sparse_test PROPERTIES TIMEOUT 180)
+    list(APPEND tbccl_dynamic_port_tests communicator_sparse_test)
+
     add_executable(collective_protocol_test
         tests/collective_protocol_test.cpp
     )
@@ -1117,6 +1132,18 @@ if(BUILD_TESTING)
         target_compile_options(collective_protocol_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME collective_protocol_test COMMAND collective_protocol_test)
+
+    add_executable(collective_plan_test
+        tests/collective_plan_test.cpp
+    )
+    target_include_directories(collective_plan_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(collective_plan_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(collective_plan_test PRIVATE /W4)
+    else()
+        target_compile_options(collective_plan_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME collective_plan_test COMMAND collective_plan_test)
 
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp

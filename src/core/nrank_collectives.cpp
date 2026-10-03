@@ -76,7 +76,7 @@ void copy_through_providers(ExternalMemoryProvider &from, ExternalMemoryProvider
     }
 }
 
-void run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescriptor &mine)
+CommAlgorithm run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescriptor &mine)
 {
     const auto trace = [&](const std::string &text) {
         if (run.trace && run.trace->on()) run.trace->line("work=" + std::to_string(run.work_id) + " #" + std::to_string(run.sequence) + " " + text);
@@ -85,46 +85,50 @@ void run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescripto
           " dtype=" + datatype_label(mine.datatype) + " root=" + std::to_string(mine.root) + " memory=" + memory_kind_name(mine.memory_kind));
 
     CollectiveVerdict verdict;
+    CollectiveMailbox &mailbox = run.mesh->mailbox();
     if (run.rank == 0)
     {
-        std::vector<DescriptorWire> wire(run.world);
-        std::vector<std::unique_ptr<HostPointerAsyncBackend>> backends;
-        OpGroup recvs;
-        for (std::size_t p = 1; p < run.world; ++p)
-        {
-            backends.push_back(std::make_unique<HostPointerAsyncBackend>(wire[p].data(), kDescriptorWireSize));
-            post(run, recvs, p, TransferDirection::Recv, *backends.back(), kDescriptorWireSize, "descriptor");
-        }
-        recvs.wait_all();
-
+        // Descriptors arrive on the control plane (one frame per rank, FIFO per peer); no data lane is touched.
         std::vector<CollectiveDescriptor> by_rank(run.world);
         by_rank[0] = mine;
         for (std::size_t p = 1; p < run.world; ++p)
         {
-            by_rank[p] = decode_descriptor(wire[p]);
+            const auto bytes = mailbox.wait_descriptor(p);
+            DescriptorWire wire{};
+            std::copy_n(bytes.begin(), std::min(bytes.size(), wire.size()), wire.begin());
+            by_rank[p] = decode_descriptor(wire);
             by_rank[p].rank = static_cast<std::uint32_t>(p); // the channel, not the payload, says who sent it
         }
         verdict = judge_collective(by_rank);
-
-        VerdictWire out = encode_verdict(verdict);
-        std::vector<std::unique_ptr<HostPointerAsyncBackend>> verdict_backends;
-        OpGroup sends;
-        for (std::size_t p = 1; p < run.world; ++p)
+        if (verdict.status == VerdictStatus::Ok)
         {
-            verdict_backends.push_back(std::make_unique<HostPointerAsyncBackend>(out.data(), kVerdictWireSize));
-            post(run, sends, p, TransferDirection::Send, *verdict_backends.back(), kVerdictWireSize, "verdict");
+            // The agreed override (ranks that carry one agree, checked by the judge) and the plan: chosen ONCE here and carried to every rank.
+            std::uint32_t forced = 0;
+            for (const auto &d : by_rank)
+                if (d.forced_algorithm != 0) forced = d.forced_algorithm;
+            try
+            {
+                const PlannerThresholds defaults;
+                verdict.algorithm = static_cast<std::uint32_t>(
+                    plan_collective(mine.kind, run.world, static_cast<std::size_t>(mine.bytes), static_cast<CommAlgorithm>(forced), run.thresholds ? *run.thresholds : defaults).algorithm);
+            }
+            catch (const std::runtime_error &e)
+            {
+                verdict.status = VerdictStatus::Unsupported;
+                verdict.text = e.what();
+            }
         }
-        sends.wait_all();
+        const VerdictWire out = encode_verdict(verdict);
+        const std::vector<std::uint8_t> bytes(out.begin(), out.end());
+        for (std::size_t p = 1; p < run.world; ++p) run.mesh->send_collective_frame(p, /*is_verdict=*/true, bytes);
     }
     else
     {
-        DescriptorWire wire = encode_descriptor(mine);
+        const DescriptorWire wire = encode_descriptor(mine);
+        run.mesh->send_collective_frame(0, /*is_verdict=*/false, std::vector<std::uint8_t>(wire.begin(), wire.end()));
+        const auto bytes = mailbox.wait_verdict(0);
         VerdictWire in{};
-        HostPointerAsyncBackend send_backend(wire.data(), kDescriptorWireSize), recv_backend(in.data(), kVerdictWireSize);
-        OpGroup group;
-        post(run, group, 0, TransferDirection::Send, send_backend, kDescriptorWireSize, "descriptor");
-        post(run, group, 0, TransferDirection::Recv, recv_backend, kVerdictWireSize, "verdict");
-        group.wait_all();
+        std::copy_n(bytes.begin(), std::min(bytes.size(), in.size()), in.begin());
         verdict = decode_verdict(in);
     }
 
@@ -132,6 +136,8 @@ void run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescripto
           (verdict.text.empty() ? "" : ": " + verdict.text));
     if (verdict.status == VerdictStatus::Unsupported) throw CollectiveRejected(verdict.text);
     if (verdict.status == VerdictStatus::Mismatch) throw CollectiveMismatch("protocol_mismatch: " + verdict.text);
+    trace(std::string("plan: ") + comm_algorithm_name(static_cast<CommAlgorithm>(verdict.algorithm)));
+    return static_cast<CommAlgorithm>(verdict.algorithm);
 }
 
 void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root)
@@ -226,6 +232,53 @@ void reference_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &prov
         OpGroup recv;
         post(run, recv, 0, TransferDirection::Recv, provider.primary_backend(), total_bytes, "all_reduce result");
         recv.wait_all();
+    }
+}
+
+namespace
+{
+[[noreturn]] void not_implemented(const char *kind, CommAlgorithm a)
+{
+    throw std::runtime_error(std::string("internal_error: ") + kind + " algorithm '" + comm_algorithm_name(a) + "' is not implemented");
+}
+} // namespace
+
+void run_barrier(const CollectiveRun &, CommAlgorithm algorithm)
+{
+    switch (algorithm)
+    {
+    case CommAlgorithm::N2FastPath: // barrier has no specialised N=2 engine: it is the same exchange
+    case CommAlgorithm::Reference: return; // the descriptor exchange (gather at rank 0, verdict back) is the barrier
+    default: not_implemented("barrier", algorithm);
+    }
+}
+
+void run_broadcast(const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root)
+{
+    switch (algorithm)
+    {
+    case CommAlgorithm::Reference: reference_broadcast(run, provider, bytes, root); return;
+    default: not_implemented("broadcast", algorithm);
+    }
+}
+
+void run_all_gather(
+    const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes)
+{
+    switch (algorithm)
+    {
+    case CommAlgorithm::Reference: reference_all_gather(run, in, outputs, bytes); return;
+    default: not_implemented("all_gather", algorithm);
+    }
+}
+
+void run_all_reduce(
+    const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
+{
+    switch (algorithm)
+    {
+    case CommAlgorithm::Reference: reference_all_reduce(run, provider, total_bytes, count, datatype); return;
+    default: not_implemented("all_reduce", algorithm);
     }
 }
 

@@ -36,6 +36,7 @@ DescriptorWire encode_descriptor(const CollectiveDescriptor &d)
     put_u64(out + 40, d.bytes);
     put_u32(out + 48, d.local_status);
     put_text(out + 52, kDescriptorNoteBytes, d.note);
+    put_u32(out + 124, d.forced_algorithm);
     return wire;
 }
 
@@ -54,6 +55,7 @@ CollectiveDescriptor decode_descriptor(const DescriptorWire &wire)
     d.bytes = get_u64(in + 40);
     d.local_status = get_u32(in + 48);
     d.note = get_text(in + 52, kDescriptorNoteBytes);
+    d.forced_algorithm = get_u32(in + 124);
     return d;
 }
 
@@ -62,6 +64,7 @@ VerdictWire encode_verdict(const CollectiveVerdict &v)
     VerdictWire wire{};
     std::uint8_t *out = wire.data();
     put_u32(out + 0, static_cast<std::uint32_t>(v.status));
+    put_u32(out + 4, v.algorithm);
     put_u64(out + 8, v.sequence);
     put_text(out + 16, kVerdictTextBytes, v.text);
     return wire;
@@ -72,6 +75,7 @@ CollectiveVerdict decode_verdict(const VerdictWire &wire)
     const std::uint8_t *in = wire.data();
     CollectiveVerdict v;
     v.status = static_cast<VerdictStatus>(get_u32(in + 0));
+    v.algorithm = get_u32(in + 4);
     v.sequence = get_u64(in + 8);
     v.text = get_text(in + 16, kVerdictTextBytes);
     return v;
@@ -114,6 +118,8 @@ CollectiveVerdict judge_collective(const std::vector<CollectiveDescriptor> &by_r
             if (d.count != ref.count)
                 return mismatch("all_reduce element count differs: rank 0 has " + std::to_string(ref.count) + ", " + who + " has " + std::to_string(d.count));
         }
+        if (d.forced_algorithm != 0 && ref.forced_algorithm != 0 && d.forced_algorithm != ref.forced_algorithm)
+            return mismatch("ranks force different algorithms: rank 0 forces " + std::to_string(ref.forced_algorithm) + ", " + who + " forces " + std::to_string(d.forced_algorithm));
         if (ref.kind != CollectiveKind::Barrier && d.bytes != ref.bytes)
             return mismatch(std::string(collective_kind_name(ref.kind)) + " byte count differs: rank 0 has " + std::to_string(ref.bytes) + ", " + who + " has " + std::to_string(d.bytes));
     }

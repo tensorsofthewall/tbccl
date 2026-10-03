@@ -30,6 +30,9 @@ namespace mesh_test
     // Counts this process's open file descriptors (Linux/macOS), to prove sockets are closed exactly once and never leak.
     inline int open_fd_count()
     {
+        // serialized: the directory handle of a concurrent caller would otherwise be counted too
+        static std::mutex m;
+        std::lock_guard<std::mutex> lock(m);
         int n = 0;
 #ifdef __APPLE__
         const char *dir = "/dev/fd";

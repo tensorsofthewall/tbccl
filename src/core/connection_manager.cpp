@@ -39,6 +39,108 @@ namespace detail
 std::unique_ptr<Listener> ListenersAccess::take_control(CommunicatorListeners &l) { return std::move(l.impl_->control); }
 std::unique_ptr<Listener> ListenersAccess::take_data(CommunicatorListeners &l) { return std::move(l.impl_->data); }
 
+// Phase 51: a data transport that connects on first use. The HIGHER rank of a pair dials the lower rank's data listener (the Phase 50 rule); the lower rank waits
+// for its acceptor thread to install the incoming connection. Both happen on the lane worker thread, never on the caller's thread, so send()/recv() on the
+// Communicator stay non-blocking. Waiting for the peer to dial is unbounded (like any receive) and is ended by abort(). Exactly one connection can ever exist: only
+// one side dials, and the acceptor rejects a second connection for the same rank.
+class LazyDataTransport final : public Transport
+{
+public:
+    using Dial = std::function<std::unique_ptr<Connection>()>;
+
+    explicit LazyDataTransport(Dial dial) : dial_(std::move(dial)) {}
+
+    void install(std::unique_ptr<Connection> connection)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!inner_ && !aborted_) inner_ = std::make_unique<TcpTransport>(std::move(connection));
+        cv_.notify_all();
+    }
+
+    bool connected() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return inner_ != nullptr;
+    }
+
+    void send(const void *data, std::size_t bytes) override { ensure().send(data, bytes); }
+    void recv(void *data, std::size_t bytes) override { ensure().recv(data, bytes); }
+    void send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes) override
+    {
+        ensure().send_framed(header, header_bytes, data, bytes);
+    }
+    void recv_framed(void *header, std::size_t header_bytes, void *data, std::size_t bytes, const std::function<void(const void *)> &validate) override
+    {
+        ensure().recv_framed(header, header_bytes, data, bytes, validate);
+    }
+    TransportCapabilities capabilities() const noexcept override { return TcpTransport(std::unique_ptr<Connection>(new NullConnection())).capabilities(); }
+    std::string peer_name() const override { return "lazy-data-peer"; }
+
+    void abort(const std::string &reason) override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (aborted_) return;
+        aborted_ = true;
+        reason_ = reason;
+        if (inner_) inner_->abort(reason);
+        cv_.notify_all();
+    }
+
+private:
+    struct NullConnection final : Connection
+    {
+        void send(const void *, std::size_t) override {}
+        void recv(void *, std::size_t) override {}
+        std::string peer_name() const override { return {}; }
+    };
+
+    [[noreturn]] void throw_aborted()
+    {
+        throw std::runtime_error("aborted: communicator aborted" + (reason_.empty() ? std::string() : " (" + reason_ + ")"));
+    }
+
+    Transport &ensure()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        for (;;)
+        {
+            if (aborted_) throw_aborted();
+            if (inner_) return *inner_;
+            if (dial_ && !dialing_)
+            {
+                dialing_ = true;
+                lock.unlock();
+                std::unique_ptr<Connection> connection;
+                try
+                {
+                    connection = dial_();
+                }
+                catch (const std::exception &e)
+                {
+                    lock.lock();
+                    dialing_ = false;
+                    if (aborted_) throw_aborted();
+                    throw std::runtime_error(std::string("transport_error: lazy data connection failed: ") + e.what());
+                }
+                lock.lock();
+                if (aborted_) throw_aborted();
+                inner_ = std::make_unique<TcpTransport>(std::move(connection));
+                cv_.notify_all();
+                continue;
+            }
+            cv_.wait(lock);
+        }
+    }
+
+    Dial dial_; // empty on the accepting (lower-rank) side
+    mutable std::mutex mutex_;
+    std::condition_variable cv_;
+    std::unique_ptr<TcpTransport> inner_;
+    bool dialing_ = false;
+    bool aborted_ = false;
+    std::string reason_;
+};
+
 namespace
 {
 
@@ -180,8 +282,11 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
     const ResolvedBootstrap &boot, std::chrono::milliseconds timeout, CommunicatorListeners *prebound, const PeerCapabilities &local,
     NegotiationResult &aggregate_negotiation)
 {
-    std::unique_ptr<ConnectionManager> mgr(new ConnectionManager());
+    std::unique_ptr<ConnectionManager> mgr(new ConnectionManager(boot.world_size));
     mgr->rank_ = boot.rank;
+    mgr->boot_ = boot;
+    mgr->dial_timeout_ = timeout;
+    const bool lazy_data = boot.world_size > 2;
     mgr->channels_.resize(boot.world_size);
     if (boot.world_size == 1)
     {
@@ -211,10 +316,14 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
     std::vector<std::unique_ptr<Connection>> control(boot.world_size), data(boot.world_size);
     dial_lower_ranks(boot, ConnectionRole::Control, deadline, control);
     if (control_listener) accept_higher_ranks(boot, ConnectionRole::Control, *control_listener, deadline, control);
-    dial_lower_ranks(boot, ConnectionRole::Data, deadline, data);
-    if (data_listener) accept_higher_ranks(boot, ConnectionRole::Data, *data_listener, deadline, data);
+    if (!lazy_data)
+    {
+        // world_size 2: the single data connection is made at bootstrap (the specialised fast path must not pay a first-use dial).
+        dial_lower_ranks(boot, ConnectionRole::Data, deadline, data);
+        if (data_listener) accept_higher_ranks(boot, ConnectionRole::Data, *data_listener, deadline, data);
+        data_listener.reset();
+    }
     control_listener.reset();
-    data_listener.reset();
 
     std::vector<NegotiationResult> negotiations;
     std::vector<std::size_t> negotiated_ranks;
@@ -237,14 +346,88 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         if (!negotiations.back().ok)
             throw std::runtime_error("transport_error: capability negotiation with rank " + std::to_string(peer) + " failed: " + negotiations.back().failure_reason);
         control[peer]->set_io_timeout(std::chrono::milliseconds(0));
-        data[peer]->set_io_timeout(std::chrono::milliseconds(0));
         channel->control = std::move(control[peer]);
-        channel->data = std::make_unique<TcpTransport>(std::move(data[peer]));
+        if (!lazy_data)
+        {
+            data[peer]->set_io_timeout(std::chrono::milliseconds(0));
+            channel->data = std::make_unique<TcpTransport>(std::move(data[peer]));
+        }
+        else
+        {
+            LazyDataTransport::Dial dial;
+            if (peer < boot.rank) // this rank is the higher one: it dials the lower rank's data listener on first use
+            {
+                const Endpoint endpoint = boot.directory.entries[peer].data;
+                const Hello hello{kWireProtocolVersion, boot.communicator_id, static_cast<std::uint32_t>(boot.rank), static_cast<std::uint32_t>(boot.world_size), ConnectionRole::Data};
+                dial = [endpoint, hello, peer, timeout]() {
+                    const auto deadline = Clock::now() + timeout;
+                    auto connection = connect_with_retry(endpoint, deadline, "rank " + std::to_string(peer) + " data endpoint");
+                    connection->set_io_timeout(std::max(std::chrono::milliseconds(1), remaining(deadline)));
+                    dial_handshake(*connection, hello, peer);
+                    connection->set_io_timeout(std::chrono::milliseconds(0));
+                    return connection;
+                };
+            }
+            channel->data = std::make_unique<LazyDataTransport>(std::move(dial));
+        }
         channel->worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, /*queue_depth=*/8, /*duplex=*/true);
         mgr->channels_[peer] = std::move(channel);
     }
     aggregate_negotiation = fold_negotiation(negotiations, negotiated_ranks);
+    if (lazy_data && data_listener)
+    {
+        mgr->data_listener_endpoint_ = boot.directory.entries[boot.rank].data;
+        mgr->data_listener_ = std::move(data_listener);
+        mgr->data_installed_.assign(boot.world_size, false);
+        mgr->start_data_acceptor();
+    }
     return mgr;
+}
+
+void ConnectionManager::start_data_acceptor()
+{
+    data_acceptor_ = std::thread([this] {
+        while (!closing_.load())
+        {
+            std::unique_ptr<Connection> connection;
+            try
+            {
+                connection = data_listener_->accept_for(std::chrono::hours(1));
+            }
+            catch (const std::exception &)
+            {
+                return; // the listener is gone
+            }
+            if (!connection || closing_.load()) continue;
+            connection->set_io_timeout(std::chrono::milliseconds(2000));
+            AcceptExpectation expect;
+            expect.communicator_id = boot_.communicator_id;
+            expect.local_rank = boot_.rank;
+            expect.world_size = boot_.world_size;
+            expect.role = ConnectionRole::Data;
+            std::vector<bool> have;
+            {
+                std::lock_guard<std::mutex> lock(data_install_mutex_);
+                have = data_installed_;
+            }
+            expect.already_connected = &have;
+            Hello hello;
+            try
+            {
+                hello = accept_handshake(*connection, expect);
+            }
+            catch (const std::exception &)
+            {
+                continue; // a stranger, or a rejected (duplicate / foreign) dial: the reply was sent, the connection is dropped
+            }
+            connection->set_io_timeout(std::chrono::milliseconds(0));
+            {
+                std::lock_guard<std::mutex> lock(data_install_mutex_);
+                data_installed_[hello.rank] = true;
+            }
+            static_cast<LazyDataTransport &>(*channels_[hello.rank]->data).install(std::move(connection));
+        }
+    });
 }
 
 ConnectionManager::~ConnectionManager()
@@ -255,6 +438,18 @@ ConnectionManager::~ConnectionManager()
 void ConnectionManager::stop_watchers()
 {
     closing_.store(true);
+    if (data_acceptor_.joinable())
+    {
+        try
+        {
+            // wake the acceptor blocked in accept_for(): a throwaway connection to our own listener (it is dropped by the handshake)
+            auto wake = tcp_connect(data_listener_endpoint_.host, data_listener_->local_port(), {});
+        }
+        catch (const std::exception &)
+        {
+        }
+        data_acceptor_.join();
+    }
     for (const auto &c : channels_)
     {
         if (c && c->control) c->control->abort("communicator closing"); // shutdown(): wakes the watcher blocked in recv
@@ -286,6 +481,16 @@ void ConnectionManager::start_watchers(PeerEventHandler handler)
                     {
                         handler(channel->peer_rank, frame.origin_rank, frame.reason, /*peer_lost=*/false);
                         return;
+                    }
+                    if (frame.type == ControlFrameType::CollectiveDescriptor)
+                    {
+                        mailbox_.post_descriptor(channel->peer_rank, frame.payload);
+                        continue;
+                    }
+                    if (frame.type == ControlFrameType::CollectiveVerdict)
+                    {
+                        mailbox_.post_verdict(channel->peer_rank, frame.payload);
+                        continue;
                     }
                     // Unknown frame types are ignored: a newer peer may add some.
                 }
@@ -367,6 +572,7 @@ void ConnectionManager::set_fatal_handler(const std::function<void(const std::st
 
 void ConnectionManager::abort_transfers(const std::string &reason)
 {
+    mailbox_.abort(reason);
     for (const auto &c : channels_)
     {
         if (!c) continue;
@@ -377,3 +583,84 @@ void ConnectionManager::abort_transfers(const std::string &reason)
 
 } // namespace detail
 } // namespace tbccl
+
+namespace tbccl::detail
+{
+
+void CollectiveMailbox::post_descriptor(std::size_t peer, const std::vector<std::uint8_t> &bytes)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        descriptors_.at(peer).push_back(bytes);
+    }
+    cv_.notify_all();
+}
+
+void CollectiveMailbox::post_verdict(std::size_t peer, const std::vector<std::uint8_t> &bytes)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        verdicts_.at(peer).push_back(bytes);
+    }
+    cv_.notify_all();
+}
+
+std::vector<std::uint8_t> CollectiveMailbox::wait_on(std::vector<std::deque<std::vector<std::uint8_t>>> &queues, std::size_t peer)
+{
+    std::unique_lock<std::mutex> lock(mutex_);
+    for (;;)
+    {
+        if (aborted_) throw std::runtime_error("aborted: communicator aborted" + (reason_.empty() ? std::string() : " (" + reason_ + ")"));
+        auto &q = queues.at(peer);
+        if (!q.empty())
+        {
+            auto bytes = std::move(q.front());
+            q.pop_front();
+            return bytes;
+        }
+        cv_.wait(lock);
+    }
+}
+
+std::vector<std::uint8_t> CollectiveMailbox::wait_descriptor(std::size_t peer) { return wait_on(descriptors_, peer); }
+std::vector<std::uint8_t> CollectiveMailbox::wait_verdict(std::size_t peer) { return wait_on(verdicts_, peer); }
+
+void CollectiveMailbox::abort(const std::string &reason)
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (aborted_) return;
+        aborted_ = true;
+        reason_ = reason;
+    }
+    cv_.notify_all();
+}
+
+void ConnectionManager::send_collective_frame(std::size_t peer, bool is_verdict, const std::vector<std::uint8_t> &bytes)
+{
+    PeerChannel &c = channel(peer);
+    ControlFrame frame;
+    frame.type = is_verdict ? ControlFrameType::CollectiveVerdict : ControlFrameType::CollectiveDescriptor;
+    frame.origin_rank = static_cast<std::uint32_t>(rank_);
+    frame.payload = bytes;
+    std::lock_guard<std::mutex> lock(c.control_send_mutex);
+    send_control_frame(*c.control, frame);
+}
+
+bool ConnectionManager::data_connected(std::size_t peer) const
+{
+    const auto &c = channels_.at(peer);
+    if (!c) return false;
+    if (const auto *lazy = dynamic_cast<const LazyDataTransport *>(c->data.get())) return lazy->connected();
+    return true;
+}
+
+std::vector<std::size_t> ConnectionManager::connected_data_peers() const
+{
+    std::vector<std::size_t> out;
+    for (std::size_t p = 0; p < channels_.size(); ++p)
+        if (data_connected(p)) out.push_back(p);
+    return out;
+}
+
+} // namespace tbccl::detail
