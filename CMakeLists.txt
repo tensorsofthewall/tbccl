@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(
     tbccl
-    VERSION 0.4.0
+    VERSION 0.5.0
     DESCRIPTION "Thunderbolt Collective Communication Library"
     LANGUAGES C CXX
 )
@@ -1223,6 +1223,12 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME c_quickstart COMMAND c_quickstart)
     set_tests_properties(c_quickstart PROPERTIES TIMEOUT 60)
+
+    # Diagnostic: caller-side submission cost (C++ API vs the C wrapper), not
+    # a ctest.
+    add_executable(communicator_submit_bench benchmarks/communicator_submit_bench.cpp)
+    target_include_directories(communicator_submit_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+    target_link_libraries(communicator_submit_bench PRIVATE tbccl_c Threads::Threads)
 
     # Test-only access to the private progress-pause hook for the pure-C submission test (never installed).
     add_library(tbccl_c_test_hooks STATIC tests/c_api/c_test_hooks.cpp)
