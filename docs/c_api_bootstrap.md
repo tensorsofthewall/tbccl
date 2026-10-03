@@ -44,3 +44,7 @@ Which ranks bind: only a rank that accepts connections (every rank except the la
 ## Thread safety
 
 One bootstrap handle is single-threaded. Different handles are independent (`docs/c_api_thread_safety.md`).
+
+## Running ranks on other machines (operator notes)
+
+`examples/c_link_probe.c` is a two-or-three-host correctness probe: each rank writes its blob to a file, the operator copies the files together (`scp`), writes `blobs.all` (blobs concatenated in rank order) next to every rank, and each rank completes. On macOS keep the process inside a **live session**: a process started with `nohup ... &` from an ssh session that then ends (an orphan) was not allowed to reach the LAN and failed its bootstrap with `TBCCL_TIMEOUT`; keeping the ssh connection open, or running the rank inside `tmux`, works.
