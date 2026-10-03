@@ -88,6 +88,7 @@ void n2_all_reduce_tensor(
         recv_request.transport = &transport;
         recv_request.total_bytes = total_bytes;
         recv_request.chunk_hint = chunk_hint;
+        recv_request.shared_lane = true; // Keep the sequential single-FIFO behaviour on a duplex worker
 
         const auto recv_start = Clock::now();
         TransferWork recv_work = worker.enqueue(recv_request);
@@ -145,6 +146,7 @@ void n2_all_reduce_tensor(
         recv_request.transport = &transport;
         recv_request.total_bytes = total_bytes;
         recv_request.chunk_hint = chunk_hint;
+        recv_request.shared_lane = true; // Keep the sequential single-FIFO behaviour on a duplex worker
 
         const auto recv_start = Clock::now();
         TransferWork recv_work = worker.enqueue(recv_request);

@@ -447,6 +447,12 @@ struct TensorCommWorker::Impl
 
     std::atomic<bool> stopping{false};
 
+    // Requests queued or running on this lane, per direction (0 = Send, 1 = Recv). Incremented by enqueue(), decremented right BEFORE a request's
+    // Work becomes terminal, so a caller that waited for a request sees its lane as free again.
+    std::atomic<int> inflight[2] = {{0}, {0}};
+    static int dir_index(TransferDirection d) { return d == TransferDirection::Send ? 0 : 1; }
+    void retire(TransferDirection d) { inflight[dir_index(d)].fetch_sub(1, std::memory_order_acq_rel); }
+
     // Terminal abort. Written once under queue_mutex (so enqueue/dequeue observe it consistently), then read
     // lock-free. `active` is true while the network thread owns a dequeued request.
     std::atomic<bool> aborted{false};
@@ -534,6 +540,7 @@ struct TensorCommWorker::Impl
         const std::string message = aborted_message();
         for (auto &item : doomed)
         {
+            retire(item.first.direction);
             detail::TransferWorkAccess::complete_error(item.second, message);
             record_stat(false);
         }
@@ -635,6 +642,7 @@ struct TensorCommWorker::Impl
 
             if (aborted.load())
             {
+                retire(item.first.direction);
                 detail::TransferWorkAccess::complete_error(item.second, aborted_message());
                 record_stat(false);
                 {
@@ -713,6 +721,7 @@ struct TensorCommWorker::Impl
                 std::fprintf(stderr, "[tbccl_timing] transport_call_end_us=%.1f transfer_id=%llu\n",
                              now_us(), static_cast<unsigned long long>(request.transfer_id));
             }
+            retire(request.direction);
             detail::TransferWorkAccess::complete_ok(state);
             if (timing)
             {
@@ -724,6 +733,7 @@ struct TensorCommWorker::Impl
         catch (const std::exception &error)
         {
             fatal(error.what());
+            retire(request.direction);
             detail::TransferWorkAccess::complete_error(state, error.what());
             record_stat(false);
         }
@@ -753,6 +763,7 @@ struct TensorCommWorker::Impl
             // request needs the staged path, which would otherwise
             // deadlock forever waiting for a staging thread that was
             // never created.
+            retire(request.direction);
             detail::TransferWorkAccess::complete_error(
                 state, "staged path requested but staging thread disabled "
                        "(TBCCL_ASYNC_NO_STAGING_THREAD diagnostic mode)");
@@ -782,6 +793,7 @@ struct TensorCommWorker::Impl
 
             if (chunks.empty())
             {
+                retire(request.direction);
                 detail::TransferWorkAccess::complete_ok(state);
                 record_stat(true);
                 return;
@@ -824,17 +836,20 @@ struct TensorCommWorker::Impl
             if (progress.failed)
             {
                 fatal(progress.error_message);
+                retire(request.direction);
                 detail::TransferWorkAccess::complete_error(state, progress.error_message);
                 record_stat(false);
                 return;
             }
 
+            retire(request.direction);
             detail::TransferWorkAccess::complete_ok(state);
             record_stat(true);
         }
         catch (const std::exception &error)
         {
             fatal(error.what());
+            retire(request.direction);
             detail::TransferWorkAccess::complete_error(state, error.what());
             record_stat(false);
         }
@@ -875,7 +890,35 @@ TensorCommWorker::~TensorCommWorker() = default;
 
 TransferWork TensorCommWorker::enqueue(TransferRequest request)
 {
-    Impl &lane = (recv_impl_ && request.direction == TransferDirection::Recv) ? *recv_impl_ : *impl_;
+    // Duplex routing (the N-rank runtime work). Each direction stays FIFO because all of its outstanding requests share one lane, and a lane never
+    // serves both directions at once, so a receive waiting for data never delays a send (and vice versa). When only one direction is in flight (the
+    // common, sequential case) everything runs on the first lane, exactly as the single-lane worker did; the second lane (and its thread) is woken
+    // only for genuine send/recv concurrency.
+    std::unique_lock<std::mutex> route_lock(route_mutex_, std::defer_lock);
+    Impl *chosen = impl_.get();
+    if (recv_impl_ && !request.shared_lane)
+    {
+        route_lock.lock();
+        const int me = Impl::dir_index(request.direction), other = 1 - me;
+        Impl *lanes[2] = {impl_.get(), recv_impl_.get()};
+        chosen = nullptr;
+        for (Impl *l : lanes)
+            if (l->inflight[me].load(std::memory_order_acquire) > 0) chosen = l; // sticky: keep this direction's FIFO on one lane
+        if (!chosen)
+        {
+            for (Impl *l : lanes)
+            {
+                if (l->inflight[other].load(std::memory_order_acquire) == 0)
+                {
+                    chosen = l; // a lane the other direction is not using
+                    break;
+                }
+            }
+        }
+        if (!chosen) chosen = impl_.get();
+    }
+    Impl &lane = *chosen;
+    lane.inflight[Impl::dir_index(request.direction)].fetch_add(1, std::memory_order_acq_rel);
     TransferWork work;
 
     if (timing_enabled())
