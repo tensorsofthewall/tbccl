@@ -61,20 +61,37 @@ kinds" below.
 
 ## Communicator
 
+A `Communicator` is one rank of an N-rank world (`world_size` 1 to 4 validated; at most `kMaxFullMeshWorldSize` = 8 accepted). libtbccl never discovers
+peers: whoever bootstraps the ranks (an adapter reading its own store, an application, a launcher) gives every rank the same `CommunicatorId` and a
+`RankDirectory` with each rank's explicit **control** and **data** endpoint.
+
 ```cpp
+// 1. Bind this rank's listeners first (port 0 = any free port) so the ACTUAL endpoints can be published.
+auto listeners = tbccl::CommunicatorListeners::bind("10.0.0.5");       // only a rank with a higher rank above it listens
+tbccl::RankEndpoint mine{rank, listeners->control(), listeners->data()};
+// 2. ... publish `mine` however you like, collect every rank's endpoint, share one CommunicatorId (CommunicatorId::generate() on one rank) ...
 tbccl::CommunicatorOptions opts;
-opts.rank = 0; // or 1
-opts.peers = {{"host0", port0}, {"host1", port1}}; // world_size = peers.size()
+opts.rank = rank;
+opts.world_size = n;
+opts.communicator_id = id;
+opts.rank_directory.entries = {rank0_endpoint, rank1_endpoint, ...};   // ordered by rank; validated before any network work
+opts.listeners = listeners;                                              // optional: otherwise the directory entry is bound
 auto comm = tbccl::Communicator::create(opts);
 ```
 
-This phase's async P2P/AllReduce data path supports exactly
-`world_size == 2` (matching every proven async mechanism in this
-codebase); `create()` throws for any other size rather than pretending
-to support it.
+The legacy two-rank form still works and resolves into the same explicit endpoints (control = `peers[r]`, data = `peers[0].port + 1000`, nil communicator id):
 
-`comm->rank()`, `comm->world_size()`, `comm->capabilities()`,
-`comm->failed()` are cheap, non-blocking queries.
+```cpp
+opts.rank = 0; // or 1
+opts.peers = {{"host0", port0}, {"host1", port1}};
+```
+
+Connection rule: for every pair the **lower rank dials and the higher rank accepts**, so the last rank binds nothing and exactly two sockets (control, data) exist per pair.
+Every connection starts with a handshake that carries the wire protocol version (`kWireProtocolVersion`, independent of the package version), the communicator id,
+the rank, the world size and the connection role. A wrong communicator id, a duplicate rank, a rank outside the world, a world-size or protocol-version mismatch is
+rejected on both sides with a `protocol_mismatch:` error, never a hang; the whole bootstrap is bounded by `bootstrap_timeout`. `world_size == 1` opens no socket.
+
+`comm->rank()`, `comm->world_size()`, `comm->capabilities()` (a per-rank table: `capabilities().for_rank(r)`), `comm->failed()`, `comm->aborted()` are cheap, non-blocking queries.
 
 ## Memory kinds
 
@@ -150,36 +167,41 @@ work.wait();
 if (work.has_error()) { /* work.error() is a human-readable message */ }
 ```
 
-`peer_rank` must be this communicator's single other rank (0 or 1).
-Multiple outstanding `Work` objects from the same `Communicator` are
-supported (`TensorCommWorker` processes them FIFO, one at a time, in
-submission order).
+`peer_rank` is any other rank of the world (a self send/recv, or a rank outside the world, throws `invalid_argument:` and poisons nothing). There is no `ANY_SOURCE` and no
+message tag: P2P is FIFO per peer and direction. Operations to different peers are independent (a receive that cannot complete yet never delays traffic with another peer), and
+send and receive on one peer pair do not block each other, so two ranks may send to each other simultaneously and a ring (every rank sends to its successor while receiving from its
+predecessor) completes. P2P messages carry a length header: a receive posted for a different byte count than the sender sent fails with `protocol_mismatch: ... size mismatch`, poisons the
+communicator (the stream position is unknown) and never reads beyond the posted size. A P2P `Work` shares a peer's lane with that peer's collective traffic, so do not interleave a collective with
+P2P to the same peer in an order that differs between ranks.
 
-## AllReduce
+## Collectives
 
-```cpp
-auto work = comm->all_reduce(send_view, recv_view, count, datatype, tbccl::ReduceOp::Sum);
-```
+All collectives are asynchronous (`Work`), run in call order on every rank (one collective executes at a time per communicator), and share the ordering contract: every rank issues the same
+collectives in the same order. Phase 50's N>2 algorithms are conservative **reference** implementations built for correctness and runtime structure, not speed (Phase 51 owns optimized ones):
 
-- `send_view`/`recv_view` may be the **same** `BufferView` (in-place,
-  the common case, as in `examples/async_allreduce.cpp`) or different
-  (TBCCL copies `send_view`'s content into `recv_view`'s location
-  first -- Host/MetalShared only; out-of-place is not supported for
-  `MemoryKind::Cuda` buffers this phase, pass the same view for both).
-- Only `ReduceOp::Sum` is supported this phase; anything else returns
-  `Unsupported`. Supported element types: Int8, UInt8, Float16, BFloat16,
-  Int32, Int64, Float32, Float64 on Host memory and on CUDA memory
-  (MetalShared: the original four only); an unsupported type/op pair
-  throws before any communication.
-- The root is always rank 0 internally -- there is no caller-visible
-  root parameter. (The older, internal `tbccl::n2_all_reduce_tensor()`
-  entry point still exposes a `root` parameter for benchmark
-  diagnostics; the public `Communicator::all_reduce()` does not.)
-- All ranks must call `all_reduce()` in the same order (collective
-  ordering is the caller's responsibility, same as every collective
-  library). Only one collective may be in flight on a given
-  `Communicator` at a time (single-active-collective, matching Phase
-  39's proven design).
+| call | N=1 | N=2 | N>2 reference algorithm |
+|---|---|---|---|
+| `barrier()` | completes locally | descriptor exchange | every rank -> rank 0, verdict back |
+| `broadcast(buffer, root)` | no-op | specialised single transfer | root sends to every other rank, sequentially |
+| `all_gather(input, outputs)` | local copy | specialised pairwise exchange | every rank -> rank 0, rank 0 assembles in rank order and sends to every rank |
+| `all_reduce(send, recv, count, dtype, op)` | local | specialised heterogeneous engine (unchanged) | every rank -> rank 0, reduced in rank order 1..N-1, result sent to every rank |
+
+`broadcast` and `all_gather` are byte-generic (any dtype, FP8, packed INT4, ...). `all_reduce` accepts `ReduceOp::Sum` of Float32, Float64, Int32, Int64 everywhere, Int8/UInt8 (modulo-256 sum, associative
+so it extends to N>2), and Float16/BFloat16 **only for N=2**: for N>2 they are rejected up front with `unsupported: ... N>2 reduction semantics are not defined`. The N=2 path keeps its
+descriptor-free wire format and cost.
+
+**Collective sequence and descriptors (N != 2, and `barrier` at any N).** Each collective starts with every rank sending a small descriptor (sequence number, kind, root, count, dtype, op, bytes,
+local memory kind, and whether this rank can run it) to rank 0, which answers every rank with a verdict before any payload moves:
+a rank-local capability problem (an unregistered memory kind, an Int8 reduction on a `MemoryKind::MetalShared` buffer) fails the collective on **every** rank with `unsupported:` naming the rank,
+without poisoning the communicator; a disagreement on sequence, kind, root, element count, dtype, op or byte count fails every rank with `protocol_mismatch:` and aborts the communicator. Set `TBCCL_TRACE=1` for a
+per-rank log of sequence, kind, bytes, dtype, peer and verdict.
+
+## Abort and failure
+
+`abort(reason)` is communicator-wide (Phase 45, generalized in Phase 50): the aborting rank tells every peer over the control channel before it interrupts its own work, each peer aborts and relays,
+every blocked operation on every healthy rank fails, and the communicator becomes terminal. A peer that dies abruptly (its control connection closes without a `Goodbye`) aborts the others; a clean
+destruction sends `Goodbye`, so an idle rank finishing early does not abort anyone. A rank that is alive but silent cannot be detected by the library: any rank may abort (a timeout in the caller),
+and that reaches the blocked ranks. No recovery, shrinking or renumbering exists: everyone fails. A `Work` becomes terminal only after no TBCCL thread can touch its buffer.
 
 ## Errors
 
@@ -204,7 +226,7 @@ its matching calls in the same relative order.
 
 ## Known limitations (honest, not silently dropped -- see docs/phase41_report.md)
 
-- World size is fixed at exactly 2 for the full async data path.
+- World size 1 to 4 is validated (full mesh, two sockets per rank pair; up to 8 accepted). N>2 collectives are unoptimized reference algorithms; N>2 Float16/BFloat16 reduction is rejected.
 - Only `ReduceOp::Sum` is supported for AllReduce.
 - CUDA support requires building from source and linking the optional
   device component directly; it is not yet part of the installable

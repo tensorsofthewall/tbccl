@@ -551,6 +551,12 @@ else()
     )
 endif()
 
+# Phase 50 diagnostics: N=2 regression micro-benchmark (also built by hand against older libtbccl for the A/B) and the reference N-rank collectives.
+add_executable(communicator_n2_bench benchmarks/communicator_n2_bench.cpp)
+target_link_libraries(communicator_n2_bench PRIVATE tbccl Threads::Threads)
+add_executable(communicator_nrank_bench benchmarks/communicator_nrank_bench.cpp)
+target_link_libraries(communicator_nrank_bench PRIVATE tbccl Threads::Threads)
+
 add_executable(tbccl_hetero_allreduce_bench
     benchmarks/tbccl_hetero_allreduce_bench.cpp
 )

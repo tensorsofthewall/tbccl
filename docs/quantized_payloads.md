@@ -17,9 +17,9 @@ quantization scale or per-channel/per-group quantization. Those belong to the fr
 | Representation | Byte transport | SUM reduction | Notes |
 |---|---|---|---|
 | Float64, Float32, Int64, Int32 | yes | yes (all four `ReduceOp`s through the World API; `Communicator::all_reduce` is Sum only) | unchanged since Phase 41 |
-| Float16 | yes | **yes, Sum** | widen to float32, one float32 add, round once, ties-to-even |
-| BFloat16 | yes | **yes, Sum** | same, bfloat16 rounding (never truncation) |
-| Int8, UInt8 | yes | **yes, Sum** | addition modulo 256 (two's complement for Int8); no signed overflow, no undefined behavior |
+| Float16 | yes | **yes, Sum (N=2 only)** | widen to float32, one float32 add, round once, ties-to-even; rejected for world_size > 2 (Phase 50) |
+| BFloat16 | yes | **yes, Sum (N=2 only)** | same, bfloat16 rounding (never truncation); rejected for world_size > 2 (Phase 50) |
+| Int8, UInt8 | yes | **yes, Sum** | addition modulo 256 (two's complement for Int8); no signed overflow, no undefined behavior; associative, so also enabled for N>2 (Host and Cuda memory) |
 | FP8 E4M3 / E5M2 (and other FP8 variants) | **yes** | no | transport only; no reduction datatype exists, `all_reduce` is rejected before any communication |
 | packed INT4 / FP4 (two values per byte) | **yes** | no | opaque packed bytes plus separate scale / zero-point buffers |
 | anything else (random bytes) | yes | no | |
@@ -34,7 +34,7 @@ public reducing entry point calls it before touching the network. `Capabilities:
   round-to-nearest-even. For N = 2 that is exactly one rounding per element, and it is what NCCL and PyTorch do for two operands. Host and CUDA implement it identically (the CUDA
   kernels use explicit conversions, not the native half/bfloat16 add, which rounds the exact sum once and could differ in rare double-rounding cases), so results agree
   **bit for bit**: verified for all 2^32 operand pairs of both formats. NaN results are NaN (payloads are not compared); infinities and overflow follow IEEE.
-  Sequential algorithms with more than two ranks would re-round after each pairwise add; N > 2 low-precision semantics are not defined here.
+  Sequential algorithms with more than two ranks would re-round after each pairwise add; N > 2 low-precision semantics are not defined here, and since Phase 50 `Communicator::all_reduce` rejects Float16/BFloat16 SUM for world_size > 2 with an explicit error (the reference N>2 reducer would happen to produce a rank-ordered result, but that accident is deliberately not a guarantee). Broadcast and all_gather stay byte-generic at any world size, so FP16/BF16/FP8/INT4 payloads still move unchanged at N>2.
 * **Int8 / UInt8.** Sum modulo 256 through unsigned arithmetic (e.g. int8 120 + 100 = -36, 127 + 1 = -128, uint8 255 + 1 = 0). Product, Min and Max are not provided for the new types.
 * **Alignment.** Buffers passed to a reduction must be aligned for the element type, as for Float32 today (tensors from frameworks are).
 * **Endianness.** Nothing converts byte order. Both machines of the supported pair (x86-64 and arm64) are little-endian; a hypothetical big-endian peer would need its framework to convert.
