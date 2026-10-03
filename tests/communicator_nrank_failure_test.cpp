@@ -301,13 +301,14 @@ namespace
     // through being the early finisher, for every collective, at world_size 2, 3 and 4.
     void test_early_finisher_never_aborts_a_peer()
     {
+        const int reps = std::getenv("TBCCL_TEST_REPS") ? std::atoi(std::getenv("TBCCL_TEST_REPS")) : 60; // sanitizer runs use fewer
         for (std::size_t world : {std::size_t{2}, std::size_t{3}, std::size_t{4}})
         {
             for (int kind = 0; kind < 3; ++kind)
             {
                 for (std::size_t early = 0; early < world; ++early)
                 {
-                    for (int rep = 0; rep < 60; ++rep)
+                    for (int rep = 0; rep < reps; ++rep)
                     {
                         auto results = bootstrap(healthy_slots(world), std::chrono::seconds(10));
                         for (auto &r : results) expect(r.comm != nullptr, "bootstrap: " + r.error);
