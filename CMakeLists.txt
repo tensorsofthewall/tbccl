@@ -36,6 +36,7 @@ add_library(tbccl STATIC
     src/core/buffer.cpp
     src/core/communicator.cpp
     src/core/rank_directory.cpp
+    src/core/wire_protocol.cpp
     src/collectives/barrier.cpp
     src/collectives/broadcast.cpp
     src/collectives/all_gather.cpp
@@ -1018,6 +1019,18 @@ if(BUILD_TESTING)
         target_compile_options(rank_directory_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME rank_directory_test COMMAND rank_directory_test)
+
+    add_executable(wire_protocol_test
+        tests/wire_protocol_test.cpp
+    )
+    target_include_directories(wire_protocol_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(wire_protocol_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(wire_protocol_test PRIVATE /W4)
+    else()
+        target_compile_options(wire_protocol_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME wire_protocol_test COMMAND wire_protocol_test)
 
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp

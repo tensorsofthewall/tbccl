@@ -125,6 +125,18 @@ namespace
             if (fd_ >= 0) ::shutdown(fd_, SHUT_RDWR);
         }
 
+        void set_io_timeout(std::chrono::milliseconds timeout) override
+        {
+            timeval tv{};
+            tv.tv_sec = static_cast<decltype(tv.tv_sec)>(timeout.count() / 1000);
+            tv.tv_usec = static_cast<decltype(tv.tv_usec)>((timeout.count() % 1000) * 1000);
+            if (::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0 ||
+                ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0)
+            {
+                throw std::runtime_error("setsockopt(SO_RCVTIMEO/SO_SNDTIMEO) failed: " + std::string(std::strerror(errno)));
+            }
+        }
+
         void send(const void *data, std::size_t bytes) override
         {
             check_aborted();
@@ -149,6 +161,7 @@ namespace
                         continue;
                     }
                     check_aborted();
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: send timed out");
 
                     throw std::runtime_error(
                         "send failed: " +
@@ -183,6 +196,7 @@ namespace
                         continue;
                     }
                     check_aborted();
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: recv timed out");
 
                     throw std::runtime_error(
                         "recv failed: " +
@@ -258,6 +272,14 @@ namespace
 
                 return finish_accept(client_fd);
             }
+        }
+
+        std::uint16_t local_port() const override
+        {
+            sockaddr_in address{};
+            socklen_t length = sizeof(address);
+            if (::getsockname(fd_, reinterpret_cast<sockaddr *>(&address), &length) != 0) return 0;
+            return ntohs(address.sin_port);
         }
 
         std::unique_ptr<Connection> accept_for(

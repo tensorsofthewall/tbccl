@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -72,6 +73,12 @@ public:
     // interrupted keeps the old behavior).
     virtual void abort(const std::string & /*reason*/) {}
 
+    // Phase 50: bounds every later send()/recv() on this connection (0 = no bound, the default). A bounded call that
+    // expires throws a std::runtime_error whose message starts with "timeout:". Used only while bootstrapping, so a silent
+    // stranger on a listening port cannot stall a handshake past the bootstrap deadline; established data connections
+    // are never given a bound. Default: no-op.
+    virtual void set_io_timeout(std::chrono::milliseconds /*timeout*/) {}
+
 protected:
     Connection() = default;
 };
@@ -93,6 +100,10 @@ public:
     // socket error. Never blocks longer than `timeout`.
     virtual std::unique_ptr<Connection> accept_for(
         std::chrono::milliseconds timeout) = 0;
+
+    // Phase 50: the port this listener is actually bound to (it differs from the requested one when port 0 was asked for).
+    // Default 0 for a listener that has no port.
+    virtual std::uint16_t local_port() const { return 0; }
 
 protected:
     Listener() = default;

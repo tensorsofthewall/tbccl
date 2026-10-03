@@ -64,6 +64,10 @@ enum class ErrorCode
     Timeout,
     DeviceError,
     InternalError,
+    // Phase 50 (appended): the communicator was aborted (explicitly, by a peer, or after a fatal failure), and the peer
+    // or wire protocol disagrees with this rank (communicator id, world size, rank, protocol version, collective descriptor).
+    Aborted,
+    ProtocolMismatch,
 };
 
 std::string error_code_name(ErrorCode code);
