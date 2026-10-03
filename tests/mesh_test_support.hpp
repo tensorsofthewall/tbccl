@@ -16,6 +16,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -135,6 +136,10 @@ namespace mesh_test
             });
         }
         for (auto &t : threads) t.join();
+        // Optional pacing for hosts with a small ephemeral-port range (macOS: ~16k ports, long TIME_WAIT): thousands of short-lived worlds per second exhaust it
+        // ("Can't assign requested address"). Off by default.
+        static const long pace_ms = [] { const char *v = std::getenv("TBCCL_TEST_WORLD_PACE_MS"); return v ? std::atol(v) : 0L; }();
+        if (pace_ms > 0) std::this_thread::sleep_for(std::chrono::milliseconds(pace_ms));
         return results;
     }
 
