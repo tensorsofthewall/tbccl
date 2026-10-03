@@ -5,6 +5,7 @@
 #include <tbccl/transport.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -464,6 +465,7 @@ struct TensorCommWorker::Impl
     std::function<void()> job;
 
     std::atomic<bool> stopping{false};
+    bool paused = false; // guarded by queue_mutex (test hook)
 
     // Requests queued or running on this lane, per direction (0 = Send, 1 = Recv). Incremented by enqueue(), decremented right BEFORE a request's
     // Work becomes terminal, so a caller that waited for a request sees its lane as free again.
@@ -517,7 +519,7 @@ struct TensorCommWorker::Impl
 
     Impl(std::size_t pipeline_depth_, std::size_t queue_depth_)
         : pipeline_depth(std::max<std::size_t>(1, pipeline_depth_)),
-          queue_depth(std::max<std::size_t>(1, queue_depth_))
+          queue_depth(queue_depth_ == TensorCommWorker::kUnboundedAdmission ? std::numeric_limits<std::size_t>::max() : std::max<std::size_t>(1, queue_depth_))
     {
         network_thread = std::thread([this]() { network_loop(); });
     }
@@ -640,7 +642,7 @@ struct TensorCommWorker::Impl
                 std::unique_lock<std::mutex> lock(queue_mutex);
                 queue_cv.wait(
                     lock,
-                    [&]() { return !queue.empty() || stopping.load(); });
+                    [&]() { return (!queue.empty() && !paused) || stopping.load(); });
 
                 if (queue.empty())
                 {
@@ -936,6 +938,7 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
         if (!chosen) chosen = impl_.get();
     }
     Impl &lane = *chosen;
+    const TransferDirection request_direction = request.direction; // `request` is moved into the queue below
     lane.inflight[Impl::dir_index(request.direction)].fetch_add(1, std::memory_order_acq_rel);
     TransferWork work;
 
@@ -945,19 +948,29 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
                      now_us(), static_cast<unsigned long long>(request.transfer_id));
     }
 
+    try
     {
         std::unique_lock<std::mutex> lock(lane.queue_mutex);
-        lane.queue_cv.wait(
-            lock,
-            [&]() { return lane.aborted.load() || lane.queue.size() < lane.queue_depth; });
+        if (lane.queue_depth != std::numeric_limits<std::size_t>::max())
+        {
+            // blocking backpressure for standalone users; the Communicator's lanes never take this branch
+            lane.queue_cv.wait(
+                lock,
+                [&]() { return lane.aborted.load() || lane.queue.size() < lane.queue_depth; });
+        }
         if (lane.aborted.load())
         {
-            throw Error(ErrorCode::Aborted, 
+            throw Error(ErrorCode::Aborted,
                 "aborted: communicator aborted" +
                 (lane.abort_reason.empty() ? "" : " (" + lane.abort_reason + ")"));
         }
 
         lane.queue.emplace_back(std::move(request), work.state_);
+    }
+    catch (...)
+    {
+        lane.retire(request_direction); // not admitted: the lane's in-flight count must not leak
+        throw;
     }
 
     {
@@ -968,6 +981,19 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
     lane.queue_cv.notify_all();
 
     return work;
+}
+
+void TensorCommWorker::set_progress_paused(bool paused)
+{
+    for (Impl *lane : {impl_.get(), recv_impl_.get()})
+    {
+        if (lane == nullptr) continue;
+        {
+            std::lock_guard<std::mutex> lock(lane->queue_mutex);
+            lane->paused = paused;
+        }
+        lane->queue_cv.notify_all();
+    }
 }
 
 void TensorCommWorker::abort(const std::string &reason)

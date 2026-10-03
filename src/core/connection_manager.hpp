@@ -133,6 +133,8 @@ public:
     // Diagnostics (tests and trace): which data connections exist right now. world_size 2 has its single data connection from bootstrap on.
     bool data_connected(std::size_t peer) const;
     std::vector<std::size_t> connected_data_peers() const;
+    // Test hook: pause/resume the start of queued transfers on every peer lane (submission keeps working).
+    void set_progress_paused(bool paused);
 
     // One persistent thread per peer reads that peer's control connection. An Abort frame or a control connection that breaks
     // without a Goodbye is reported through `handler` (from the watcher thread; it must not block). Call once, after bootstrap.

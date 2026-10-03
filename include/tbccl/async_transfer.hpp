@@ -333,23 +333,21 @@ struct TransferRequest
 class TensorCommWorker
 {
 public:
-    // `pipeline_depth` sizes the internal StagingPool used for every
-    // enqueued request's chunks. The pool is cached and reused across
-    // requests whose (chunk_capacity, depth) match the previous request
-    // -- measurement showed that a fresh allocation per request
-    // costs an order of magnitude more than a reused one for large
-    // buffers (first-touch page faults, not memcpy bandwidth). A
-    // request with a different chunk size does still pay a fresh
-    // allocation (the pool's buffers are sized to a specific
-    // chunk_capacity; a single fixed-size pool across heterogeneous
-    // requests would either waste memory or reject valid requests) --
-    // see the .cpp for the caching logic. `queue_depth` bounds how many
-    // TransferRequests may be waiting; enqueue() blocks once
-    // full rather than growing unbounded.
-    // `duplex` adds a second lane (queue, network thread, lazily created staging thread). A lane serves one direction at a time and a
-    // direction keeps its FIFO order on one lane, so a pending send never delays a receive on the same transport and vice versa; with a single
-    // direction in flight everything runs on the first lane, as in the single-lane worker.
-    // The default (false) keeps the single FIFO lane every earlier user relies on. `queue_depth` applies per lane.
+    // `pipeline_depth` sizes the internal StagingPool used for every enqueued request's chunks. The pool is cached and reused across requests whose
+    // (chunk_capacity, depth) match the previous request -- the async fast-path work measured that a fresh allocation per request costs an order of
+    // magnitude more than a reused one for large buffers (first-touch page faults, not memcpy bandwidth). A request with a different chunk size does
+    // still pay a fresh allocation (the pool's buffers are sized to a specific chunk_capacity; a single fixed-size pool across heterogeneous
+    // requests would either waste memory or reject valid requests) -- see the .cpp for the caching logic. `queue_depth` bounds how many
+    // TransferRequests may be waiting; enqueue() blocks once full rather than growing unbounded. The N-rank runtime work: `duplex` adds a second
+    // lane (queue, network thread, lazily created staging thread). A lane serves one direction at a time and a direction keeps its FIFO order on one
+    // lane, so a pending send never delays a receive on the same transport and vice versa; with a single direction in flight everything runs on the
+    // first lane, as in the single-lane worker. The default (false) keeps the single FIFO lane every pre-N-rank-runtime user relies on.
+    // `queue_depth` applies per lane. `queue_depth == kUnboundedAdmission (0)` makes enqueue() NEVER wait for capacity: the
+    // request joins a growing queue of lightweight descriptors (FIFO per lane) and the lane's persistent network thread moves it to the bounded
+    // active/staging resources when its turn comes. The Communicator uses this for every peer lane; a non-zero depth keeps the blocking
+    // backpressure for standalone users.
+    static constexpr std::size_t kUnboundedAdmission = 0;
+
     explicit TensorCommWorker(
         std::size_t pipeline_depth = 2,
         std::size_t queue_depth = 8,
@@ -364,6 +362,10 @@ public:
     // it, and makes a not-yet-started dequeue fail. The active request is unwound by interrupting its Transport (done
     // by the owner); it becomes terminal only after the staging/network threads have stopped touching its buffers.
     void abort(const std::string &reason);
+
+    // Test/diagnostic hook (private use): while paused, no lane starts a queued request (the network threads idle); enqueue() still admits. Lets a test
+    // prove that submission does not depend on progress. Resuming wakes the lanes. A paused worker still fails queued requests on abort.
+    void set_progress_paused(bool paused);
 
     // True while a request is queued or being processed.
     bool busy() const;
