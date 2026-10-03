@@ -181,6 +181,61 @@ namespace
         std::cout << "[PASS] ring all_gather world_size=" << world << ": 40 MiB per rank (send/receive overlap), only ring edges\n";
     }
 
+    // The DEFAULT selection (no override): which data edges appear shows which algorithm ran.
+    void test_default_selection_edges()
+    {
+        struct Case { std::size_t world; std::size_t bytes; const char *what; };
+        auto edges_of = [](const char *collective, std::size_t world, std::size_t bytes) {
+            std::vector<std::set<std::size_t>> edges(world);
+            run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
+                std::vector<std::uint8_t> buf(bytes, 1);
+                const std::size_t count = bytes / 4;
+                std::string c = collective;
+                if (c == "all_reduce") comm.all_reduce(view(buf.data(), bytes), view(buf.data(), bytes), count, DataType::Float32, ReduceOp::Sum).wait();
+                else if (c == "broadcast") comm.broadcast(view(buf.data(), bytes), 0).wait();
+                else
+                {
+                    std::vector<std::vector<std::uint8_t>> out(world, std::vector<std::uint8_t>(bytes));
+                    std::vector<BufferView> outs;
+                    for (auto &o : out) outs.push_back(view(o.data(), bytes));
+                    comm.all_gather(view(buf.data(), bytes), outs).wait();
+                }
+                auto v = tbccl::detail::debug_connected_data_peers(comm);
+                edges[rank] = std::set<std::size_t>(v.begin(), v.end());
+            });
+            return edges;
+        };
+        // N=8: 4 KiB all_reduce -> tree (edges parent/children of root 0); 2 MiB -> ring
+        auto e = edges_of("all_reduce", 8, 4096);
+        for (std::size_t r = 0; r < 8; ++r)
+        {
+            std::set<std::size_t> want;
+            for (std::size_t c : tbccl::detail::tree_children(r, 0, 8)) want.insert(c);
+            if (r) want.insert(tbccl::detail::tree_parent(r, 0, 8));
+            expect(e[r] == want, "default N=8 4 KiB all_reduce is the binomial tree");
+        }
+        e = edges_of("all_reduce", 8, 2u << 20);
+        for (std::size_t r = 0; r < 8; ++r) expect(e[r] == (std::set<std::size_t>{(r + 1) % 8, (r + 7) % 8}), "default N=8 2 MiB all_reduce is the ring");
+        // N=4: small -> recursive doubling (rank XOR 1, XOR 2)
+        e = edges_of("all_reduce", 4, 4096);
+        for (std::size_t r = 0; r < 4; ++r) expect(e[r] == (std::set<std::size_t>{r ^ 1, r ^ 2}), "default N=4 4 KiB all_reduce is recursive doubling");
+        // N=3 large -> ring
+        e = edges_of("all_reduce", 3, 1u << 20);
+        for (std::size_t r = 0; r < 3; ++r) expect(e[r] == (std::set<std::size_t>{(r + 1) % 3, (r + 2) % 3}), "default N=3 1 MiB all_reduce is the ring (every rank is a neighbour at N=3)");
+        // broadcast -> tree, all_gather -> ring (N=8)
+        e = edges_of("broadcast", 8, 4096);
+        for (std::size_t r = 0; r < 8; ++r)
+        {
+            std::set<std::size_t> want;
+            for (std::size_t c : tbccl::detail::tree_children(r, 0, 8)) want.insert(c);
+            if (r) want.insert(tbccl::detail::tree_parent(r, 0, 8));
+            expect(e[r] == want, "default broadcast is the binomial tree");
+        }
+        e = edges_of("all_gather", 8, 4096);
+        for (std::size_t r = 0; r < 8; ++r) expect(e[r] == (std::set<std::size_t>{(r + 1) % 8, (r + 7) % 8}), "default all_gather is the ring");
+        std::cout << "[PASS] default selection: tree / recursive doubling / ring for all_reduce by size and world, tree broadcast, ring all_gather (shown by the data edges used)\n";
+    }
+
     void test_abort_during_barrier(std::size_t world)
     {
         ForceEnv env("TBCCL_BARRIER_ALGORITHM", "dissemination");
@@ -231,6 +286,7 @@ int main()
             test_ring_all_gather(world);
             if (world <= 5) test_ring_all_gather_edges_and_overlap(world);
         }
+        test_default_selection_edges();
         for (std::size_t world : {std::size_t{3}, std::size_t{5}})
         {
             test_barrier_mismatch(world, 1, "non-coordinator rank differs");

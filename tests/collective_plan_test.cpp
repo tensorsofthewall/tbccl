@@ -52,6 +52,26 @@ int main()
     expect(throws_with([&] { plan_collective(CollectiveKind::AllReduce, 5, 64, CommAlgorithm::RecursiveDoubling, th); }, "unsupported: forced algorithm 'recursive-doubling'"), "forcing recursive doubling at N=5 is an unsupported error");
     expect(throws_with([&] { plan_collective(CollectiveKind::Barrier, 4, 0, CommAlgorithm::Ring, th); }, "cannot run barrier"), "forcing ring for a barrier is an unsupported error");
 
+    // default selection (the measured heuristics)
+    auto def = [&](CollectiveKind k, std::size_t n, std::size_t bytes) { return plan_collective(k, n, bytes, CommAlgorithm::Unspecified, th).algorithm; };
+    for (std::size_t n = 3; n <= 8; ++n)
+    {
+        expect(def(CollectiveKind::Broadcast, n, 64) == CommAlgorithm::BinomialTree && def(CollectiveKind::Broadcast, n, 16 << 20) == CommAlgorithm::BinomialTree, "broadcast: tree");
+        expect(def(CollectiveKind::AllGather, n, 64) == CommAlgorithm::Ring && def(CollectiveKind::AllGather, n, 16 << 20) == CommAlgorithm::Ring, "all_gather: ring");
+        expect(def(CollectiveKind::Barrier, n, 0) == CommAlgorithm::Reference, "barrier below the dissemination threshold: the control-plane gather/release");
+        expect(def(CollectiveKind::AllReduce, n, 16 << 20) == CommAlgorithm::Ring, "large all_reduce: ring");
+    }
+    expect(def(CollectiveKind::Barrier, 9, 0) == CommAlgorithm::Dissemination && def(CollectiveKind::Barrier, 16, 0) == CommAlgorithm::Dissemination, "barrier: dissemination from the threshold on");
+    expect(def(CollectiveKind::AllReduce, 3, 4096) == CommAlgorithm::BinomialTree && def(CollectiveKind::AllReduce, 3, 64 << 10) == CommAlgorithm::BinomialTree && def(CollectiveKind::AllReduce, 3, 96 << 10) == CommAlgorithm::Ring, "N=3 all_reduce: tree below 96 KiB, ring from there");
+    expect(def(CollectiveKind::AllReduce, 4, 64) == CommAlgorithm::RecursiveDoubling && def(CollectiveKind::AllReduce, 4, 128 << 10) == CommAlgorithm::RecursiveDoubling && def(CollectiveKind::AllReduce, 4, 192 << 10) == CommAlgorithm::Ring, "N=4 all_reduce: recursive doubling below 192 KiB, ring from there");
+    expect(def(CollectiveKind::AllReduce, 8, 4096) == CommAlgorithm::BinomialTree && def(CollectiveKind::AllReduce, 8, 512 << 10) == CommAlgorithm::BinomialTree && def(CollectiveKind::AllReduce, 8, 576 << 10) == CommAlgorithm::Ring, "N=8 all_reduce: tree (recursive doubling lost at 8), ring from 576 KiB");
+    for (std::size_t n : {std::size_t{3}, std::size_t{5}, std::size_t{6}, std::size_t{7}})
+        expect(def(CollectiveKind::AllReduce, n, 64) == CommAlgorithm::BinomialTree, "recursive doubling is never chosen for a non-power-of-two world");
+    for (std::size_t n = 3; n <= 16; ++n)
+        for (std::size_t bytes : {std::size_t{0}, std::size_t{1} << 10, std::size_t{1} << 16, std::size_t{1} << 20, std::size_t{1} << 24})
+            for (auto kind : {CollectiveKind::Broadcast, CollectiveKind::AllGather, CollectiveKind::AllReduce, CollectiveKind::Barrier})
+                expect(algorithm_supported(kind, def(kind, n, bytes), n), "the default plan is always a supported algorithm");
+
     // determinism: identical inputs -> identical plans
     for (std::size_t n = 3; n <= 8; ++n)
         for (std::size_t bytes : {std::size_t{0}, std::size_t{64}, std::size_t{4096}, std::size_t{1} << 20, std::size_t{16} << 20})

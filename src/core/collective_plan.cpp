@@ -120,10 +120,24 @@ CollectivePlan plan_collective(
         plan.algorithm = forced;
         return plan;
     }
-    // Defaults. Barrier has one scalable algorithm; the others keep the Phase 50 reference until their algorithms land (measured selection comes with the selector).
-    (void)bytes;
-    (void)thresholds;
-    plan.algorithm = kind == CollectiveKind::Barrier ? CommAlgorithm::Dissemination : CommAlgorithm::Reference;
+    // Defaults, from the Phase 51 measurements (see PlannerThresholds). bytes is the per-rank payload of the collective.
+    switch (kind)
+    {
+    case CollectiveKind::Barrier:
+        plan.algorithm = world_size >= thresholds.barrier_dissemination_min_world ? CommAlgorithm::Dissemination : CommAlgorithm::Reference;
+        break;
+    case CollectiveKind::Broadcast:
+        plan.algorithm = CommAlgorithm::BinomialTree; // beat the root fan-out at every measured size, N=3,4,8
+        break;
+    case CollectiveKind::AllGather:
+        plan.algorithm = CommAlgorithm::Ring; // beat gather+fan-out at every measured size, N=3,4,8
+        break;
+    case CollectiveKind::AllReduce:
+        if (bytes >= thresholds.all_reduce_ring_bytes_per_extra_rank * (world_size - 2)) plan.algorithm = CommAlgorithm::Ring;
+        else if (is_power_of_two(world_size) && world_size <= thresholds.recursive_doubling_max_world) plan.algorithm = CommAlgorithm::RecursiveDoubling;
+        else plan.algorithm = CommAlgorithm::BinomialTree;
+        break;
+    }
     return plan;
 }
 
