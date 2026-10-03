@@ -82,6 +82,10 @@ enum class ControlFrameType : std::uint32_t
 {
     Abort = 1,
     Goodbye = 2,
+    // Collective descriptors (rank -> rank 0) and verdicts (rank 0 -> rank), carried on the control plane in the frame's 256-byte area so the data
+    // plane can stay sparse. FIFO per peer, like everything on a control connection.
+    CollectiveDescriptor = 3,
+    CollectiveVerdict = 4,
 };
 
 constexpr std::size_t kControlReasonBytes = 256;
@@ -91,7 +95,8 @@ struct ControlFrame
 {
     ControlFrameType type = ControlFrameType::Goodbye;
     std::uint32_t origin_rank = 0;
-    std::string reason; // truncated to kControlReasonBytes - 1 on the wire
+    std::string reason; // Abort: truncated to kControlReasonBytes - 1 on the wire
+    std::vector<std::uint8_t> payload; // CollectiveDescriptor / CollectiveVerdict: up to kControlReasonBytes bytes
 };
 
 void send_control_frame(Connection &connection, const ControlFrame &frame);

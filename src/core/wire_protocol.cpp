@@ -214,8 +214,17 @@ void send_control_frame(Connection &connection, const ControlFrame &frame)
     std::memset(buffer, 0, sizeof(buffer));
     put_u32(buffer + 0, static_cast<std::uint32_t>(frame.type));
     put_u32(buffer + 4, frame.origin_rank);
-    put_u32(buffer + 8, static_cast<std::uint32_t>(std::min(frame.reason.size(), kControlReasonBytes - 1)));
-    put_text(buffer + 16, kControlReasonBytes, frame.reason);
+    if (frame.type == ControlFrameType::CollectiveDescriptor || frame.type == ControlFrameType::CollectiveVerdict)
+    {
+        const std::size_t n = std::min(frame.payload.size(), kControlReasonBytes);
+        put_u32(buffer + 8, static_cast<std::uint32_t>(n));
+        std::memcpy(buffer + 16, frame.payload.data(), n);
+    }
+    else
+    {
+        put_u32(buffer + 8, static_cast<std::uint32_t>(std::min(frame.reason.size(), kControlReasonBytes - 1)));
+        put_text(buffer + 16, kControlReasonBytes, frame.reason);
+    }
     connection.send(buffer, sizeof(buffer));
 }
 
@@ -226,7 +235,15 @@ ControlFrame recv_control_frame(Connection &connection)
     ControlFrame frame;
     frame.type = static_cast<ControlFrameType>(get_u32(buffer + 0));
     frame.origin_rank = get_u32(buffer + 4);
-    frame.reason = get_text(buffer + 16, kControlReasonBytes);
+    if (frame.type == ControlFrameType::CollectiveDescriptor || frame.type == ControlFrameType::CollectiveVerdict)
+    {
+        const std::size_t n = std::min<std::size_t>(get_u32(buffer + 8), kControlReasonBytes);
+        frame.payload.assign(buffer + 16, buffer + 16 + n);
+    }
+    else
+    {
+        frame.reason = get_text(buffer + 16, kControlReasonBytes);
+    }
     return frame;
 }
 

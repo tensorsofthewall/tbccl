@@ -26,6 +26,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -41,7 +43,8 @@ struct PeerChannel
     std::size_t peer_rank = 0;
     // Destruction order (reverse of declaration): worker threads are joined before the transport they use is closed.
     std::unique_ptr<Connection> control;
-    std::unique_ptr<TcpTransport> data;
+    // The data transport: a TcpTransport established at bootstrap for world_size 2, a LazyDataTransport (connects on first use) above that.
+    std::unique_ptr<Transport> data;
     std::unique_ptr<TensorCommWorker> worker;
     PeerCapabilities capabilities;
 
@@ -54,6 +57,29 @@ struct PeerChannel
 // What a control-channel watcher reports to the Communicator. `origin` is the rank that first aborted (the peer itself, or a rank
 // the peer is relaying for); `peer_lost` means the control connection broke without a Goodbye or an Abort frame.
 using PeerEventHandler = std::function<void(std::size_t peer, std::size_t origin, const std::string &reason, bool peer_lost)>;
+
+// Collective descriptors and verdicts received on the control plane, queued per peer in arrival order. Waits are interruptible by abort().
+class CollectiveMailbox
+{
+public:
+    void post_descriptor(std::size_t peer, const std::vector<std::uint8_t> &bytes);
+    void post_verdict(std::size_t peer, const std::vector<std::uint8_t> &bytes);
+    // Blocks (event-driven) for the next descriptor from / verdict sent by `peer`. Throws "aborted: ..." once abort() was called.
+    std::vector<std::uint8_t> wait_descriptor(std::size_t peer);
+    std::vector<std::uint8_t> wait_verdict(std::size_t peer);
+    void abort(const std::string &reason);
+    explicit CollectiveMailbox(std::size_t world) : descriptors_(world), verdicts_(world) {}
+
+private:
+    std::vector<std::uint8_t> wait_on(std::vector<std::deque<std::vector<std::uint8_t>>> &queues, std::size_t peer);
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::vector<std::deque<std::vector<std::uint8_t>>> descriptors_, verdicts_;
+    bool aborted_ = false;
+    std::string reason_;
+};
+
+class LazyDataTransport; // defined in connection_manager.cpp
 
 class ConnectionManager
 {
@@ -85,8 +111,16 @@ public:
     // Blocks (event-driven) until every lane of every peer is idle.
     void wait_idle();
     void set_fatal_handler(const std::function<void(const std::string &)> &handler);
-    // Interrupts every data transport (a blocked send/recv unwinds) and fails every queued request. Idempotent.
+    // Interrupts every data transport (a blocked send/recv unwinds), wakes every mailbox waiter and fails every queued request. Idempotent.
     void abort_transfers(const std::string &reason);
+
+    // Collective control messages. send_* write one control frame to `peer` (best effort ordering: FIFO per peer); the mailbox receives what peers sent.
+    void send_collective_frame(std::size_t peer, bool is_verdict, const std::vector<std::uint8_t> &bytes);
+    CollectiveMailbox &mailbox() noexcept { return mailbox_; }
+
+    // Diagnostics (tests and trace): which data connections exist right now. world_size 2 has its single data connection from bootstrap on.
+    bool data_connected(std::size_t peer) const;
+    std::vector<std::size_t> connected_data_peers() const;
 
     // One persistent thread per peer reads that peer's control connection. An Abort frame or a control connection that breaks
     // without a Goodbye is reported through `handler` (from the watcher thread; it must not block). Call once, after bootstrap.
@@ -100,9 +134,22 @@ public:
     void goodbye();
 
 private:
-    ConnectionManager() = default;
+    explicit ConnectionManager(std::size_t world) : mailbox_(world) {}
+    void start_data_acceptor();
+
     std::size_t rank_ = 0;
     std::atomic<bool> closing_{false};
+    CollectiveMailbox mailbox_;
+
+    // world_size > 2: the lower rank of a pair keeps listening for the higher rank's lazy data dial.
+    ResolvedBootstrap boot_;
+    std::chrono::milliseconds dial_timeout_{10000};
+    std::unique_ptr<Listener> data_listener_;
+    Endpoint data_listener_endpoint_;
+    std::thread data_acceptor_;
+    std::mutex data_install_mutex_;
+    std::vector<bool> data_installed_;
+
     std::vector<std::unique_ptr<PeerChannel>> channels_;
 };
 

@@ -9,6 +9,7 @@
 #include "bootstrap_config.hpp"
 #include "connection_manager.hpp"
 #include "collective_protocol.hpp"
+#include "communicator_debug.hpp"
 #include "host_pointer_backend.hpp"
 #include "nrank_collectives.hpp"
 #include "trace.hpp"
@@ -410,6 +411,8 @@ struct Communicator::Impl
     std::uint64_t next_sequence = 0;
     std::atomic<std::uint64_t> next_work_id{0};
     detail::Trace trace;
+    detail::PlannerOverrides overrides;     // this rank's debug overrides (carried in descriptors)
+    detail::PlannerThresholds thresholds;   // used by rank 0's planner
 
     // The N=2 specialised paths (all_reduce / broadcast / all_gather) talk to the one remote rank.
     detail::PeerChannel &sole_channel()
@@ -552,6 +555,7 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
     impl.caps.remote_ = impl.caps.rank_capabilities_[boot.world_size == 1 ? 0 : (boot.rank == 0 ? 1 : 0)];
 
     impl.trace = detail::Trace(boot.communicator_id.prefix(), boot.rank, boot.world_size);
+    impl.overrides = detail::planner_overrides_from_environment();
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
     impl.collective_executor->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
@@ -681,9 +685,10 @@ LocalProvider make_local_provider(
 
 detail::CollectiveDescriptor describe(
     detail::CollectiveKind kind, std::size_t rank, std::size_t root, MemoryKind memory, std::size_t count, DataType datatype, ReduceOp op,
-    std::size_t bytes, const std::string &local_error)
+    std::size_t bytes, const std::string &local_error, detail::CommAlgorithm forced = detail::CommAlgorithm::Unspecified)
 {
     detail::CollectiveDescriptor d;
+    d.forced_algorithm = static_cast<std::uint32_t>(forced);
     d.kind = kind;
     d.rank = static_cast<std::uint32_t>(rank);
     d.root = static_cast<std::uint32_t>(root);
@@ -790,7 +795,7 @@ Work Communicator::all_reduce(
 
     auto run = [impl, provider, local_error, rank, world, total_bytes, count, datatype, op, work_id, memory]() {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
         if (world == 2)
         {
             // The N=2 fast path: no descriptor exchange, the specialised heterogeneous engine unchanged (Part 55).
@@ -813,8 +818,9 @@ Work Communicator::all_reduce(
         }
         if (world > 1)
         {
-            detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::AllReduce, rank, 0, memory, count, datatype, op, total_bytes, local_error));
-            detail::reference_all_reduce(r, *provider, total_bytes, count, datatype);
+            const auto algorithm = detail::run_descriptor_exchange(
+                r, describe(detail::CollectiveKind::AllReduce, rank, 0, memory, count, datatype, op, total_bytes, local_error, impl->overrides.all_reduce));
+            detail::run_all_reduce(r, algorithm, *provider, total_bytes, count, datatype);
         }
         // world_size 1: the (already staged) local input is the result.
     };
@@ -850,7 +856,7 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
     const std::string local_error = local.error;
     auto run = [impl, provider, local_error, rank, world, root, bytes, work_id, memory]() {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
         if (world == 2)
         {
             // N=2 fast path: one transfer, no descriptor exchange.
@@ -860,8 +866,12 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
             run_transfer(*sole.worker, *sole.data, provider->primary_backend(), rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
             return;
         }
-        if (world > 1) detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::Broadcast, rank, root, memory, 0, DataType::UInt8, ReduceOp::Sum, bytes, local_error));
-        detail::reference_broadcast(r, provider.get(), bytes, root);
+        if (world > 1)
+        {
+            const auto algorithm = detail::run_descriptor_exchange(
+                r, describe(detail::CollectiveKind::Broadcast, rank, root, memory, 0, DataType::UInt8, ReduceOp::Sum, bytes, local_error, impl->overrides.broadcast));
+            detail::run_broadcast(r, algorithm, provider.get(), bytes, root);
+        }
     };
     try
     {
@@ -918,7 +928,7 @@ Work Communicator::all_gather(
     const MemoryKind memory = input.memory_kind;
     auto run = [impl, in_provider, out_providers, local_error, rank, world, bytes, work_id, memory]() mutable {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
         if (world == 2)
         {
             // N=2 fast path, unchanged: deterministic, deadlock-safe order (lower rank sends first), no descriptor exchange.
@@ -939,8 +949,16 @@ Work Communicator::all_gather(
             }
             return;
         }
-        if (world > 1) detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::AllGather, rank, 0, memory, 0, DataType::UInt8, ReduceOp::Sum, bytes, local_error));
-        detail::reference_all_gather(r, in_provider.get(), out_providers, bytes);
+        if (world > 1)
+        {
+            const auto algorithm = detail::run_descriptor_exchange(
+                r, describe(detail::CollectiveKind::AllGather, rank, 0, memory, 0, DataType::UInt8, ReduceOp::Sum, bytes, local_error, impl->overrides.all_gather));
+            detail::run_all_gather(r, algorithm, in_provider.get(), out_providers, bytes);
+        }
+        else
+        {
+            detail::reference_all_gather(r, in_provider.get(), out_providers, bytes); // world_size 1: the local copy
+        }
     };
     try
     {
@@ -961,9 +979,13 @@ Work Communicator::barrier()
     const std::uint64_t work_id = impl->next_work_id.fetch_add(1);
     auto run = [impl, rank, world, work_id]() {
         const std::uint64_t sequence = impl->next_sequence++;
-        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds};
         if (world > 1)
-            detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::Barrier, rank, 0, MemoryKind::Host, 0, DataType::UInt8, ReduceOp::Sum, 0, std::string()));
+        {
+            const auto algorithm = detail::run_descriptor_exchange(
+                r, describe(detail::CollectiveKind::Barrier, rank, 0, MemoryKind::Host, 0, DataType::UInt8, ReduceOp::Sum, 0, std::string(), impl->overrides.barrier));
+            detail::run_barrier(r, algorithm);
+        }
     };
     try
     {
@@ -975,5 +997,15 @@ Work Communicator::barrier()
         throw;
     }
 }
+
+namespace detail
+{
+struct CommunicatorAccess
+{
+    static std::vector<std::size_t> connected_data_peers(const Communicator &comm) { return comm.impl_->mesh->connected_data_peers(); }
+};
+
+std::vector<std::size_t> debug_connected_data_peers(const Communicator &comm) { return CommunicatorAccess::connected_data_peers(comm); }
+} // namespace detail
 
 } // namespace tbccl

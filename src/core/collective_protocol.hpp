@@ -54,6 +54,8 @@ struct CollectiveDescriptor
     // 0 = this rank can run the collective; 1 = it cannot, and `note` says why.
     std::uint32_t local_status = 0;
     std::string note;
+    // The algorithm this rank's debug override forces (a CommAlgorithm value; 0 = no override). Ranks that force different algorithms are a mismatch.
+    std::uint32_t forced_algorithm = 0;
 };
 
 constexpr std::size_t kDescriptorWireSize = 128;
@@ -75,6 +77,8 @@ struct CollectiveVerdict
     VerdictStatus status = VerdictStatus::Ok;
     std::uint64_t sequence = 0;
     std::string text;
+    // The algorithm every rank must execute (a CommAlgorithm value), chosen once by rank 0. Meaningful when status == Ok.
+    std::uint32_t algorithm = 0;
 };
 
 constexpr std::size_t kVerdictWireSize = 256;

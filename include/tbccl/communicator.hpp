@@ -38,6 +38,7 @@ namespace tbccl
 namespace detail
 {
 struct ListenersAccess;
+struct CommunicatorAccess; // private test/diagnostic access (src/core/communicator_debug.hpp)
 } // namespace detail
 
 class CommunicatorListeners;
@@ -332,6 +333,7 @@ public:
 
 private:
     Communicator();
+    friend struct detail::CommunicatorAccess;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
