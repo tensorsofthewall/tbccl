@@ -960,11 +960,12 @@ void TensorCommWorker::abort(const std::string &reason)
 
 bool TensorCommWorker::busy() const
 {
+    // In-flight counts are decremented BEFORE a request's Work becomes terminal, so a caller that has seen every Work complete never finds this
+    // worker busy (queue/active flags are cleared slightly later). Communicator's destructor relies on that: "busy" there means abort the peers.
     for (Impl *lane : {impl_.get(), recv_impl_.get()})
     {
         if (lane == nullptr) continue;
-        std::lock_guard<std::mutex> lock(lane->queue_mutex);
-        if (lane->active || !lane->queue.empty()) return true;
+        if (lane->inflight[0].load(std::memory_order_acquire) > 0 || lane->inflight[1].load(std::memory_order_acquire) > 0) return true;
     }
     return false;
 }

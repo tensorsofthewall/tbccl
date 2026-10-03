@@ -9,6 +9,7 @@
 #include <tbccl/tcp.hpp>
 
 #include <csignal>
+#include <optional>
 #include <cstdlib>
 #include <iostream>
 #include <sys/wait.h>
@@ -295,6 +296,80 @@ namespace
         std::cout << "[PASS] a clean destruction (Goodbye) does not abort the remaining ranks\n";
     }
 
+    // Regression (found by torch-tbccl's N=2 all_gather test): a rank whose Work just completed and which destroys its communicator at once must NOT be
+    // treated as "destroyed with outstanding operations" (that sends Abort to the peers, who may still be receiving its last bytes). Every rank rotates
+    // through being the early finisher, for every collective, at world_size 2, 3 and 4.
+    void test_early_finisher_never_aborts_a_peer()
+    {
+        for (std::size_t world : {std::size_t{2}, std::size_t{3}, std::size_t{4}})
+        {
+            for (int kind = 0; kind < 3; ++kind)
+            {
+                for (std::size_t early = 0; early < world; ++early)
+                {
+                    for (int rep = 0; rep < 60; ++rep)
+                    {
+                        auto results = bootstrap(healthy_slots(world), std::chrono::seconds(10));
+                        for (auto &r : results) expect(r.comm != nullptr, "bootstrap: " + r.error);
+                        std::vector<std::string> errors(world);
+                        std::vector<std::thread> threads;
+                        for (std::size_t r = 0; r < world; ++r)
+                        {
+                            threads.emplace_back([&, r] {
+                                try
+                                {
+                                    const std::size_t bytes = 4u << 20;
+                                    std::vector<std::uint8_t> buf(bytes, static_cast<std::uint8_t>(r)), out(bytes);
+                                    std::vector<std::vector<std::uint8_t>> gathered(world, std::vector<std::uint8_t>(bytes));
+                                    auto &comm = *results[r].comm;
+                                    std::optional<tbccl::Work> wo;
+                                    if (kind == 0)
+                                    {
+                                        wo.emplace(comm.broadcast(view(buf.data(), bytes), 0));
+                                    }
+                                    else if (kind == 1)
+                                    {
+                                        std::vector<BufferView> outs;
+                                        for (auto &g : gathered) outs.push_back(view(g.data(), bytes));
+                                        wo.emplace(comm.all_gather(view(buf.data(), bytes), outs));
+                                    }
+                                    else
+                                    {
+                                        std::vector<std::int32_t> v(bytes / 4, 1);
+                                        wo.emplace(comm.all_reduce(view(v.data(), bytes), view(v.data(), bytes), v.size(), DataType::Int32, ReduceOp::Sum));
+                                        auto &w = *wo;
+                                        w.wait();
+                                        if (r == early) results[r].comm.reset();
+                                        else std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                                        expect(!w.has_error(), "all_reduce failed: " + w.error());
+                                        expect(v[0] == static_cast<std::int32_t>(world) && v.back() == static_cast<std::int32_t>(world), "all_reduce result");
+                                        return;
+                                    }
+                                    auto &w = *wo;
+                                    w.wait();
+                                    if (r == early) results[r].comm.reset(); // destroyed the moment its own Work completed
+                                    else std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                                    expect(!w.has_error(), std::string("collective failed on rank ") + std::to_string(r) + ": " + w.error());
+                                    if (kind == 0) expect(buf[0] == 0 && buf[bytes - 1] == 0, "broadcast payload");
+                                    else
+                                        for (std::size_t q = 0; q < world; ++q) expect(gathered[q][0] == q && gathered[q][bytes - 1] == q, "all_gather payload");
+                                }
+                                catch (const std::exception &e)
+                                {
+                                    errors[r] = e.what();
+                                }
+                            });
+                        }
+                        for (auto &t : threads) t.join();
+                        for (std::size_t r = 0; r < world; ++r)
+                            expect(errors[r].empty(), "world " + std::to_string(world) + " kind " + std::to_string(kind) + " early rank " + std::to_string(early) + " rep " + std::to_string(rep) + ": rank " + std::to_string(r) + ": " + errors[r]);
+                    }
+                }
+            }
+        }
+        std::cout << "[PASS] a rank that destroys its communicator right after its own Work completed never aborts a peer (broadcast, all_gather, all_reduce; world_size 2, 3, 4)\n";
+    }
+
     void test_repeated_abort_loop()
     {
         for (int i = 0; i < 15; ++i)
@@ -322,6 +397,7 @@ int main()
     try
     {
         test_clean_departure_is_not_an_abort();
+        test_early_finisher_never_aborts_a_peer();
         test_explicit_abort_with_several_works_outstanding();
         test_destroy_with_outstanding_work();
         test_repeated_abort_loop();

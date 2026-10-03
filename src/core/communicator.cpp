@@ -229,15 +229,14 @@ public:
         cv_.notify_all();
         for (auto &job : doomed)
         {
+            unfinished_.fetch_sub(1, std::memory_order_acq_rel);
             detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), message);
         }
     }
 
-    bool busy() const
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return running_ || !queue_.empty();
-    }
+    // True while a submitted job has not finished. Unlike running_/queue_ (cleared after a Work completes) the counter drops BEFORE the job's
+    // Work becomes terminal, so a caller that has waited for every Work never sees the executor busy (the destructor treats "busy" as "abort").
+    bool busy() const { return unfinished_.load(std::memory_order_acquire) > 0; }
 
     void set_fatal_handler(std::function<void(const std::string &)> handler) { on_fatal_ = std::move(handler); }
 
@@ -254,6 +253,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             if (aborted_) throw std::runtime_error(abort_message_);
             queue_.push_back(CollectiveJob{std::move(run), work});
+            unfinished_.fetch_add(1, std::memory_order_acq_rel);
         }
         cv_.notify_all();
         return work;
@@ -274,10 +274,12 @@ private:
             try
             {
                 job.run();
+                unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 detail::TransferWorkAccess::complete_ok(detail::TransferWorkAccess::state_of(job.work));
             }
             catch (const detail::CollectiveRejected &e)
             {
+                unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 // Every rank consumed the same descriptor and verdict and no payload moved: the Work fails, the communicator stays usable.
                 detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
             }
@@ -285,11 +287,13 @@ private:
             {
                 // A job fails only after protocol participation began (arguments were validated before
                 // submission): the collective sequence is no longer trustworthy, so poison the communicator.
+                unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 if (on_fatal_) on_fatal_(e.what());
                 detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
             }
             catch (...)
             {
+                unfinished_.fetch_sub(1, std::memory_order_acq_rel);
                 if (on_fatal_) on_fatal_("unknown error in collective executor");
                 detail::TransferWorkAccess::complete_error(
                     detail::TransferWorkAccess::state_of(job.work), "unknown error in collective executor");
@@ -308,6 +312,7 @@ private:
     bool stop_ = false;
     bool aborted_ = false;
     bool running_ = false;
+    std::atomic<int> unfinished_{0};
     std::string abort_message_;
     std::function<void(const std::string &)> on_fatal_;
     std::thread thread_;
