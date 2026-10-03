@@ -1,0 +1,78 @@
+#pragma once
+
+// The conservative REFERENCE collectives of the N-rank Communicator, private to libtbccl. They exist for correctness and for the
+// runtime structure (peer channels, collective sequencing, abort, capabilities), not for speed: the N>2 collective-selection work owns optimized algorithms.
+//
+//   barrier     descriptor exchange only (every rank -> rank 0, verdict back)
+//   broadcast   root -> every other rank, sequential fan-out
+//   all_gather  every rank -> rank 0, rank 0 assembles outputs in rank order and fans out; sequential
+//   all_reduce  every rank -> rank 0 in rank order 1..N-1 (a fixed reduction order, so a result is reproducible), rank 0 reduces
+//               into its buffer through the memory provider's reduce backend, then sends the result to every rank; sequential
+//
+// All of them run on the Communicator's single collective-executor thread (the collective ordering domain) and post their transfers to
+// PeerChannel lanes. A child failure never leaves another child running against the caller's buffer: OpGroup waits for every child.
+
+#include "collective_protocol.hpp"
+#include "connection_manager.hpp"
+#include "trace.hpp"
+
+#include <tbccl/communicator.hpp>
+
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace tbccl::detail
+{
+
+struct CollectiveRun
+{
+    std::size_t rank = 0;
+    std::size_t world = 0;
+    ConnectionManager *mesh = nullptr;
+    std::uint64_t sequence = 0;
+    std::uint64_t work_id = 0;
+    const Trace *trace = nullptr;
+};
+
+// The children of one collective. wait_all() waits for EVERY child (even after the first failure) and then throws the first error in
+// posting order, so a failing collective never returns while a transport thread can still touch the caller's buffer. The destructor
+// waits too, for the same reason on an unwinding path.
+class OpGroup
+{
+public:
+    OpGroup() = default;
+    ~OpGroup();
+    OpGroup(const OpGroup &) = delete;
+    OpGroup &operator=(const OpGroup &) = delete;
+
+    void add(const std::string &what, TransferWork work);
+    void wait_all();
+
+private:
+    struct Child
+    {
+        std::string what;
+        TransferWork work;
+    };
+    std::vector<Child> children_;
+};
+
+// Posts one unframed transfer of `bytes` bytes through `backend` on the matching lane of `peer`'s channel.
+TransferWork post_transfer(PeerChannel &channel, TransferDirection direction, AsyncMemoryBackend &backend, std::size_t bytes);
+
+// Copies `bytes` bytes from `from` to `to` through the providers' staging interface (no device code here).
+void copy_through_providers(ExternalMemoryProvider &from, ExternalMemoryProvider &to, std::size_t bytes);
+
+// Descriptor exchange with rank 0 and the verdict. Returns on Ok; throws CollectiveRejected (Unsupported) or CollectiveMismatch.
+void run_descriptor_exchange(const CollectiveRun &run, const CollectiveDescriptor &mine);
+
+void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
+
+// `outputs[r]` receives rank r's input on every rank; `in` and the outputs are never null when bytes > 0.
+void reference_all_gather(
+    const CollectiveRun &run, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes);
+
+void reference_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype);
+
+} // namespace tbccl::detail

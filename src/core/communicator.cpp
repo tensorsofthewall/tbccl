@@ -8,6 +8,10 @@
 
 #include "bootstrap_config.hpp"
 #include "connection_manager.hpp"
+#include "collective_protocol.hpp"
+#include "host_pointer_backend.hpp"
+#include "nrank_collectives.hpp"
+#include "trace.hpp"
 #include "reduction_internal.hpp"
 
 #include <algorithm>
@@ -42,36 +46,6 @@ namespace
 // reverse). Both pieces are small and proven; this is a deliberate,
 // documented duplication, not a design gap.
 // ---------------------------------------------------------------------
-
-class HostPointerAsyncBackend final : public AsyncMemoryBackend
-{
-public:
-    HostPointerAsyncBackend(void *buffer, std::size_t capacity)
-        : buffer_(static_cast<std::byte *>(buffer)), capacity_(capacity)
-    {
-    }
-
-    void stage_source_chunk(const Chunk &chunk, void *staging) override
-    {
-        std::memcpy(staging, buffer_ + chunk.offset, chunk.size);
-    }
-
-    void commit_destination_chunk(const Chunk &chunk, const void *staging) override
-    {
-        std::memcpy(buffer_ + chunk.offset, staging, chunk.size);
-    }
-
-    bool supports_direct_transport_access() const noexcept override { return true; }
-    const void *direct_source_data() const noexcept override { return buffer_; }
-    void *direct_destination_data() noexcept override { return buffer_; }
-
-    void *data() const noexcept { return buffer_; }
-    std::size_t capacity() const noexcept { return capacity_; }
-
-private:
-    std::byte *buffer_;
-    std::size_t capacity_;
-};
 
 class HostPointerReduceBackend final : public LocalReduceBackend
 {
@@ -109,7 +83,7 @@ public:
         if (!scratch_)
         {
             scratch_storage_.assign(bytes_, std::byte{0});
-            scratch_ = std::make_unique<HostPointerAsyncBackend>(scratch_storage_.data(), bytes_);
+            scratch_ = std::make_unique<detail::HostPointerAsyncBackend>(scratch_storage_.data(), bytes_);
         }
         return *scratch_;
     }
@@ -126,10 +100,10 @@ public:
     }
 
 private:
-    HostPointerAsyncBackend primary_;
+    detail::HostPointerAsyncBackend primary_;
     std::size_t bytes_;
     std::vector<std::byte> scratch_storage_;
-    std::unique_ptr<HostPointerAsyncBackend> scratch_;
+    std::unique_ptr<detail::HostPointerAsyncBackend> scratch_;
     std::unique_ptr<HostPointerReduceBackend> reduce_;
 };
 
@@ -302,6 +276,11 @@ private:
                 job.run();
                 detail::TransferWorkAccess::complete_ok(detail::TransferWorkAccess::state_of(job.work));
             }
+            catch (const detail::CollectiveRejected &e)
+            {
+                // Every rank consumed the same descriptor and verdict and no payload moved: the Work fails, the communicator stays usable.
+                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), e.what());
+            }
             catch (const std::exception &e)
             {
                 // A job fails only after protocol participation began (arguments were validated before
@@ -424,6 +403,11 @@ struct Communicator::Impl
     std::unique_ptr<detail::ConnectionManager> mesh;
     std::unique_ptr<CollectiveExecutor> collective_executor;
     Capabilities caps;
+
+    // Collective sequence: assigned by the executor thread, in the order collectives actually run (read/written only there).
+    std::uint64_t next_sequence = 0;
+    std::atomic<std::uint64_t> next_work_id{0};
+    detail::Trace trace;
 
     // The N=2 specialised paths (all_reduce / broadcast / all_gather) talk to the one remote rank.
     detail::PeerChannel &sole_channel()
@@ -550,6 +534,7 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
     }
     impl.caps.remote_ = impl.caps.rank_capabilities_[boot.world_size == 1 ? 0 : (boot.rank == 0 ? 1 : 0)];
 
+    impl.trace = detail::Trace(boot.communicator_id.prefix(), boot.rank, boot.world_size);
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
     impl.collective_executor->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
@@ -643,96 +628,54 @@ Work Communicator::recv(
     }
 }
 
-Work Communicator::all_reduce(
-    const BufferView &send_buf,
-    const BufferView &recv_buf,
-    std::size_t count,
-    DataType datatype,
-    ReduceOp op,
-    const ExecutionContext &context)
-{
-    require_not_failed(*this);
-
-    if (impl_->world_size != 2)
-    {
-        throw std::runtime_error("unsupported: all_reduce requires world_size==2 (heterogeneous N=2 engine)");
-    }
-    if (op != ReduceOp::Sum)
-    {
-        throw std::runtime_error("unsupported: all_reduce only supports ReduceOp::Sum");
-    }
-    validate_reduction(datatype, op);
-    if (!impl_->caps.supports_collective_all_reduce(recv_buf.memory_kind, datatype, op))
-    {
-        throw std::runtime_error(
-            std::string("unsupported: all_reduce of dtype=") + datatype_label(datatype) + " is not available for this memory kind");
-    }
-    validate_buffer_view(send_buf, count, datatype);
-    validate_buffer_view(recv_buf, count, datatype);
-
-    constexpr std::size_t kRoot = 0; // fixed internal policy, never exposed.
-    const std::size_t rank = impl_->rank;
-    const std::size_t total_bytes = recv_buf.bytes;
-
-    // Keep the provider alive for the duration of the collective by
-    // capturing it (shared_ptr) into the executor job's lambda.
-    auto provider = std::shared_ptr<ExternalMemoryProvider>(make_provider(recv_buf, context, impl_->provider_slots));
-
-    if (send_buf.data != recv_buf.data && count > 0)
-    {
-        // Out-of-place: stage send_buf's content into recv_buf's location
-        // before the collective, so both root and non-root logic can
-        // uniformly treat recv_buf as "holds the local input, ends up
-        // holding the result". Host-only memcpy is correct
-        // here because MemoryKind::MetalShared's data is CPU-visible by
-        // contract and MemoryKind::Cuda providers are expected to
-        // perform device-side copies before returning from their own
-        // factory if they need this -- this version does not implement an
-        // out-of-place external-CUDA AllReduce; call with send_buf.data
-        // == recv_buf.data (in-place) for Cuda buffers.
-        if (recv_buf.memory_kind == MemoryKind::Cuda)
-        {
-            throw std::runtime_error(
-                "unsupported: out-of-place all_reduce (send_buf.data != recv_buf.data) is not supported for MemoryKind::Cuda; pass the same BufferView for send_buf and recv_buf");
-        }
-        std::memcpy(recv_buf.data, send_buf.data, recv_buf.bytes);
-    }
-
-    detail::PeerChannel &sole = impl_->sole_channel();
-    Transport *transport = sole.data.get();
-    TensorCommWorker *worker = sole.worker.get();
-
-    auto run = [transport, worker, provider, rank, total_bytes, count, datatype]() {
-        AsyncMemoryBackend &primary = provider->primary_backend();
-        if (rank == kRoot)
-        {
-            AsyncMemoryBackend &scratch = provider->scratch_backend();
-            LocalReduceBackend &reduce = provider->reduce_backend();
-            n2_all_reduce_tensor(
-                *transport, *worker, scratch, primary, &reduce,
-                rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
-        }
-        else
-        {
-            n2_all_reduce_tensor(
-                *transport, *worker, primary, primary, nullptr,
-                rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
-        }
-    };
-
-    try
-    {
-        return impl_->collective_executor->submit(std::move(run));
-    }
-    catch (...)
-    {
-        impl_->mark_failed("all_reduce submit failed");
-        throw;
-    }
-}
-
 namespace
 {
+
+// A provider for one buffer, or the reason it could not be made. For world_size > 2 a rank-local failure (an unregistered memory
+// kind, say) must not become a local throw that strands the other ranks waiting for this one: it is reported in the collective
+// descriptor and every rank fails the collective together. For world_size <= 2 it throws at the call, as before.
+struct LocalProvider
+{
+    std::shared_ptr<ExternalMemoryProvider> provider;
+    std::string error;
+};
+
+LocalProvider make_local_provider(
+    const BufferView &buffer, const ExecutionContext &context, std::map<MemoryKind, ProviderResourceSlot> &slots, bool defer_errors)
+{
+    LocalProvider out;
+    try
+    {
+        out.provider = make_provider(buffer, context, slots);
+    }
+    catch (const std::exception &e)
+    {
+        if (!defer_errors) throw;
+        out.error = e.what();
+    }
+    return out;
+}
+
+detail::CollectiveDescriptor describe(
+    detail::CollectiveKind kind, std::size_t rank, std::size_t root, MemoryKind memory, std::size_t count, DataType datatype, ReduceOp op,
+    std::size_t bytes, const std::string &local_error)
+{
+    detail::CollectiveDescriptor d;
+    d.kind = kind;
+    d.rank = static_cast<std::uint32_t>(rank);
+    d.root = static_cast<std::uint32_t>(root);
+    d.memory_kind = memory;
+    d.count = count;
+    d.datatype = datatype;
+    d.reduce_op = op;
+    d.bytes = bytes;
+    if (!local_error.empty())
+    {
+        d.local_status = 1;
+        d.note = local_error;
+    }
+    return d;
+}
 
 std::atomic<std::uint64_t> g_transfer_id{std::uint64_t{1} << 40};
 
@@ -758,27 +701,143 @@ void run_transfer(
 
 } // namespace
 
+Work Communicator::all_reduce(
+    const BufferView &send_buf,
+    const BufferView &recv_buf,
+    std::size_t count,
+    DataType datatype,
+    ReduceOp op,
+    const ExecutionContext &context)
+{
+    require_not_failed(*this);
+
+    const std::size_t world = impl_->world_size;
+    if (op != ReduceOp::Sum)
+    {
+        throw std::runtime_error("unsupported: all_reduce only supports ReduceOp::Sum");
+    }
+    validate_reduction(datatype, op);
+    if (world > 2 && (datatype == DataType::Float16 || datatype == DataType::BFloat16))
+    {
+        throw std::runtime_error(
+            std::string("unsupported: ") + datatype_label(datatype) + " SUM across " + std::to_string(world) +
+            " ranks: Float16/BFloat16 N>2 reduction semantics are not defined (only the two-operand case is specified)");
+    }
+    const bool defer = world > 2; // see LocalProvider
+    if (!defer && !impl_->caps.supports_collective_all_reduce(recv_buf.memory_kind, datatype, op))
+    {
+        throw std::runtime_error(
+            std::string("unsupported: all_reduce of dtype=") + datatype_label(datatype) + " is not available for this memory kind");
+    }
+    validate_buffer_view(send_buf, count, datatype);
+    validate_buffer_view(recv_buf, count, datatype);
+
+    const std::size_t rank = impl_->rank;
+    const std::size_t total_bytes = recv_buf.bytes;
+
+    // Keep the provider alive for the duration of the collective by capturing it (shared_ptr) into the executor job's lambda.
+    LocalProvider local = make_local_provider(recv_buf, context, impl_->provider_slots, defer);
+    std::string local_error = local.error;
+    if (local_error.empty() && defer && !impl_->caps.supports_collective_all_reduce(recv_buf.memory_kind, datatype, op))
+    {
+        local_error = std::string("dtype=") + datatype_label(datatype) + " is not available for this memory kind";
+    }
+
+    if (send_buf.data != recv_buf.data && count > 0 && local_error.empty())
+    {
+        // Out-of-place: stage send_buf's content into recv_buf's location before the collective, so both root and non-root logic can
+        // uniformly treat recv_buf as "holds the local input, ends up holding the result". Host-only memcpy is correct here because
+        // MemoryKind::MetalShared's data is CPU-visible by contract and MemoryKind::Cuda providers are expected to perform
+        // device-side copies before returning from their own factory if they need this -- the framework-independent runtime work
+        // does not implement an out-of-place external-CUDA AllReduce; call with send_buf.data == recv_buf.data (in-place) for Cuda
+        // buffers.
+        if (recv_buf.memory_kind == MemoryKind::Cuda)
+        {
+            throw std::runtime_error(
+                "unsupported: out-of-place all_reduce (send_buf.data != recv_buf.data) is not supported for MemoryKind::Cuda; pass the same BufferView for send_buf and recv_buf");
+        }
+        std::memcpy(recv_buf.data, send_buf.data, recv_buf.bytes);
+    }
+
+    Impl *impl = impl_.get();
+    const std::uint64_t work_id = impl->next_work_id.fetch_add(1);
+    const MemoryKind memory = recv_buf.memory_kind;
+    auto provider = local.provider;
+
+    auto run = [impl, provider, local_error, rank, world, total_bytes, count, datatype, op, work_id, memory]() {
+        const std::uint64_t sequence = impl->next_sequence++;
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        if (world == 2)
+        {
+            // The N=2 fast path: no descriptor exchange, the specialised heterogeneous engine unchanged (Part 55).
+            constexpr std::size_t kRoot = 0; // Fixed internal policy, never exposed.
+            detail::PeerChannel &sole = impl->sole_channel();
+            AsyncMemoryBackend &primary = provider->primary_backend();
+            impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_reduce n2 fast path bytes=" + std::to_string(total_bytes) +
+                             " dtype=" + datatype_label(datatype));
+            if (rank == kRoot)
+            {
+                AsyncMemoryBackend &scratch = provider->scratch_backend();
+                LocalReduceBackend &reduce = provider->reduce_backend();
+                n2_all_reduce_tensor(*sole.data, *sole.worker, scratch, primary, &reduce, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+            }
+            else
+            {
+                n2_all_reduce_tensor(*sole.data, *sole.worker, primary, primary, nullptr, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+            }
+            return;
+        }
+        if (world > 1)
+        {
+            detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::AllReduce, rank, 0, memory, count, datatype, op, total_bytes, local_error));
+            detail::reference_all_reduce(r, *provider, total_bytes, count, datatype);
+        }
+        // world_size 1: the (already staged) local input is the result.
+    };
+
+    try
+    {
+        return impl_->collective_executor->submit(std::move(run));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("all_reduce submit failed");
+        throw;
+    }
+}
+
 Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const ExecutionContext &context)
 {
     require_not_failed(*this);
-    if (impl_->world_size != 2) throw std::runtime_error("unsupported: broadcast requires world_size==2");
-    if (root >= impl_->world_size) throw std::runtime_error("invalid_argument: broadcast root out of range");
+    const std::size_t world = impl_->world_size;
+    if (root >= world) throw std::runtime_error("invalid_argument: broadcast root out of range");
     if (buffer.bytes > 0 && buffer.data == nullptr)
         throw std::runtime_error("invalid_argument: broadcast buffer.data is null for a non-empty buffer");
 
     const std::size_t rank = impl_->rank;
     const std::size_t bytes = buffer.bytes;
-    std::shared_ptr<ExternalMemoryProvider> provider;
-    if (bytes > 0) provider = make_provider(buffer, context, impl_->provider_slots);
+    LocalProvider local;
+    if (bytes > 0) local = make_local_provider(buffer, context, impl_->provider_slots, /*defer_errors=*/world > 2);
 
-    detail::PeerChannel &sole = impl_->sole_channel();
-    Transport *transport = sole.data.get();
-    TensorCommWorker *worker = sole.worker.get();
-    auto run = [transport, worker, provider, rank, root, bytes]() {
-        if (bytes == 0) return;
-        run_transfer(
-            *worker, *transport, provider->primary_backend(),
-            rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
+    Impl *impl = impl_.get();
+    const std::uint64_t work_id = impl->next_work_id.fetch_add(1);
+    const MemoryKind memory = buffer.memory_kind;
+    auto provider = local.provider;
+    const std::string local_error = local.error;
+    auto run = [impl, provider, local_error, rank, world, root, bytes, work_id, memory]() {
+        const std::uint64_t sequence = impl->next_sequence++;
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        if (world == 2)
+        {
+            // N=2 fast path: one transfer, no descriptor exchange.
+            if (bytes == 0) return;
+            detail::PeerChannel &sole = impl->sole_channel();
+            impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " broadcast n2 fast path bytes=" + std::to_string(bytes));
+            run_transfer(*sole.worker, *sole.data, provider->primary_backend(), rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
+            return;
+        }
+        if (world > 1) detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::Broadcast, rank, root, memory, 0, DataType::UInt8, ReduceOp::Sum, bytes, local_error));
+        detail::reference_broadcast(r, provider.get(), bytes, root);
     };
     try
     {
@@ -795,8 +854,8 @@ Work Communicator::all_gather(
     const BufferView &input, const std::vector<BufferView> &outputs, const ExecutionContext &context)
 {
     require_not_failed(*this);
-    if (impl_->world_size != 2) throw std::runtime_error("unsupported: all_gather requires world_size==2");
-    if (outputs.size() != impl_->world_size)
+    const std::size_t world = impl_->world_size;
+    if (outputs.size() != world)
         throw std::runtime_error("invalid_argument: all_gather needs exactly world_size output buffers");
     const std::size_t bytes = input.bytes;
     for (const auto &out : outputs)
@@ -810,43 +869,54 @@ Work Communicator::all_gather(
     }
 
     const std::size_t rank = impl_->rank;
-    const std::size_t peer = impl_->sole_channel().peer_rank;
-    std::shared_ptr<ExternalMemoryProvider> in_provider, local_out_provider, peer_out_provider;
+    const bool defer = world > 2;
+    std::shared_ptr<ExternalMemoryProvider> in_provider;
+    std::vector<std::shared_ptr<ExternalMemoryProvider>> out_providers(world);
+    std::string local_error;
     if (bytes > 0)
     {
-        in_provider = make_provider(input, context, impl_->provider_slots);
-        peer_out_provider = make_provider(outputs[peer], context, impl_->provider_slots);
-        if (outputs[rank].data != input.data) local_out_provider = make_provider(outputs[rank], context, impl_->provider_slots);
+        auto take = [&](const BufferView &b, std::shared_ptr<ExternalMemoryProvider> &slot) {
+            LocalProvider p = make_local_provider(b, context, impl_->provider_slots, defer);
+            if (local_error.empty()) local_error = p.error;
+            slot = p.provider;
+        };
+        take(input, in_provider);
+        for (std::size_t r = 0; r < world; ++r)
+        {
+            // outputs[rank] <- input is a local copy through the providers; skipped if they alias.
+            if (r == rank && outputs[r].data == input.data) continue;
+            take(outputs[r], out_providers[r]);
+        }
     }
 
-    detail::PeerChannel &sole = impl_->sole_channel();
-    Transport *transport = sole.data.get();
-    TensorCommWorker *worker = sole.worker.get();
-    auto run = [transport, worker, in_provider, local_out_provider, peer_out_provider, rank, bytes]() {
-        if (bytes == 0) return;
-        if (local_out_provider)
+    Impl *impl = impl_.get();
+    const std::uint64_t work_id = impl->next_work_id.fetch_add(1);
+    const MemoryKind memory = input.memory_kind;
+    auto run = [impl, in_provider, out_providers, local_error, rank, world, bytes, work_id, memory]() mutable {
+        const std::uint64_t sequence = impl->next_sequence++;
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        if (world == 2)
         {
-            // outputs[rank] <- input through the providers' own staging interface (no device code here).
-            constexpr std::size_t kCopyChunk = std::size_t{1} << 20;
-            std::vector<unsigned char> staging(std::min(bytes, kCopyChunk));
-            for (std::size_t offset = 0; offset < bytes; offset += kCopyChunk)
+            // N=2 fast path, unchanged: deterministic, deadlock-safe order (lower rank sends first), no descriptor exchange.
+            if (bytes == 0) return;
+            detail::PeerChannel &sole = impl->sole_channel();
+            const std::size_t peer = sole.peer_rank;
+            if (out_providers[rank]) detail::copy_through_providers(*in_provider, *out_providers[rank], bytes);
+            impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_gather n2 fast path bytes=" + std::to_string(bytes));
+            if (rank == 0)
             {
-                const Chunk chunk{offset, std::min(kCopyChunk, bytes - offset)};
-                in_provider->primary_backend().stage_source_chunk(chunk, staging.data());
-                local_out_provider->primary_backend().commit_destination_chunk(chunk, staging.data());
+                run_transfer(*sole.worker, *sole.data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
+                run_transfer(*sole.worker, *sole.data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
             }
+            else
+            {
+                run_transfer(*sole.worker, *sole.data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
+                run_transfer(*sole.worker, *sole.data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
+            }
+            return;
         }
-        // Deterministic, deadlock-safe order: lower rank sends first.
-        if (rank == 0)
-        {
-            run_transfer(*worker, *transport, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
-            run_transfer(*worker, *transport, peer_out_provider->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
-        }
-        else
-        {
-            run_transfer(*worker, *transport, peer_out_provider->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
-            run_transfer(*worker, *transport, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
-        }
+        if (world > 1) detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::AllGather, rank, 0, memory, 0, DataType::UInt8, ReduceOp::Sum, bytes, local_error));
+        detail::reference_all_gather(r, in_provider.get(), out_providers, bytes);
     };
     try
     {
@@ -855,6 +925,29 @@ Work Communicator::all_gather(
     catch (...)
     {
         impl_->mark_failed("all_gather submit failed");
+        throw;
+    }
+}
+
+Work Communicator::barrier()
+{
+    require_not_failed(*this);
+    Impl *impl = impl_.get();
+    const std::size_t rank = impl->rank, world = impl->world_size;
+    const std::uint64_t work_id = impl->next_work_id.fetch_add(1);
+    auto run = [impl, rank, world, work_id]() {
+        const std::uint64_t sequence = impl->next_sequence++;
+        const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace};
+        if (world > 1)
+            detail::run_descriptor_exchange(r, describe(detail::CollectiveKind::Barrier, rank, 0, MemoryKind::Host, 0, DataType::UInt8, ReduceOp::Sum, 0, std::string()));
+    };
+    try
+    {
+        return impl_->collective_executor->submit(std::move(run));
+    }
+    catch (...)
+    {
+        impl_->mark_failed("barrier submit failed");
         throw;
     }
 }
