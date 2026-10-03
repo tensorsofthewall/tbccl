@@ -1,3 +1,5 @@
+> **Superseded in Phase 52 by `docs/c_abi_v1.md`, which is authoritative.** This document is the Phase 50/51 pre-implementation analysis; every constraint below was resolved in the shipped ABI (posting is nonblocking; no grouping; errors are structured; bootstrap is caller-exchanged blobs).
+
 # C ABI v1: constraints derived from the Phase 50 runtime
 
 Phase 50 does **not** ship a C ABI and does not freeze any C names or signatures. This document records what the final N-rank C++ runtime implies for a future C header (planned for Phase 52,
