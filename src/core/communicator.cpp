@@ -598,6 +598,7 @@ Work Communicator::send(
     request.transport = channel.data.get();
     request.total_bytes = buffer.bytes;
     request.chunk_hint = 0;
+    request.framed = true; // a receive of a different size fails with protocol_mismatch instead of hanging
 
     try
     {
@@ -627,6 +628,7 @@ Work Communicator::recv(
     request.transport = channel.data.get();
     request.total_bytes = buffer.bytes;
     request.chunk_hint = 0;
+    request.framed = true;
 
     try
     {

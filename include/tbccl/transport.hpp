@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -66,6 +67,24 @@ public:
 
     // Human-readable "address:port" of the remote peer, for logging.
     virtual std::string peer_name() const = 0;
+
+    // Phase 50: a small header followed by the payload as ONE exchange. A byte-stream implementation can put both in a single
+    // syscall (sendmsg / recvmsg with two iovecs), so framing a message costs no extra system call. The default simply calls
+    // send()/recv() twice. recv_framed() fills `header`, calls `validate(header)` as soon as the header is complete and BEFORE
+    // waiting for any more payload (a payload shorter than expected would otherwise block forever), then fills `data`. If
+    // `validate` throws, the exception propagates and no further bytes are read. A read never exceeds `bytes` of payload.
+    virtual void send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes)
+    {
+        send(header, header_bytes);
+        send(data, bytes);
+    }
+    virtual void recv_framed(
+        void *header, std::size_t header_bytes, void *data, std::size_t bytes, const std::function<void(const void *)> &validate)
+    {
+        recv(header, header_bytes);
+        validate(header);
+        recv(data, bytes);
+    }
 
     // Phase 45: destructive interrupt. Safe to call from any thread, any number of times, while other threads are
     // blocked inside send()/recv(): those calls must wake and throw ("aborted: ..."), as must any later call. Does not
@@ -140,6 +159,20 @@ public:
     virtual void send(const void *data, std::size_t bytes) = 0;
     virtual void recv(void *data, std::size_t bytes) = 0;
 
+    // Phase 50: see Connection::send_framed(). Same exact-byte-count contract for header and payload.
+    virtual void send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes)
+    {
+        send(header, header_bytes);
+        send(data, bytes);
+    }
+    virtual void recv_framed(
+        void *header, std::size_t header_bytes, void *data, std::size_t bytes, const std::function<void(const void *)> &validate)
+    {
+        recv(header, header_bytes);
+        validate(header);
+        recv(data, bytes);
+    }
+
     virtual TransportCapabilities capabilities() const noexcept = 0;
 
     virtual std::string peer_name() const = 0;
@@ -163,6 +196,9 @@ public:
 
     void send(const void *data, std::size_t bytes) override;
     void recv(void *data, std::size_t bytes) override;
+    void send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes) override;
+    void recv_framed(
+        void *header, std::size_t header_bytes, void *data, std::size_t bytes, const std::function<void(const void *)> &validate) override;
     TransportCapabilities capabilities() const noexcept override;
     std::string peer_name() const override;
     void abort(const std::string &reason) override;

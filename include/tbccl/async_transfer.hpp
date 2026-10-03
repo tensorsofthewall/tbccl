@@ -301,6 +301,13 @@ struct TransferRequest
     // bound.
     std::size_t chunk_hint = 0;
     std::size_t alignment = 1;
+
+    // Phase 50: carry a 16-byte length header ({magic, reserved, u64 length}) in front of the payload. The receiving worker
+    // checks the length against `total_bytes` before it trusts the stream and fails with "protocol_mismatch: ..." on any
+    // disagreement, so a send/recv byte-count mismatch is reported instead of hanging or desynchronizing the stream (a recv
+    // never reads more than `total_bytes`, so it can never overrun its buffer). Both sides of a transfer must agree on the flag.
+    // On the direct path the header and payload share one system call (Transport::send_framed/recv_framed).
+    bool framed = false;
 };
 
 // ---------------------------------------------------------------------

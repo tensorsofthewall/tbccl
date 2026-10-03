@@ -1059,6 +1059,19 @@ if(BUILD_TESTING)
     add_test(NAME communicator_mesh_test COMMAND communicator_mesh_test)
     list(APPEND tbccl_dynamic_port_tests communicator_mesh_test)
 
+    add_executable(communicator_p2p_nrank_test
+        tests/communicator_p2p_nrank_test.cpp
+    )
+    target_link_libraries(communicator_p2p_nrank_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(communicator_p2p_nrank_test PRIVATE /W4)
+    else()
+        target_compile_options(communicator_p2p_nrank_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME communicator_p2p_nrank_test COMMAND communicator_p2p_nrank_test)
+    set_tests_properties(communicator_p2p_nrank_test PROPERTIES TIMEOUT 240)
+    list(APPEND tbccl_dynamic_port_tests communicator_p2p_nrank_test)
+
     add_executable(datatype_metadata_test
         tests/datatype_metadata_test.cpp
     )

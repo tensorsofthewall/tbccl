@@ -5,7 +5,9 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <algorithm>
 #include <poll.h>
+#include <sys/uio.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -125,6 +127,87 @@ namespace
             if (fd_ >= 0) ::shutdown(fd_, SHUT_RDWR);
         }
 
+        // One sendmsg()/recvmsg() carries the header and the payload (looping over partial progress), so a framed message is one
+        // system call and, for small payloads, one TCP segment.
+        void send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes) override
+        {
+            check_aborted();
+            iovec iov[2];
+            iov[0].iov_base = const_cast<void *>(header);
+            iov[0].iov_len = header_bytes;
+            iov[1].iov_base = const_cast<void *>(data);
+            iov[1].iov_len = bytes;
+            std::size_t index = 0;
+            while (index < 2)
+            {
+                if (iov[index].iov_len == 0)
+                {
+                    ++index;
+                    continue;
+                }
+                msghdr message{};
+                message.msg_iov = &iov[index];
+                message.msg_iovlen = 2 - index;
+#ifdef MSG_NOSIGNAL
+                const ssize_t n = ::sendmsg(fd_, &message, MSG_NOSIGNAL);
+#else
+                const ssize_t n = ::sendmsg(fd_, &message, 0);
+#endif
+                if (n < 0)
+                {
+                    if (errno == EINTR) continue;
+                    check_aborted();
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: send timed out");
+                    throw std::runtime_error("send failed: " + std::string(std::strerror(errno)));
+                }
+                if (n == 0) throw std::runtime_error("send returned 0");
+                advance(iov, index, static_cast<std::size_t>(n));
+            }
+        }
+
+        void recv_framed(
+            void *header, std::size_t header_bytes, void *data, std::size_t bytes, const std::function<void(const void *)> &validate) override
+        {
+            check_aborted();
+            bool validated = false;
+            iovec iov[2];
+            iov[0].iov_base = header;
+            iov[0].iov_len = header_bytes;
+            iov[1].iov_base = data;
+            iov[1].iov_len = bytes;
+            std::size_t index = 0;
+            while (index < 2)
+            {
+                if (iov[index].iov_len == 0)
+                {
+                    ++index;
+                    continue;
+                }
+                msghdr message{};
+                message.msg_iov = &iov[index];
+                message.msg_iovlen = 2 - index;
+                const ssize_t n = ::recvmsg(fd_, &message, 0);
+                if (n < 0)
+                {
+                    if (errno == EINTR) continue;
+                    check_aborted();
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) throw std::runtime_error("timeout: recv timed out");
+                    throw std::runtime_error("recv failed: " + std::string(std::strerror(errno)));
+                }
+                if (n == 0)
+                {
+                    check_aborted();
+                    throw std::runtime_error("peer closed connection");
+                }
+                advance(iov, index, static_cast<std::size_t>(n));
+                if (!validated && index >= 1)
+                {
+                    validated = true;
+                    validate(header);
+                }
+            }
+        }
+
         void set_io_timeout(std::chrono::milliseconds timeout) override
         {
             timeval tv{};
@@ -219,6 +302,18 @@ namespace
         }
 
     private:
+        static void advance(iovec (&iov)[2], std::size_t &index, std::size_t n)
+        {
+            while (n > 0 && index < 2)
+            {
+                const std::size_t take = std::min(n, iov[index].iov_len);
+                iov[index].iov_base = static_cast<char *>(iov[index].iov_base) + take;
+                iov[index].iov_len -= take;
+                n -= take;
+                if (iov[index].iov_len == 0) ++index;
+            }
+        }
+
         // A local abort is the primary cause of any error that follows it; report it instead of the
         // platform-specific EOF/ECONNRESET/EPIPE/ENOTCONN the shutdown produced.
         void check_aborted()
@@ -521,6 +616,17 @@ void TcpTransport::send(const void *data, std::size_t bytes)
 void TcpTransport::recv(void *data, std::size_t bytes)
 {
     connection_->recv(data, bytes);
+}
+
+void TcpTransport::send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes)
+{
+    connection_->send_framed(header, header_bytes, data, bytes);
+}
+
+void TcpTransport::recv_framed(
+    void *header, std::size_t header_bytes, void *data, std::size_t bytes, const std::function<void(const void *)> &validate)
+{
+    connection_->recv_framed(header, header_bytes, data, bytes, validate);
 }
 
 void TcpTransport::abort(const std::string &reason)
