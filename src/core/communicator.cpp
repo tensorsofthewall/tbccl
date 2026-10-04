@@ -1,3 +1,4 @@
+#include "../transport/latency_trace.hpp"
 #include <tbccl/communicator.hpp>
 #include <tbccl/error.hpp>
 
@@ -629,6 +630,7 @@ Work post_p2p(
     ImplT &impl, TransferDirection direction, const BufferView &buffer, std::size_t count, DataType datatype, std::size_t peer,
     const ExecutionContext &context)
 {
+    if (detail::lat_on()) detail::tl_lat_submit_ns = detail::lat_now_ns();
     detail::PeerChannel &channel = impl.mesh->channel(peer); // throws invalid_argument for self / out of range
     validate_buffer_view(buffer, count, datatype);
     const auto exhausted = [&] {
