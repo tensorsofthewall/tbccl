@@ -19,6 +19,8 @@
 #include <stdexcept>
 #include <utility>
 
+#include "latency_trace.hpp"
+
 namespace tbccl
 {
 namespace
@@ -139,6 +141,7 @@ namespace
             iov[1].iov_base = const_cast<void *>(data);
             iov[1].iov_len = bytes;
             std::size_t index = 0;
+            detail::lat_event(detail::kLatSendEnter, detail::tl_lat_current_id);
             while (index < 2)
             {
                 if (iov[index].iov_len == 0)
@@ -164,6 +167,7 @@ namespace
                 if (n == 0) throw Error(ErrorCode::TransportError, "send returned 0");
                 advance(iov, index, static_cast<std::size_t>(n));
             }
+            detail::lat_event(detail::kLatSendReturn, detail::tl_lat_current_id);
         }
 
         void recv_framed(
@@ -171,6 +175,7 @@ namespace
         {
             check_aborted();
             bool validated = false;
+            bool first_bytes = false;
             iovec iov[2];
             iov[0].iov_base = header;
             iov[0].iov_len = header_bytes;
@@ -200,13 +205,20 @@ namespace
                     check_aborted();
                     throw Error(ErrorCode::TransportError, "peer closed connection");
                 }
+                if (!first_bytes)
+                {
+                    first_bytes = true;
+                    detail::lat_event(detail::kLatRecvFirstBytes, detail::tl_lat_current_id);
+                }
                 advance(iov, index, static_cast<std::size_t>(n));
                 if (!validated && index >= 1)
                 {
                     validated = true;
                     validate(header);
+                    detail::lat_event(detail::kLatRecvHeaderOk, detail::tl_lat_current_id);
                 }
             }
+            detail::lat_event(detail::kLatPayloadDone, detail::tl_lat_current_id);
         }
 
         void set_io_timeout(std::chrono::milliseconds timeout) override

@@ -1,3 +1,4 @@
+#include "../transport/latency_trace.hpp"
 #include <stdexcept>
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/error.hpp>
@@ -99,6 +100,7 @@ struct TransferWork::State
     bool error_flag = false;
     ErrorCode error_code = ErrorCode::Success;
     std::string error_message;
+    std::uint64_t lat_id = 0; // Phase 55 trace id (0 = untraced)
 };
 
 TransferWork::TransferWork() : state_(std::make_shared<State>()) {}
@@ -107,6 +109,11 @@ void TransferWork::wait()
 {
     std::unique_lock<std::mutex> lock(state_->mutex);
     state_->cv.wait(lock, [&]() { return state_->done; });
+    if (detail::lat_on())
+    {
+        detail::lat_event(detail::kLatWaiterAwake, state_->lat_id);
+        detail::lat_event(detail::kLatWaitReturn, state_->lat_id);
+    }
 }
 
 bool TransferWork::is_completed() const
@@ -148,6 +155,7 @@ namespace detail
             std::lock_guard<std::mutex> lock(state->mutex);
             if (state->done) return; // exactly one terminal transition
             state->done = true;
+            detail::lat_event(detail::kLatTerminal, state->lat_id);
         }
         state->cv.notify_all();
     }
@@ -682,7 +690,10 @@ struct TensorCommWorker::Impl
                              now_us(), static_cast<unsigned long long>(item.first.transfer_id));
             }
 
+            detail::tl_lat_current_id = detail::lat_on() ? item.second->lat_id : 0;
+            detail::lat_event(detail::kLatDequeued, detail::tl_lat_current_id);
             process_request(item.first, item.second);
+            detail::tl_lat_current_id = 0;
             {
                 std::lock_guard<std::mutex> lock(queue_mutex);
                 active = false;
@@ -944,6 +955,13 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
     const TransferDirection request_direction = request.direction; // `request` is moved into the queue below
     lane.inflight[Impl::dir_index(request.direction)].fetch_add(1, std::memory_order_acq_rel);
     TransferWork work;
+    if (detail::lat_on())
+    {
+        auto &trace = detail::LatencyTrace::get();
+        work.state_->lat_id = trace.new_id();
+        const std::uint32_t aux = (request.direction == TransferDirection::Send ? 0u : 1u << 31) | static_cast<std::uint32_t>(request.total_bytes & 0x7fffffff);
+        trace.record_at(detail::tl_lat_submit_ns != 0 ? detail::tl_lat_submit_ns : detail::lat_now_ns(), detail::kLatSubmitEnter, work.state_->lat_id, aux);
+    }
 
     if (timing_enabled())
     {
@@ -982,6 +1000,7 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
     }
 
     lane.queue_cv.notify_all();
+    detail::lat_event(detail::kLatEnqueued, work.state_->lat_id);
 
     return work;
 }
