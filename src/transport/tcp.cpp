@@ -13,12 +13,15 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <utility>
 
+#include "diag_knobs.hpp"
 #include "latency_trace.hpp"
 
 namespace tbccl
@@ -69,6 +72,30 @@ namespace
 #endif
     }
 
+    void dump_socket_options(int fd)
+    {
+        int nodelay = -1, sndbuf = -1, rcvbuf = -1, keepalive = -1, busy = -1, quickack = -1;
+        socklen_t len = sizeof(int);
+        ::getsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, &len);
+        len = sizeof(int);
+        ::getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &len);
+        len = sizeof(int);
+        ::getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, &len);
+        len = sizeof(int);
+        ::getsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, &len);
+#if defined(__linux__) && defined(SO_BUSY_POLL)
+        len = sizeof(int);
+        ::getsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &busy, &len);
+#endif
+#if defined(__linux__) && defined(TCP_QUICKACK)
+        len = sizeof(int);
+        ::getsockopt(fd, IPPROTO_TCP, TCP_QUICKACK, &quickack, &len);
+#endif
+        const int flags = ::fcntl(fd, F_GETFL, 0);
+        std::fprintf(stderr, "[tbccl sockopts] fd=%d nodelay=%d sndbuf=%d rcvbuf=%d keepalive=%d busy_poll=%d quickack=%d nonblocking=%d\n", fd, nodelay, sndbuf,
+                     rcvbuf, keepalive, busy, quickack, flags >= 0 ? (flags & O_NONBLOCK) != 0 : -1);
+    }
+
     void apply_options(int fd, const TcpOptions &options)
     {
         if (options.tcp_nodelay)
@@ -77,6 +104,7 @@ namespace
         }
 
         apply_busy_poll(fd, options.busy_poll_us);
+        if (detail::diag().sockopts) dump_socket_options(fd);
     }
 
     std::string format_peer(int fd)
@@ -192,7 +220,23 @@ namespace
                 msghdr message{};
                 message.msg_iov = &iov[index];
                 message.msg_iovlen = 2 - index;
-                const ssize_t n = ::recvmsg(fd_, &message, 0);
+                ssize_t n = -1;
+                if (!first_bytes && detail::diag().recv_spin_us > 0)
+                {
+                    const std::int64_t deadline = detail::diag_now_ns() + detail::diag().recv_spin_us * 1000;
+                    do
+                    {
+                        n = ::recvmsg(fd_, &message, MSG_DONTWAIT);
+                        if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) break;
+                        if (aborted_.load(std::memory_order_relaxed)) break;
+                        detail::cpu_relax();
+                    } while (detail::diag_now_ns() < deadline);
+                    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) n = ::recvmsg(fd_, &message, 0);
+                }
+                else
+                {
+                    n = ::recvmsg(fd_, &message, 0);
+                }
                 if (n < 0)
                 {
                     if (errno == EINTR) continue;
@@ -209,6 +253,13 @@ namespace
                 {
                     first_bytes = true;
                     detail::lat_event(detail::kLatRecvFirstBytes, detail::tl_lat_current_id);
+#if defined(__linux__) && defined(TCP_QUICKACK)
+                    if (detail::diag().quickack)
+                    {
+                        int one = 1;
+                        ::setsockopt(fd_, IPPROTO_TCP, TCP_QUICKACK, &one, sizeof(one));
+                    }
+#endif
                 }
                 advance(iov, index, static_cast<std::size_t>(n));
                 if (!validated && index >= 1)

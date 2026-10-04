@@ -35,12 +35,33 @@ def stage(values, a, b, ops):
     return [(op[b] - op[a]) / 1000.0 for _, op in ops if a in op and b in op]
 
 
+def solo(path, skip):
+    """One process's own view (real link: the two hosts' clocks are unrelated, so only local stage durations are meaningful)."""
+    sends, recvs = load(path)
+    sends, recvs = sends[skip:], recvs[skip:]
+    print(f"{path}: sends={len(sends)} recvs={len(recvs)}")
+    print("  SEND ops (this process)")
+    for lab, a, b in (("submit entered -> enqueued", 0, 1), ("enqueued -> worker dequeued (caller->TX worker wake)", 1, 2),
+                      ("dequeued -> sendmsg entered", 2, 3), ("sendmsg syscall", 3, 4), ("sendmsg returned -> Work terminal", 4, 8),
+                      ("Work terminal -> waiter awake (completion wake)", 8, 9), ("whole op: submit -> wait returned", 0, 10)):
+        print(f"    {lab:58s} {med(stage(None, a, b, sends)):8.1f} us")
+    print("  RECV ops (this process)")
+    for lab, a, b in (("submit entered -> enqueued", 0, 1), ("enqueued -> worker dequeued (RX worker wake)", 1, 2),
+                      ("dequeued -> first bytes (waiting for the peer)", 2, 5), ("first bytes -> destination ready", 5, 7),
+                      ("destination ready -> Work terminal", 7, 8), ("Work terminal -> waiter awake (completion wake)", 8, 9),
+                      ("whole op: submit -> wait returned", 0, 10)):
+        print(f"    {lab:58s} {med(stage(None, a, b, recvs)):8.1f} us")
+
+
 def main():
     skip = 0
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if "--skip" in sys.argv:
         skip = int(sys.argv[sys.argv.index("--skip") + 1])
         args = [a for a in args if a != str(skip)]
+    if len(args) == 1:
+        solo(args[0], skip)
+        return
     s0, r0 = load(args[0])
     s1, r1 = load(args[1])
     s0, r0, s1, r1 = (x[skip:] for x in (s0, r0, s1, r1))
