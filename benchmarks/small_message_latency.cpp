@@ -1,7 +1,7 @@
 // Phase 55: process-per-rank small-message latency benchmark for the N=2 Communicator (Host memory), usable on loopback and across two hosts.
 //
 //   small_message_latency --rank R --peers <ip0:port0,ip1:port1> --modes p2p,oneway,simul,allgather,allreduce,chain
-//                         [--sizes 64,256,...] [--iters N] [--warmup W] [--cpu CORE] [--label NAME]
+//                         [--sizes 64,256,...] [--iters N] [--warmup W] [--cpu CORE[,CORE...]] [--label NAME]
 //
 // Rank R listens on peers[R] (legacy two-rank bootstrap); each rank is its own process. Rank 0 prints one JSON line per (mode, size): median / p25 /
 // p75 / p95 microseconds over the timed iterations, plus process CPU use (user + system seconds / wall seconds, i.e. busy cores) for the timed loop.
@@ -73,7 +73,8 @@ int main(int argc, char **argv)
 {
     std::size_t rank = 0;
     std::string peers_arg, modes_arg = "p2p", sizes_arg = "64,256,1024,2048,4096,8192,16384,65536", label = "run";
-    int iters = 2000, warmup = 200, cpu = -1;
+    int iters = 2000, warmup = 200;
+    std::vector<int> cpus;
     for (int i = 1; i < argc; ++i)
     {
         const std::string a = argv[i];
@@ -84,7 +85,8 @@ int main(int argc, char **argv)
         else if (a == "--sizes") sizes_arg = next();
         else if (a == "--iters") iters = std::atoi(next().c_str());
         else if (a == "--warmup") warmup = std::atoi(next().c_str());
-        else if (a == "--cpu") cpu = std::atoi(next().c_str());
+        else if (a == "--cpu")
+            for (const auto &c : split(next(), ',')) cpus.push_back(std::atoi(c.c_str()));
         else if (a == "--label") label = next();
     }
     tbccl::CommunicatorOptions o;
@@ -101,12 +103,12 @@ int main(int argc, char **argv)
     }
     o.bootstrap_timeout = std::chrono::milliseconds(60000);
 #ifdef __linux__
-    if (cpu >= 0)
+    if (!cpus.empty())
     {
         cpu_set_t set;
         CPU_ZERO(&set);
-        CPU_SET(cpu, &set);
-        sched_setaffinity(0, sizeof(set), &set);
+        for (int c : cpus) CPU_SET(c, &set);
+        sched_setaffinity(0, sizeof(set), &set); // threads created later (the communicator's workers) inherit the mask
     }
 #endif
     auto comm = tbccl::Communicator::create(o);
