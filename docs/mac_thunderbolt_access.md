@@ -194,6 +194,21 @@ nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
   project's history) — this is a real hardware finding worth reporting
   honestly when it happens, not a bug to hide or silently work around.
 
+## Operational notes added in Phases 52-53
+
+- **Live sessions only on macOS.** A process started with `nohup ... &` from an ssh session that then ended (an orphan) is not allowed to reach
+  the LAN: TBCCL bootstrap fails with `TBCCL_TIMEOUT`. Keep the rank inside a live ssh connection (a backgrounded `ssh -tt tbccl-mac '...'` works) or run it
+  inside `tmux` (installed on both hosts). The same holds for any server process such as an exo node.
+- **Bootstrap blobs between hosts** are small files: have each rank write `<purpose>.<rank>` and sync the directory with `rsync` in a loop
+  (`examples/c_link_probe.c`, `../exo-tbccl/examples/link_probe.py`). The link itself is not used for the exchange.
+- **Shared model folder:** the Linux machine exposes `/mnt/win_hf_models` and the Mac mounts it at `~/Desktop/win_hf_models` (SMB). Copy a model to
+  local disk on each host before using it (reads over the share were slow/fragile); verify with `sha256sum` / `shasum -a 256`.
+- **Non-git copies** (for example `exo-tbccl` on the Mac) are synced by `tar` + `scp`; a copy of a git repo is synced with `git format-patch` / `git am`.
+- **Remote shell writes** (rsync/scp/ssh commands that modify the Mac) may need explicit permission in the agent session.
+- **Current baseline at the end of Phase 53:** AER Timeout 15, nonfatal 0, fatal 0, `thunderbolt0` up, MTU 9000, RTT 0.32-0.43 ms, tx drops 8 (constant).
+  A one-line check: sum `Timeout` over `/sys/bus/pci/devices/*/aer_dev_correctable`, plus `aer_dev_nonfatal` / `aer_dev_fatal` totals, plus `ip -s link show thunderbolt0`.
+- **GPU thermals:** the laptop RTX 3070 Ti reaches 83-88 C under sustained decode and reports `SW_THERMAL_SLOWDOWN`; interleave A/B runs and state the caveat.
+
 ## macOS Application Firewall
 
 If a rebuilt listener binary stops being accepted (enumeration and
