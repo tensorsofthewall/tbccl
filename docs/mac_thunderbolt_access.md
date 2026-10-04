@@ -203,6 +203,11 @@ nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv
   (`examples/c_link_probe.c`, `../exo-tbccl/examples/link_probe.py`). The link itself is not used for the exchange.
 - **Shared model folder:** the Linux machine exposes `/mnt/win_hf_models` and the Mac mounts it at `~/Desktop/win_hf_models` (SMB). Copy a model to
   local disk on each host before using it (reads over the share were slow/fragile); verify with `sha256sum` / `shasum -a 256`.
+- **Model locations (Phase 48-53).** Never download weights; use what exists:
+  - Shared folder (Linux `/mnt/win_hf_models`, Mac `~/Desktop/win_hf_models`): `Qwen3-0.6B` (bf16), `Qwen3-0.6B-8bit` (`mlx-community/Qwen3-0.6B-8bit`, MLX format, works on MLX-CUDA on Linux too), `SmolLM-135M-Instruct`.
+  - Local copies: Mac `~/phase48_models/Qwen3-0.6B` (vLLM Phase 48 scripts, `PHASE48_MODEL_LINUX` / `PHASE48_MODEL_MAC`); both hosts `~/.exo_p53/local_models/Qwen3-0.6B-8bit` (exo, Phase 53).
+  - exo needs `EXO_OFFLINE=true` (and `HF_HUB_OFFLINE=1`) and a model card plus `model.safetensors.index.json`; its own test suite otherwise downloads tokenizer/config files (about 617 MB once).
+    Details: `../exo-tbccl/AGENTS.md` ("Models").
 - **Non-git copies** (for example `exo-tbccl` on the Mac) are synced by `tar` + `scp`; a copy of a git repo is synced with `git format-patch` / `git am`.
 - **Remote shell writes** (rsync/scp/ssh commands that modify the Mac) may need explicit permission in the agent session.
 - **Current baseline at the end of Phase 53:** AER Timeout 15, nonfatal 0, fatal 0, `thunderbolt0` up, MTU 9000, RTT 0.32-0.43 ms, tx drops 8 (constant).
