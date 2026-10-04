@@ -1870,6 +1870,13 @@ if(BUILD_TESTING)
     )
     set_tests_properties(communicator_test PROPERTIES TIMEOUT 60)
 
+    # Phase 55: the internal latency trace (on: ordered events per operation; `off` argument: nothing recorded).
+    add_executable(latency_trace_test tests/latency_trace_test.cpp)
+    target_link_libraries(latency_trace_test PRIVATE tbccl Threads::Threads)
+    add_test(NAME latency_trace_test COMMAND latency_trace_test)
+    add_test(NAME latency_trace_off_test COMMAND latency_trace_test off)
+    set_tests_properties(latency_trace_test latency_trace_off_test PROPERTIES TIMEOUT 60)
+
     add_executable(metal_shared_direct_async_backend_test
         tests/metal_shared_direct_async_backend_test.cpp
     )

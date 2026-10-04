@@ -10,6 +10,7 @@
 // 5 receive syscall returned (first bytes), 6 frame header validated, 7 destination ready (payload complete), 8 Work terminal,
 // 9 waiter awakened, 10 wait returned.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -60,6 +61,9 @@ public:
     }
 
     bool on() const noexcept { return on_; }
+
+    std::size_t recorded() const noexcept { return std::min(count_.load(std::memory_order_acquire), buffer_.size()); }
+    const LatEvent &event(std::size_t i) const noexcept { return buffer_[i]; }
 
     std::uint64_t new_id() noexcept { return next_id_.fetch_add(1, std::memory_order_relaxed); }
 
