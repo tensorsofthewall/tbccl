@@ -1,7 +1,7 @@
 // process-per-rank small-message latency benchmark for the N=2 Communicator (Host memory), usable on loopback and across two hosts.
 //
 //   small_message_latency --rank R --peers <ip0:port0,ip1:port1> --modes p2p,oneway,simul,allgather,allreduce,chain
-//                         [--sizes 64,256,...] [--iters N] [--warmup W] [--cpu CORE[,CORE...]] [--label NAME]
+//                         [--sizes 64,256,...] [--iters N] [--warmup W] [--cpu CORE[,CORE...]] [--gap-us N] [--label NAME]
 //
 // Rank R listens on peers[R] (legacy two-rank bootstrap); each rank is its own process. Rank 0 prints one JSON line per (mode, size): median / p25 /
 // p75 / p95 microseconds over the timed iterations, plus process CPU use (user + system seconds / wall seconds, i.e. busy cores) for the timed loop.
@@ -75,6 +75,7 @@ int main(int argc, char **argv)
     std::string peers_arg, modes_arg = "p2p", sizes_arg = "64,256,1024,2048,4096,8192,16384,65536", label = "run";
     int iters = 2000, warmup = 200;
     std::vector<int> cpus;
+    long gap_us = 0;
     for (int i = 1; i < argc; ++i)
     {
         const std::string a = argv[i];
@@ -88,6 +89,7 @@ int main(int argc, char **argv)
         else if (a == "--cpu")
             for (const auto &c : split(next(), ',')) cpus.push_back(std::atoi(c.c_str()));
         else if (a == "--label") label = next();
+        else if (a == "--gap-us") gap_us = std::atol(next().c_str());
     }
     tbccl::CommunicatorOptions o;
     o.rank = rank;
@@ -192,6 +194,8 @@ int main(int argc, char **argv)
             const auto wall0 = Clock::now();
             for (int i = 0; i < loops; ++i)
             {
+                // Optional idle gap between operations (the decode cadence: a rank computes for milliseconds between messages), NOT included in the sample.
+                if (gap_us > 0) std::this_thread::sleep_for(std::chrono::microseconds(gap_us));
                 const auto t0 = Clock::now();
                 streamed ? block() : one(i);
                 const auto t1 = Clock::now();
