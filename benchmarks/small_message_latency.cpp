@@ -42,6 +42,8 @@ using Clock = std::chrono::steady_clock;
 namespace
 {
 
+double g_sleep_ratio = 1.0; // see measure_sleep_ratio()
+
 std::vector<std::string> split(const std::string &s, char sep)
 {
     std::vector<std::string> out;
@@ -66,9 +68,30 @@ void report(const std::string &label, const char *mode, std::size_t bytes, std::
     std::sort(us.begin(), us.end());
     const auto at = [&](double q) { return us[std::min(us.size() - 1, static_cast<std::size_t>(q * us.size()))]; };
     std::printf(
-        "{\"label\":\"%s\",\"mode\":\"%s\",\"bytes\":%zu,\"median_us\":%.2f,\"p25_us\":%.2f,\"p75_us\":%.2f,\"p95_us\":%.2f,\"n\":%zu,\"cpu_cores\":%.2f}\n",
-        label.c_str(), mode, bytes, at(0.5), at(0.25), at(0.75), at(0.95), us.size(), cpu_cores);
+        "{\"label\":\"%s\",\"mode\":\"%s\",\"bytes\":%zu,\"median_us\":%.2f,\"p25_us\":%.2f,\"p75_us\":%.2f,\"p95_us\":%.2f,\"n\":%zu,\"cpu_cores\":%.2f,\"sleep_ratio\":%.2f}\n",
+        label.c_str(), mode, bytes, at(0.5), at(0.25), at(0.75), at(0.95), us.size(), cpu_cores, g_sleep_ratio);
     std::fflush(stdout);
+}
+
+// macOS coalesces timers with leeway proportional to the interval (measured on the Mac mini: a 4 ms sleep takes 6 ms), which makes a fixed gap or a replayed
+// cadence 1.5x too long. The idle gap should be the cadence's, so the sleep length is scaled by a ratio measured at start-up (1.0 where timers are accurate).
+double measure_sleep_ratio()
+{
+    double total = 0;
+    constexpr int kSamples = 15;
+    for (int i = 0; i < kSamples; ++i)
+    {
+        const auto t0 = Clock::now();
+        std::this_thread::sleep_for(std::chrono::microseconds(2000));
+        total += std::chrono::duration<double, std::micro>(Clock::now() - t0).count();
+    }
+    const double ratio = total / kSamples / 2000.0;
+    return ratio > 1.15 ? ratio : 1.0;
+}
+
+void gap_sleep(long us)
+{
+    std::this_thread::sleep_for(std::chrono::microseconds(static_cast<long>(static_cast<double>(us) / g_sleep_ratio)));
 }
 
 struct ProfileOp
@@ -146,6 +169,7 @@ int main(int argc, char **argv)
         sched_setaffinity(0, sizeof(set), &set); // threads created later (the communicator's workers) inherit the mask
     }
 #endif
+    if (gap_us > 0 || !profile_path.empty()) g_sleep_ratio = measure_sleep_ratio();
     auto comm = tbccl::Communicator::create(o);
     const std::size_t peer = 1 - rank;
     const bool leader = rank == 0;
@@ -174,7 +198,7 @@ int main(int argc, char **argv)
             if (p.gap_us > 0)
             {
                 const auto s0 = Clock::now();
-                std::this_thread::sleep_for(std::chrono::microseconds(p.gap_us));
+                gap_sleep(p.gap_us);
                 slept_us += std::chrono::duration<double, std::micro>(Clock::now() - s0).count();
             }
             const auto sv = tbccl::BufferView{tbccl::MemoryKind::Host, sbuf.data(), p.bytes, -1};
@@ -208,9 +232,9 @@ int main(int argc, char **argv)
         const auto mid = [](const std::vector<double> &v) { return v[v.size() / 2]; };
         if (leader || std::getenv("TBCCL_BENCH_BOTH"))
             std::printf("{\"label\":\"%s%s\",\"mode\":\"replay\",\"ops\":%zu,\"steps\":%zu,\"gap_total_us\":%ld,\"pass_wall_median_us\":%.1f,\"overhead_per_step_median_us\":%.1f,"
-                        "\"overhead_per_step_p25_us\":%.1f,\"overhead_per_step_p75_us\":%.1f,\"passes\":%d,\"cpu_cores\":%.3f}\n",
+                        "\"overhead_per_step_p25_us\":%.1f,\"overhead_per_step_p75_us\":%.1f,\"passes\":%d,\"cpu_cores\":%.3f,\"sleep_ratio\":%.2f}\n",
                         label.c_str(), leader ? "" : "/r1", ops.size(), steps, gap_total, mid(wall_us), mid(overhead_us),
-                        overhead_us[overhead_us.size() / 4], overhead_us[overhead_us.size() * 3 / 4], passes, cores);
+                        overhead_us[overhead_us.size() / 4], overhead_us[overhead_us.size() * 3 / 4], passes, cores, g_sleep_ratio);
         std::fflush(stdout);
         return 0;
     }
@@ -292,7 +316,7 @@ int main(int argc, char **argv)
             for (int i = 0; i < loops; ++i)
             {
                 // Optional idle gap between operations (the decode cadence: a rank computes for milliseconds between messages), NOT included in the sample.
-                if (gap_us > 0) std::this_thread::sleep_for(std::chrono::microseconds(gap_us));
+                if (gap_us > 0) gap_sleep(gap_us);
                 const auto t0 = Clock::now();
                 streamed ? block() : one(i);
                 const auto t1 = Clock::now();
