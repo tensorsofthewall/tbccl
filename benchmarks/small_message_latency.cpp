@@ -12,6 +12,9 @@
 //   allgather  N=2 all_gather of `bytes` per rank
 //   allreduce  in-place Float32 SUM
 //   chain      the latency-attribution decode chain: rank 0 send+wait then all_gather; rank 1 recv+wait then all_gather (one iteration)
+//   replay     replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
+//              tools/cadence_profile.py (a real decode's communication calls); each rank replays its own file, so the waits for the peer's compute
+//              reproduce themselves. Reports the per-pass wall time and the communication overhead per step ((wall - sum of gaps) / steps), medians.
 // Internal experiment switches are environment variables read by libtbccl (TBCCL_LATENCY_TRACE, TBCCL_DIAG_*), see docs/progress_model.md.
 
 #include <tbccl/communicator.hpp>
@@ -25,6 +28,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -67,6 +71,31 @@ void report(const std::string &label, const char *mode, std::size_t bytes, std::
     std::fflush(stdout);
 }
 
+struct ProfileOp
+{
+    std::string op;
+    std::size_t bytes = 0;
+    long gap_us = 0;
+};
+
+// Reads the fixed-shape JSON written by tools/cadence_profile.py: {"rank":R,"ops":[{"op":"send","bytes":2048,"gap_us":4300},...]}.
+std::vector<ProfileOp> read_profile(const std::string &path)
+{
+    std::ifstream in(path);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<ProfileOp> ops;
+    for (std::size_t at = text.find("{\"op\":\""); at != std::string::npos; at = text.find("{\"op\":\"", at + 1))
+    {
+        ProfileOp p;
+        const std::size_t name = at + 7, end = text.find('"', name);
+        p.op = text.substr(name, end - name);
+        p.bytes = std::strtoull(text.c_str() + text.find("\"bytes\":", end) + 8, nullptr, 10);
+        p.gap_us = std::atol(text.c_str() + text.find("\"gap_us\":", end) + 9);
+        ops.push_back(p);
+    }
+    return ops;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -76,6 +105,8 @@ int main(int argc, char **argv)
     int iters = 2000, warmup = 200;
     std::vector<int> cpus;
     long gap_us = 0;
+    std::string profile_path;
+    int passes = 20;
     for (int i = 1; i < argc; ++i)
     {
         const std::string a = argv[i];
@@ -90,6 +121,8 @@ int main(int argc, char **argv)
             for (const auto &c : split(next(), ',')) cpus.push_back(std::atoi(c.c_str()));
         else if (a == "--label") label = next();
         else if (a == "--gap-us") gap_us = std::atol(next().c_str());
+        else if (a == "--profile") profile_path = next();
+        else if (a == "--passes") passes = std::atoi(next().c_str());
     }
     tbccl::CommunicatorOptions o;
     o.rank = rank;
@@ -117,6 +150,70 @@ int main(int argc, char **argv)
     const std::size_t peer = 1 - rank;
     const bool leader = rank == 0;
     constexpr int kBlock = 32;
+
+    if (!profile_path.empty())
+    {
+        const auto ops = read_profile(profile_path);
+        if (ops.empty())
+        {
+            std::fprintf(stderr, "empty or unreadable profile %s\n", profile_path.c_str());
+            return 2;
+        }
+        std::size_t max_bytes = 1, steps = 0;
+        long gap_total = 0;
+        for (const auto &p : ops)
+        {
+            max_bytes = std::max(max_bytes, p.bytes);
+            gap_total += p.gap_us;
+            if (p.op == "all_gather") ++steps;
+        }
+        if (steps == 0) steps = ops.size();
+        std::vector<std::uint8_t> sbuf(max_bytes, 1), rbuf(max_bytes), g0(max_bytes), g1(max_bytes);
+        double slept_us = 0; // the sleeps' actual length (their overshoot is the OS timer, not the communication library, so it is not overhead)
+        const auto play = [&](const ProfileOp &p) {
+            if (p.gap_us > 0)
+            {
+                const auto s0 = Clock::now();
+                std::this_thread::sleep_for(std::chrono::microseconds(p.gap_us));
+                slept_us += std::chrono::duration<double, std::micro>(Clock::now() - s0).count();
+            }
+            const auto sv = tbccl::BufferView{tbccl::MemoryKind::Host, sbuf.data(), p.bytes, -1};
+            const auto rv = tbccl::BufferView{tbccl::MemoryKind::Host, rbuf.data(), p.bytes, -1};
+            if (p.op == "send") comm->send(sv, p.bytes, tbccl::DataType::UInt8, peer).wait();
+            else if (p.op == "recv") comm->recv(rv, p.bytes, tbccl::DataType::UInt8, peer).wait();
+            else if (p.op == "all_gather")
+                comm->all_gather(sv, {tbccl::BufferView{tbccl::MemoryKind::Host, g0.data(), p.bytes, -1}, tbccl::BufferView{tbccl::MemoryKind::Host, g1.data(), p.bytes, -1}}).wait();
+            else if (p.op == "barrier") comm->barrier().wait();
+        };
+        comm->barrier().wait();
+        for (int w = 0; w < std::max(1, passes / 10); ++w)
+            for (const auto &p : ops) play(p);
+        comm->barrier().wait();
+        std::vector<double> wall_us, overhead_us;
+        const double cpu0 = cpu_seconds();
+        const auto run0 = Clock::now();
+        for (int i = 0; i < passes; ++i)
+        {
+            const double slept0 = slept_us;
+            const auto t0 = Clock::now();
+            for (const auto &p : ops) play(p);
+            const double w = std::chrono::duration<double, std::micro>(Clock::now() - t0).count();
+            wall_us.push_back(w);
+            overhead_us.push_back((w - (slept_us - slept0)) / static_cast<double>(steps));
+        }
+        const double cores = (cpu_seconds() - cpu0) / std::max(std::chrono::duration<double>(Clock::now() - run0).count(), 1e-9);
+        comm->barrier().wait();
+        std::sort(wall_us.begin(), wall_us.end());
+        std::sort(overhead_us.begin(), overhead_us.end());
+        const auto mid = [](const std::vector<double> &v) { return v[v.size() / 2]; };
+        if (leader || std::getenv("TBCCL_BENCH_BOTH"))
+            std::printf("{\"label\":\"%s%s\",\"mode\":\"replay\",\"ops\":%zu,\"steps\":%zu,\"gap_total_us\":%ld,\"pass_wall_median_us\":%.1f,\"overhead_per_step_median_us\":%.1f,"
+                        "\"overhead_per_step_p25_us\":%.1f,\"overhead_per_step_p75_us\":%.1f,\"passes\":%d,\"cpu_cores\":%.3f}\n",
+                        label.c_str(), leader ? "" : "/r1", ops.size(), steps, gap_total, mid(wall_us), mid(overhead_us),
+                        overhead_us[overhead_us.size() / 4], overhead_us[overhead_us.size() * 3 / 4], passes, cores);
+        std::fflush(stdout);
+        return 0;
+    }
 
     for (const auto &mode : split(modes_arg, ','))
     {
