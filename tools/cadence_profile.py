@@ -6,7 +6,8 @@
 Per rank and phase (prefill / decode) it reports the gap distribution: from the completion of one communication call to the submission of the next
 (everything in between is the application's compute, wherever it ran), plus the repeating operation sequence. For the decode phase it writes
 DIR/TAG.rank<r>_decode_profile.json, the input of `small_message_latency --profile`:  {"rank":R,"ops":[{"op":"send","bytes":2048,"gap_us":4300},...]}
-holding the steady-state decode steps only (the first two decode steps, which include kernel-compile warm-up, are dropped). No model data is stored: only call
+holding the steady-state decode steps only (a gap longer than 3x the median gap of the same operation kind (and 2 ms) is the driver's own KV-cache digest, a
+measurement artifact of benchmarks/real_model_loopback.py, so it is replaced by that median and counted) (the first two decode steps, which include kernel-compile warm-up, are dropped). No model data is stored: only call
 kinds, payload sizes and durations.
 """
 import argparse
@@ -61,13 +62,17 @@ def main():
         first_end = ends[1] if len(ends) > 1 else ends[0]
         steady = dec[first_end + 1:]
         origin = dec[first_end]
-        ops, last_exit = [], origin[1]
-        for t0, t1, kind, nbytes, _ in steady:
-            ops.append({"op": kind, "bytes": nbytes, "gap_us": max(0, int(round((t0 - last_exit) / 1000.0)))})
-            last_exit = t1
+        ops, last_exit, replaced = [], origin[1], 0
+        raw = [(t0 - prev_exit) / 1000.0 for (t0, _, _, _, _), prev_exit in zip(steady, [origin[1]] + [c[1] for c in steady])]
+        kind_median = {k: statistics.median(g for g, c in zip(raw, steady) if c[2] == k) for k in {c[2] for c in steady}}
+        for (t0, t1, kind, nbytes, _), gap in zip(steady, raw):
+            if gap > 3 * kind_median[kind] and gap > 2000:
+                gap, replaced = kind_median[kind], replaced + 1
+            ops.append({"op": kind, "bytes": nbytes, "gap_us": max(0, int(round(gap)))})
         with open(f"{a.out}/{a.tag}.rank{rank}_decode_profile.json", "w") as f:
             json.dump({"rank": rank, "ops": ops}, f, separators=(",", ":"))
         rec["profile_ops"] = len(ops)
+        rec["artifact_gaps_replaced"] = replaced
         summary[f"rank{rank}"] = rec
     with open(f"{a.out}/{a.tag}.gap_summary.json", "w") as f:
         json.dump(summary, f, indent=1)
