@@ -7,9 +7,6 @@
 //   TBCCL_P56_EXEC_POLL_US=<us>     the CollectiveExecutor thread polls a child transfer's terminal flag this long before blocking
 //   TBCCL_P56_RX_POLL_US=<us>       a posted receive polls the socket (MSG_DONTWAIT) this long before blocking in recvmsg
 //   TBCCL_P56_TX_SPIN_US=<us>       an idle lane worker spins on its queue this long after its last request before blocking
-//   TBCCL_P56_EXEC_INLINE=<bytes>   the CollectiveExecutor thread runs its N=2 child transfers (send AND receive) of at most this size itself on an idle lane
-//                                   instead of posting them to the lane worker (removes the executor->lane wake and the child->executor wake per child;
-//                                   the executor, not the caller, blocks in the socket call, so submission never blocks)
 //   TBCCL_P56_DIRECT_SEND=<bytes>   DIAGNOSTIC CONTROL ONLY: an idle-lane Host send of at most this size runs on the caller thread (the Phase 55
 //                                   result: it bypasses the lane wake but blocks the caller in sendmsg, so it is never a candidate)
 // Poll loops are bounded by their budget and test the Work's terminal flag (abort and peer loss complete every Work with an error), or, for the socket
@@ -39,7 +36,6 @@ struct ProgressKnobs
     long rx_poll_us = progress_env("TBCCL_P56_RX_POLL_US");
     long tx_spin_us = progress_env("TBCCL_P56_TX_SPIN_US");
     long direct_send_max = progress_env("TBCCL_P56_DIRECT_SEND");
-    long exec_inline_max = progress_env("TBCCL_P56_EXEC_INLINE");
 };
 
 inline const ProgressKnobs &progress()
