@@ -12,6 +12,10 @@
 //   allgather  N=2 all_gather of `bytes` per rank
 //   allreduce  in-place Float32 SUM
 //   chain      the latency-attribution decode chain: rank 0 send+wait then all_gather; rank 1 recv+wait then all_gather (one iteration)
+//   --gap-mode sleep|spin   how the idle gaps (--gap-us, --profile) are spent: sleep (default; the application is idle, cores may enter deep idle) or spin (the
+//                           application thread stays busy, as a CUDA synchronize does)
+//   idle       create the communicator, do nothing for --iters seconds (default 30), report the process CPU use over that time (busy cores;
+//              an idle communicator must not spin, with or without a progress experiment enabled)
 //   replay     replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
 //              tools/cadence_profile.py (a real decode's communication calls); each rank replays its own file, so the waits for the peer's compute
 //              reproduce themselves. Reports the per-pass wall time and the communication overhead per step ((wall - sum of gaps) / steps), medians.
@@ -89,8 +93,16 @@ double measure_sleep_ratio()
     return ratio > 1.15 ? ratio : 1.0;
 }
 
+bool g_gap_spin = false; // --gap-mode spin: the application thread busy-waits through the gap (a CUDA stream synchronize spins; measured 1.3-1.9 busy cores per rank in the real decode)
+
 void gap_sleep(long us)
 {
+    if (g_gap_spin)
+    {
+        const auto deadline = Clock::now() + std::chrono::microseconds(us);
+        while (Clock::now() < deadline) {}
+        return;
+    }
     std::this_thread::sleep_for(std::chrono::microseconds(static_cast<long>(static_cast<double>(us) / g_sleep_ratio)));
 }
 
@@ -145,6 +157,7 @@ int main(int argc, char **argv)
         else if (a == "--label") label = next();
         else if (a == "--gap-us") gap_us = std::atol(next().c_str());
         else if (a == "--profile") profile_path = next();
+        else if (a == "--gap-mode") g_gap_spin = next() == "spin";
         else if (a == "--passes") passes = std::atoi(next().c_str());
     }
     tbccl::CommunicatorOptions o;
@@ -241,6 +254,20 @@ int main(int argc, char **argv)
 
     for (const auto &mode : split(modes_arg, ','))
     {
+        if (mode == "idle")
+        {
+            comm->barrier().wait();
+            const double cpu0 = cpu_seconds();
+            const auto wall0 = Clock::now();
+            std::this_thread::sleep_for(std::chrono::seconds(iters == 2000 ? 30 : iters));
+            const double wall = std::chrono::duration<double>(Clock::now() - wall0).count();
+            const double cores = (cpu_seconds() - cpu0) / std::max(wall, 1e-9);
+            comm->barrier().wait();
+            if (leader || std::getenv("TBCCL_BENCH_BOTH"))
+                std::printf("{\"label\":\"%s%s\",\"mode\":\"idle\",\"seconds\":%.1f,\"cpu_cores\":%.4f}\n", label.c_str(), leader ? "" : "/r1", wall, cores);
+            std::fflush(stdout);
+            continue;
+        }
         for (const auto &size_text : split(sizes_arg, ','))
         {
             const std::size_t bytes = std::strtoull(size_text.c_str(), nullptr, 10);
