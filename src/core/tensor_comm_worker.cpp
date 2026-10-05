@@ -1009,11 +1009,8 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
                 (lane.abort_reason.empty() ? "" : " (" + lane.abort_reason + ")"));
         }
 
-        const bool inline_send = detail::progress().direct_send_max > 0 && request.direction == TransferDirection::Send &&
-                                 request.total_bytes <= static_cast<std::size_t>(detail::progress().direct_send_max);
-        const bool inline_exec = detail::tl_is_executor_thread && detail::progress().exec_inline_max > 0 &&
-                                 request.total_bytes <= static_cast<std::size_t>(detail::progress().exec_inline_max);
-        if (((inline_send && request.framed) || inline_exec) && request.chunk_hint == 0 && request.backend->supports_direct_transport_access() &&
+        if (detail::progress().direct_send_max > 0 && request.direction == TransferDirection::Send && request.framed && request.chunk_hint == 0 &&
+            request.total_bytes <= static_cast<std::size_t>(detail::progress().direct_send_max) && request.backend->supports_direct_transport_access() &&
             lane.queue.empty() && !lane.active && !lane.inline_busy && !lane.paused && !lane.aborted.load())
         {
             lane.inline_busy = true;
