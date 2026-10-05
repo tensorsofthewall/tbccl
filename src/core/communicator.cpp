@@ -204,6 +204,7 @@ struct CollectiveJob
     // via state_of() used inline as a function-call argument (see run()
     // below), never stored in a variable with an explicit type.
     Work work;
+    std::uint64_t lat_id = 0; // Phase 56 trace id of the collective's Work (0 = untraced)
 };
 
 class CollectiveExecutor
@@ -260,14 +261,22 @@ public:
 
     Work submit(std::function<void()> run)
     {
+        std::uint64_t lat_id = 0;
+        if (detail::lat_on())
+        {
+            lat_id = detail::LatencyTrace::get().new_id();
+            detail::lat_event(detail::kLatCollSubmit, lat_id);
+            detail::tl_lat_next_work_id = lat_id;
+        }
         Work work = detail::TransferWorkAccess::make();
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (aborted_) throw Error(ErrorCode::Aborted, abort_message_);
-            queue_.push_back(CollectiveJob{std::move(run), work});
+            queue_.push_back(CollectiveJob{std::move(run), work, lat_id});
             unfinished_.fetch_add(1, std::memory_order_acq_rel);
         }
         cv_.notify_all();
+        detail::lat_event(detail::kLatCollNotified, lat_id);
         return work;
     }
 
@@ -283,6 +292,8 @@ private:
             queue_.pop_front();
             running_ = true;
             lock.unlock();
+            detail::tl_lat_parent_id = job.lat_id;
+            detail::lat_event(detail::kLatCollExecWake, job.lat_id);
             try
             {
                 job.run();
@@ -310,6 +321,7 @@ private:
                 detail::TransferWorkAccess::complete_error(
                     detail::TransferWorkAccess::state_of(job.work), ErrorCode::InternalError, "internal_error: unknown error in collective executor");
             }
+            detail::tl_lat_parent_id = 0;
             lock.lock();
             running_ = false;
             lock.unlock();
@@ -753,7 +765,10 @@ void run_transfer(
     request.chunk_hint = 0;
     request.shared_lane = true; // N=2 specialised path: strictly sequential, single FIFO as before duplex lanes
     TransferWork work = worker.enqueue(request);
+    const std::uint64_t child = detail::tl_lat_last_enqueued_id;
+    detail::lat_event(detail::kLatCollChildPosted, detail::tl_lat_parent_id, static_cast<std::uint32_t>(child));
     work.wait();
+    detail::lat_event(detail::kLatCollChildObserved, detail::tl_lat_parent_id, static_cast<std::uint32_t>(child));
     if (work.has_error()) throw Error(work.error_code(), std::string("transport_error: ") + what + ": " + work.error());
 }
 
