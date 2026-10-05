@@ -1,4 +1,5 @@
 #include "../transport/latency_trace.hpp"
+#include "../transport/progress_knobs.hpp"
 #include <stdexcept>
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/error.hpp>
@@ -101,6 +102,7 @@ struct TransferWork::State
     ErrorCode error_code = ErrorCode::Success;
     std::string error_message;
     std::uint64_t lat_id = 0; // Phase 55 trace id (0 = untraced)
+    std::atomic<bool> done_flag{false}; // Phase 56 experiments: lets a polling waiter see the terminal transition without the mutex
 };
 
 TransferWork::TransferWork() : state_(std::make_shared<State>())
@@ -110,6 +112,11 @@ TransferWork::TransferWork() : state_(std::make_shared<State>())
 
 void TransferWork::wait()
 {
+    if (const long poll_us = detail::tl_is_executor_thread ? detail::progress().exec_poll_us : detail::progress().wait_poll_us; poll_us > 0)
+    {
+        const std::int64_t deadline = detail::progress_now_ns() + poll_us * 1000;
+        while (!state_->done_flag.load(std::memory_order_acquire) && detail::progress_now_ns() < deadline) detail::cpu_relax();
+    }
     std::unique_lock<std::mutex> lock(state_->mutex);
     state_->cv.wait(lock, [&]() { return state_->done; });
     if (detail::lat_on())
@@ -158,6 +165,7 @@ namespace detail
             std::lock_guard<std::mutex> lock(state->mutex);
             if (state->done) return; // exactly one terminal transition
             state->done = true;
+            state->done_flag.store(true, std::memory_order_release);
             detail::lat_event(detail::kLatTerminal, state->lat_id);
         }
         state->cv.notify_all();
@@ -172,6 +180,7 @@ namespace detail
             std::lock_guard<std::mutex> lock(state->mutex);
             if (state->done) return;
             state->done = true;
+            state->done_flag.store(true, std::memory_order_release);
             state->error_flag = true;
             state->error_code = code;
             state->error_message = message;
@@ -478,6 +487,9 @@ struct TensorCommWorker::Impl
 
     std::atomic<bool> stopping{false};
     bool paused = false; // guarded by queue_mutex (test hook)
+    std::atomic<std::size_t> queued{0};      // Phase 56 experiments: mirror of queue.size() readable without the lock
+    std::atomic<std::int64_t> last_done_ns{0}; // Phase 56 experiments: when this lane last finished a request
+    bool inline_busy = false;                // guarded by queue_mutex: a caller-thread send (direct-send control) owns the lane
 
     // Phase 50 (duplex routing): requests queued or running on this lane, per direction (0 = Send, 1 = Recv). Incremented by enqueue(), decremented
     // right BEFORE a request's Work becomes terminal, so a caller that waited for a request sees its lane as free again.
@@ -652,11 +664,19 @@ struct TensorCommWorker::Impl
         while (true)
         {
             std::pair<TransferRequest, std::shared_ptr<TransferWork::State>> item;
+            if (const long spin_us = detail::progress().tx_spin_us; spin_us > 0)
+            {
+                const std::int64_t deadline = last_done_ns.load(std::memory_order_relaxed) + spin_us * 1000;
+                if (deadline > spin_us * 1000) // a request finished before: spin for its successor, then block
+                    while (queued.load(std::memory_order_acquire) == 0 && !stopping.load(std::memory_order_relaxed) && !aborted.load(std::memory_order_relaxed) &&
+                           detail::progress_now_ns() < deadline)
+                        detail::cpu_relax();
+            }
             {
                 std::unique_lock<std::mutex> lock(queue_mutex);
                 queue_cv.wait(
                     lock,
-                    [&]() { return (!queue.empty() && !paused) || stopping.load(); });
+                    [&]() { return (!queue.empty() && !paused && !inline_busy) || stopping.load(); });
 
                 if (queue.empty())
                 {
@@ -670,6 +690,7 @@ struct TensorCommWorker::Impl
 
                 item = std::move(queue.front());
                 queue.pop_front();
+                queued.fetch_sub(1, std::memory_order_release);
                 active = true;
             }
             queue_cv.notify_all(); // wakes an enqueue() blocked on capacity
@@ -697,6 +718,7 @@ struct TensorCommWorker::Impl
             detail::lat_event(detail::kLatDequeued, detail::tl_lat_current_id);
             process_request(item.first, item.second);
             detail::tl_lat_current_id = 0;
+            last_done_ns.store(detail::progress_now_ns(), std::memory_order_relaxed);
             {
                 std::lock_guard<std::mutex> lock(queue_mutex);
                 active = false;
@@ -990,7 +1012,25 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
                 (lane.abort_reason.empty() ? "" : " (" + lane.abort_reason + ")"));
         }
 
+        if (detail::progress().direct_send_max > 0 && request.direction == TransferDirection::Send && request.framed && request.chunk_hint == 0 &&
+            request.total_bytes <= static_cast<std::size_t>(detail::progress().direct_send_max) && request.backend->supports_direct_transport_access() &&
+            lane.queue.empty() && !lane.active && !lane.inline_busy && !lane.paused && !lane.aborted.load())
+        {
+            lane.inline_busy = true;
+            lock.unlock();
+            const std::uint64_t saved = detail::tl_lat_current_id;
+            detail::tl_lat_current_id = work.state_->lat_id;
+            lane.process_request_direct(request, work.state_);
+            detail::tl_lat_current_id = saved;
+            lock.lock();
+            lane.inline_busy = false;
+            lock.unlock();
+            lane.queue_cv.notify_all();
+            detail::lat_event(detail::kLatEnqueued, work.state_->lat_id);
+            return work;
+        }
         lane.queue.emplace_back(std::move(request), work.state_);
+        lane.queued.fetch_add(1, std::memory_order_release);
     }
     catch (...)
     {
