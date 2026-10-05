@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "latency_trace.hpp"
+#include "progress_knobs.hpp"
 
 namespace tbccl
 {
@@ -192,7 +193,24 @@ namespace
                 msghdr message{};
                 message.msg_iov = &iov[index];
                 message.msg_iovlen = 2 - index;
-                const ssize_t n = ::recvmsg(fd_, &message, 0);
+                ssize_t n = -1;
+                if (!first_bytes && detail::progress().rx_poll_us > 0)
+                {
+                    // experiment: while this receive is posted and nothing has arrived, poll briefly before blocking in the kernel
+                    const std::int64_t deadline = detail::progress_now_ns() + detail::progress().rx_poll_us * 1000;
+                    do
+                    {
+                        n = ::recvmsg(fd_, &message, MSG_DONTWAIT);
+                        if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) break;
+                        if (aborted_.load(std::memory_order_relaxed)) break;
+                        detail::cpu_relax();
+                    } while (detail::progress_now_ns() < deadline);
+                    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) n = ::recvmsg(fd_, &message, 0);
+                }
+                else
+                {
+                    n = ::recvmsg(fd_, &message, 0);
+                }
                 if (n < 0)
                 {
                     if (errno == EINTR) continue;
