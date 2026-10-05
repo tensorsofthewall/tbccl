@@ -1,5 +1,4 @@
 #include "../transport/latency_trace.hpp"
-#include "../transport/progress_knobs.hpp"
 #include <tbccl/communicator.hpp>
 #include <tbccl/error.hpp>
 
@@ -284,7 +283,6 @@ public:
 private:
     void run()
     {
-        detail::tl_is_executor_thread = true;
         for (;;)
         {
             std::unique_lock<std::mutex> lock(mutex_);
