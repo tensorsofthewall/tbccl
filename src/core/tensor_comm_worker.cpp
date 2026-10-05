@@ -102,7 +102,10 @@ struct TransferWork::State
     std::uint64_t lat_id = 0; // the latency-audit work trace id (0 = untraced)
 };
 
-TransferWork::TransferWork() : state_(std::make_shared<State>()) {}
+TransferWork::TransferWork() : state_(std::make_shared<State>())
+{
+    state_->lat_id = std::exchange(detail::tl_lat_next_work_id, 0); // A collective Work is traced under the id its submitter reserved
+}
 
 void TransferWork::wait()
 {
@@ -956,6 +959,7 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
     {
         auto &trace = detail::LatencyTrace::get();
         work.state_->lat_id = trace.new_id();
+        detail::tl_lat_last_enqueued_id = work.state_->lat_id;
         const std::uint32_t aux = (request.direction == TransferDirection::Send ? 0u : 1u << 31) | static_cast<std::uint32_t>(request.total_bytes & 0x7fffffff);
         trace.record_at(detail::tl_lat_submit_ns != 0 ? detail::tl_lat_submit_ns : detail::lat_now_ns(), detail::kLatSubmitEnter, work.state_->lat_id, aux);
     }

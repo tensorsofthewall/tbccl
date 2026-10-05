@@ -55,6 +55,17 @@ int main(int argc, char **argv)
         expect(std::memcmp(out.data(), in.data(), out.size()) == 0, "payload intact with the trace compiled in");
 
         auto &trace = tbccl::detail::LatencyTrace::get();
+        const std::size_t p2p_events = trace.recorded();
+        constexpr int kGathers = 3;
+        std::vector<std::uint8_t> a0(2048), a1(2048), b0(2048), b1(2048), other(2048, 9);
+        for (int i = 0; i < kGathers; ++i)
+        {
+            const auto view = [](std::vector<std::uint8_t> &v) { return tbccl::BufferView{tbccl::MemoryKind::Host, v.data(), v.size(), -1}; };
+            auto w1 = c1->all_gather(view(other), {view(b0), view(b1)});
+            auto w0 = c0->all_gather(view(out), {view(a0), view(a1)});
+            w0.wait();
+            w1.wait();
+        }
         if (off)
         {
             expect(!trace.on() && trace.recorded() == 0, "trace off: nothing recorded");
@@ -63,7 +74,7 @@ int main(int argc, char **argv)
         }
         expect(trace.on() && trace.recorded() > 0, "trace on: events recorded");
         std::map<std::uint64_t, std::map<std::uint32_t, std::int64_t>> ops;
-        for (std::size_t i = 0; i < trace.recorded(); ++i)
+        for (std::size_t i = 0; i < p2p_events; ++i)
         {
             const auto &e = trace.event(i);
             ops[e.id][e.site] = e.ns;
@@ -88,6 +99,34 @@ int main(int argc, char **argv)
             }
         }
         expect(sends == 5 && recvs == 5, "five sends and five receives");
+        // The collective executor sites. Each all_gather (2 ranks x 3) is one parent with two child transfers; the parent's events and its
+        // children's events must correlate through the aux field and be ordered.
+        std::map<std::uint64_t, std::map<std::uint32_t, std::int64_t>> all;
+        std::map<std::uint64_t, std::vector<std::uint64_t>> posted, observed;
+        for (std::size_t i = p2p_events; i < trace.recorded(); ++i)
+        {
+            const auto &e = trace.event(i);
+            all[e.id][e.site] = e.ns;
+            if (e.site == tbccl::detail::kLatCollChildPosted) posted[e.id].push_back(e.aux);
+            if (e.site == tbccl::detail::kLatCollChildObserved) observed[e.id].push_back(e.aux);
+        }
+        int parents = 0;
+        for (const auto &[id, sites] : all)
+        {
+            if (!sites.count(tbccl::detail::kLatCollSubmit)) continue;
+            ++parents;
+            const auto at = [&](std::uint32_t site) { return sites.at(site); };
+            for (std::uint32_t site : {11u, 12u, 13u, 8u, 9u, 10u}) expect(sites.count(site) != 0, "collective " + std::to_string(id) + " has site " + std::to_string(site));
+            expect(at(11) <= at(12) && at(11) <= at(13) && at(13) <= at(8) && at(8) <= at(9) && at(9) <= at(10), "collective sites are ordered");
+            expect(posted[id].size() == 2 && observed[id] == posted[id], "two children posted and observed in the same order");
+            for (std::uint64_t child : posted[id])
+            {
+                const auto &cs = all.at(child);
+                expect(cs.count(0) && cs.count(8), "child " + std::to_string(child) + " has its own submit and terminal events");
+                expect(at(13) <= cs.at(0) && cs.at(8) <= at(8), "child lies inside the parent's executor window");
+            }
+        }
+        expect(parents == 2 * kGathers, "six collectives traced, got " + std::to_string(parents));
         std::cout << "latency_trace_test: ok\n";
         return 0;
     }
