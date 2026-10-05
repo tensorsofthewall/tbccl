@@ -43,3 +43,7 @@ mixed or worse, so the effect is not monotonic. An unconditional spin costs 1-2.
 - Direct send on the caller's thread must hold the lane against the lane thread (`inline_busy` in the experiment) so a send never overlaps another send on the same socket and FIFO order holds; a failure must poison the
   communicator exactly as the lane thread would, and a blocking `sendmsg` on a full socket buffer must not run on the caller's thread for large payloads (the experiment showed unstable 64 KiB results).
 - Activity-aware spin (spin only within a window after recent activity) is the only form worth considering; never an unconditional spin.
+
+## Phase 56 addendum
+
+The cold-wake behaviour of the hot-versus-cadence findings above was decomposed through the CollectiveExecutor, measured on macOS, and tested against the real decode cadence: see `docs/cold_progress_model.md` and `docs/phase56_results.md`. The conditional spin windows suggested here were measured as operation-scoped polling (waiter, executor child wait, posted receive, idle lane worker) and executor-inline; none is retained, because none moves real-model TPOT and the polling variants are slower at 0.75-1.5 ms gaps. The rule above that every spin loop checks the abort flag stands for any future attempt.
