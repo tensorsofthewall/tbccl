@@ -1241,6 +1241,16 @@ if(BUILD_TESTING)
     add_test(NAME c_api_functional_test COMMAND c_api_functional_test)
     set_tests_properties(c_api_functional_test PROPERTIES TIMEOUT 300)
 
+    # Phase 73: collectives and P2P from separate application threads through the C ABI, and a mixed abort.
+    add_executable(c_api_mixed_domain_test tests/c_api/c_api_mixed_domain_test.c)
+    target_link_libraries(c_api_mixed_domain_test PRIVATE tbccl_c Threads::Threads)
+    target_include_directories(c_api_mixed_domain_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api)
+    if(NOT MSVC)
+        target_compile_options(c_api_mixed_domain_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME c_api_mixed_domain_test COMMAND c_api_mixed_domain_test)
+    set_tests_properties(c_api_mixed_domain_test PROPERTIES TIMEOUT 120)
+
     # The documented quickstart (docs/c_api_quickstart.md) is a real program: built strictly and run as a test.
     add_executable(c_quickstart examples/c_quickstart.c)
     target_link_libraries(c_quickstart PRIVATE tbccl_c Threads::Threads)
