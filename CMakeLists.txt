@@ -1147,6 +1147,22 @@ if(BUILD_TESTING)
         target_compile_options(p73_mixed_domain_probe PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
+    add_executable(mixed_domain_ordering_test
+        tests/mixed_domain_ordering_test.cpp
+    )
+    target_include_directories(mixed_domain_ordering_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(mixed_domain_ordering_test PRIVATE tbccl Threads::Threads)
+    if(NOT MSVC)
+        target_compile_options(mixed_domain_ordering_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME mixed_domain_ordering_test COMMAND mixed_domain_ordering_test)
+    set_tests_properties(mixed_domain_ordering_test PROPERTIES TIMEOUT 1500)
+    list(APPEND tbccl_dynamic_port_tests mixed_domain_ordering_test)
+    # The W2 ordering matrix (4 collective families x sizes x 11 relative orders, seeded jitter); fails on any non-PASS scenario.
+    add_test(NAME mixed_domain_matrix_test COMMAND p73_mixed_domain_probe --gate --seed 7 --bytes 4096 --bytes 1048576 --bytes 16777216)
+    set_tests_properties(mixed_domain_matrix_test PROPERTIES TIMEOUT 900)
+    list(APPEND tbccl_dynamic_port_tests mixed_domain_matrix_test)
+
     add_executable(communicator_nrank_collectives_test
         tests/communicator_nrank_collectives_test.cpp
     )
