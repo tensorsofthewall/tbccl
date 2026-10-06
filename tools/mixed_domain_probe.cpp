@@ -87,8 +87,13 @@ Outcome run_scenario(const Scenario &sc, const std::string &family, std::size_t 
             std::mt19937 rng(seed * 7919u + static_cast<unsigned>(rank) * 104729u);
             auto jitter = [&] { std::this_thread::sleep_for(std::chrono::microseconds(rng() % 1500)); };
 
-            std::vector<std::int32_t> ar(bytes / 4);
-            for (std::size_t i = 0; i < ar.size(); ++i) ar[i] = ar_value(rank, i);
+            // one all_reduce buffer per collective in the scenario: a second in-place all_reduce on the same buffer would legitimately return twice the sum
+            const std::size_t ncoll = static_cast<std::size_t>(std::count(sc.ops[rank].begin(), sc.ops[rank].end(), 'C'));
+            std::vector<std::vector<std::int32_t>> ars(std::max<std::size_t>(ncoll, 1), std::vector<std::int32_t>(bytes / 4));
+            for (auto &a : ars)
+                for (std::size_t i = 0; i < a.size(); ++i) a[i] = ar_value(rank, i);
+            std::size_t next_ar = 0;
+            std::vector<std::int32_t> &ar = ars[0];
             std::vector<std::uint8_t> bc = rank == 0 ? pattern(0, 5, bytes) : std::vector<std::uint8_t>(bytes, 0xEE);
             std::vector<std::uint8_t> ag_in = pattern(rank, 6, bytes), ag_out0(bytes, 0xEE), ag_out1(bytes, 0xEE);
             std::vector<std::uint8_t> tx = pattern(rank, 9, bytes), rx(bytes, 0xEE);
@@ -102,7 +107,10 @@ Outcome run_scenario(const Scenario &sc, const std::string &family, std::size_t 
                     if (tok == 'C')
                     {
                         if (family == "AR")
-                            works.push_back(comm.all_reduce(BufferView{MemoryKind::Host, ar.data(), ar.size() * 4, 0}, BufferView{MemoryKind::Host, ar.data(), ar.size() * 4, 0}, ar.size(), DataType::Int32, tbccl::ReduceOp::Sum));
+                        {
+                            auto &a = ars[next_ar++];
+                            works.push_back(comm.all_reduce(BufferView{MemoryKind::Host, a.data(), a.size() * 4, 0}, BufferView{MemoryKind::Host, a.data(), a.size() * 4, 0}, a.size(), DataType::Int32, tbccl::ReduceOp::Sum));
+                        }
                         else if (family == "BC") works.push_back(comm.broadcast(view(bc), 0));
                         else if (family == "AG") works.push_back(comm.all_gather(view(ag_in), {view(ag_out0), view(ag_out1)}));
                         else works.push_back(comm.barrier());
@@ -145,16 +153,17 @@ Outcome run_scenario(const Scenario &sc, const std::string &family, std::size_t 
                 if (has_r && rx != pattern(peer, 9, bytes))
                 {
                     std::vector<std::uint8_t> ar_bytes(bytes);
-                    std::memcpy(ar_bytes.data(), ar.data(), bytes);
+                    std::memcpy(ar_bytes.data(), ars[0].data(), bytes);
                     wrong.push_back("recv buffer: " + classify(rx, peer, 9, pattern(peer, 9, bytes), ar_bytes));
                 }
                 if (has_c && family == "AR")
-                    for (std::size_t i = 0; i < ar.size(); ++i)
-                        if (ar[i] != ar_value(0, i) + ar_value(1, i))
-                        {
-                            wrong.push_back("all_reduce result wrong at element " + std::to_string(i));
-                            break;
-                        }
+                    for (std::size_t k = 0; k < ncoll; ++k)
+                        for (std::size_t i = 0; i < ars[k].size(); ++i)
+                            if (ars[k][i] != ar_value(0, i) + ar_value(1, i))
+                            {
+                                wrong.push_back("all_reduce #" + std::to_string(k) + " result wrong at element " + std::to_string(i));
+                                break;
+                            }
                 if (has_c && family == "BC" && bc != pattern(0, 5, bytes)) wrong.push_back("broadcast buffer wrong");
                 if (has_c && family == "AG" && (ag_out0 != pattern(0, 6, bytes) || ag_out1 != pattern(1, 6, bytes))) wrong.push_back("all_gather outputs wrong");
                 if (!wrong.empty())
