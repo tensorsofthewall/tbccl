@@ -853,11 +853,11 @@ Work Communicator::all_reduce(
             {
                 AsyncMemoryBackend &scratch = provider->scratch_backend();
                 LocalReduceBackend &reduce = provider->reduce_backend();
-                n2_all_reduce_tensor(*sole.data, *sole.worker, scratch, primary, &reduce, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
             }
             else
             {
-                n2_all_reduce_tensor(*sole.data, *sole.worker, primary, primary, nullptr, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, primary, primary, nullptr, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
             }
             return;
         }
@@ -908,7 +908,7 @@ Work Communicator::broadcast(const BufferView &buffer, std::size_t root, const E
             if (bytes == 0) return;
             detail::PeerChannel &sole = impl->sole_channel();
             if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " broadcast n2 fast path bytes=" + std::to_string(bytes));
-            run_transfer(*sole.worker, *sole.data, provider->primary_backend(), rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
+            run_transfer(*sole.coll_worker, *sole.coll_data, provider->primary_backend(), rank == root ? TransferDirection::Send : TransferDirection::Recv, bytes, "broadcast");
             return;
         }
         if (world > 1)
@@ -984,13 +984,13 @@ Work Communicator::all_gather(
             if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_gather n2 fast path bytes=" + std::to_string(bytes));
             if (rank == 0)
             {
-                run_transfer(*sole.worker, *sole.data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
-                run_transfer(*sole.worker, *sole.data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
+                run_transfer(*sole.coll_worker, *sole.coll_data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
+                run_transfer(*sole.coll_worker, *sole.coll_data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
             }
             else
             {
-                run_transfer(*sole.worker, *sole.data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
-                run_transfer(*sole.worker, *sole.data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
+                run_transfer(*sole.coll_worker, *sole.coll_data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
+                run_transfer(*sole.coll_worker, *sole.coll_data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
             }
             return;
         }

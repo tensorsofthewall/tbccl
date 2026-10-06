@@ -12,9 +12,10 @@
 // PeerChannel:
 //   control   Hello, capability record, and (after bootstrap) Abort / Goodbye frames; one persistent watcher thread per
 //             channel is added with the abort-propagation work
-//   data      payload bytes and in-band collective descriptors
+//   data      point-to-point payload bytes (a connection of its own since ordering-domain repair for collectives: see coll_data)
 //   worker    a duplex TensorCommWorker: independent send and receive lanes, so one direction never delays the other and
 //             different peers make independent progress
+//   coll_data / coll_worker   the same pair for collective payload bytes (wire protocol 4, ConnectionRole::CollectiveData)
 
 #include "bootstrap_config.hpp"
 #include "collective_protocol.hpp"
@@ -44,9 +45,14 @@ struct PeerChannel
     std::size_t peer_rank = 0;
     // Destruction order (reverse of declaration): worker threads are joined before the transport they use is closed.
     std::unique_ptr<Connection> control;
-    // The data transport: a TcpTransport established at bootstrap for world_size 2, a LazyDataTransport (connects on first use) above that.
+    // Two independent ordering domains per peer, each with its OWN data connection and duplex worker, so a point-to-point byte can never be consumed by
+    // collective receive logic or the reverse, whatever the relative order of the two kinds of calls on either rank. `data` / `worker`: the point-to-point domain
+    // (framed messages). `coll_data` / `coll_worker`: the collective domain (every collective's child transfers). Each transport is a TcpTransport established at
+    // bootstrap for world_size 2, a LazyDataTransport (connects on first use) above that.
     std::unique_ptr<Transport> data;
+    std::unique_ptr<Transport> coll_data;
     std::unique_ptr<TensorCommWorker> worker;
+    std::unique_ptr<TensorCommWorker> coll_worker;
     PeerCapabilities capabilities;
 
     // Control-channel state. The watcher thread is the only reader of `control`; writers (Abort / Goodbye frames) take the mutex.
@@ -162,7 +168,7 @@ private:
     Endpoint data_listener_endpoint_;
     std::thread data_acceptor_;
     std::mutex data_install_mutex_;
-    std::vector<bool> data_installed_;
+    std::vector<bool> data_installed_, coll_installed_;
 
     std::vector<std::unique_ptr<PeerChannel>> channels_;
 };

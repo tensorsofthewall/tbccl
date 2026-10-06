@@ -283,6 +283,64 @@ void accept_higher_ranks(
     }
 }
 
+// Accepts one Data and one CollectiveData connection from every higher rank on the shared data listener, in whatever order they arrive: the role in each Hello decides
+// which slot a socket fills. A peer that connects only one of the roles ends in a timeout that names the missing role.
+void accept_higher_ranks_data(
+    const ResolvedBootstrap &boot, Listener &listener, Clock::time_point deadline, std::vector<std::unique_ptr<Connection>> &data,
+    std::vector<std::unique_ptr<Connection>> &coll)
+{
+    const std::size_t expected = 2 * (boot.world_size - 1 - boot.rank);
+    std::vector<bool> have_data(boot.world_size, false), have_coll(boot.world_size, false);
+    std::size_t accepted = 0;
+    while (accepted < expected)
+    {
+        const auto left = remaining(deadline);
+        if (left.count() <= 0)
+        {
+            std::string missing;
+            for (std::size_t r = boot.rank + 1; r < boot.world_size; ++r)
+            {
+                if (!have_data[r]) missing += std::string(missing.empty() ? "" : "; ") + "data from rank " + std::to_string(r);
+                if (!have_coll[r]) missing += std::string(missing.empty() ? "" : "; ") + "collective-data from rank " + std::to_string(r);
+            }
+            throw Error(ErrorCode::Timeout, "timeout: rank " + std::to_string(boot.rank) + " timed out waiting for the connection(s): " + missing);
+        }
+        auto connection = listener.accept_for(left);
+        if (!connection) continue;
+        connection->set_io_timeout(std::min(std::max(std::chrono::milliseconds(1), left), std::chrono::milliseconds(2000)));
+        AcceptExpectation expect;
+        expect.communicator_id = boot.communicator_id;
+        expect.local_rank = boot.rank;
+        expect.world_size = boot.world_size;
+        expect.role = ConnectionRole::Data;
+        expect.already_connected = &have_data;
+        expect.has_alt_role = true;
+        expect.alt_role = ConnectionRole::CollectiveData;
+        expect.already_connected_alt = &have_coll;
+        Hello hello;
+        try
+        {
+            hello = accept_handshake(*connection, expect);
+        }
+        catch (const std::runtime_error &e)
+        {
+            if (starts_with(e.what(), "protocol_mismatch: not a TBCCL peer")) continue;
+            throw;
+        }
+        if (hello.role == ConnectionRole::CollectiveData)
+        {
+            have_coll[hello.rank] = true;
+            coll[hello.rank] = std::move(connection);
+        }
+        else
+        {
+            have_data[hello.rank] = true;
+            data[hello.rank] = std::move(connection);
+        }
+        ++accepted;
+    }
+}
+
 NegotiationResult fold_negotiation(const std::vector<NegotiationResult> &results, const std::vector<std::size_t> &ranks)
 {
     NegotiationResult out;
@@ -370,14 +428,15 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         }
     }
 
-    std::vector<std::unique_ptr<Connection>> control(boot.world_size), data(boot.world_size);
+    std::vector<std::unique_ptr<Connection>> control(boot.world_size), data(boot.world_size), coll(boot.world_size);
     dial_lower_ranks(boot, ConnectionRole::Control, deadline, control);
     if (control_listener) accept_higher_ranks(boot, ConnectionRole::Control, *control_listener, deadline, control);
     if (!lazy_data)
     {
         // world_size 2: the single data connection is made at bootstrap (the specialised fast path must not pay a first-use dial).
         dial_lower_ranks(boot, ConnectionRole::Data, deadline, data);
-        if (data_listener) accept_higher_ranks(boot, ConnectionRole::Data, *data_listener, deadline, data);
+        dial_lower_ranks(boot, ConnectionRole::CollectiveData, deadline, coll);
+        if (data_listener) accept_higher_ranks_data(boot, *data_listener, deadline, data, coll);
         data_listener.reset();
     }
     control_listener.reset();
@@ -407,22 +466,29 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         if (!lazy_data)
         {
             data[peer]->set_io_timeout(std::chrono::milliseconds(0));
+            coll[peer]->set_io_timeout(std::chrono::milliseconds(0));
             channel->data = std::make_unique<TcpTransport>(std::move(data[peer]));
+            channel->coll_data = std::make_unique<TcpTransport>(std::move(coll[peer]));
         }
         else
         {
-            DialSpec dial;
-            if (peer < boot.rank) // this rank is the higher one: it dials the lower rank's data listener on first use
-            {
-                dial.enabled = true;
-                dial.endpoint = boot.directory.entries[peer].data;
-                dial.hello = Hello{kWireProtocolVersion, boot.communicator_id, static_cast<std::uint32_t>(boot.rank), static_cast<std::uint32_t>(boot.world_size), ConnectionRole::Data};
-                dial.peer = peer;
-                dial.timeout = timeout;
-            }
-            channel->data = std::make_unique<LazyDataTransport>(std::move(dial));
+            const auto lazy_for = [&](ConnectionRole role) {
+                DialSpec dial;
+                if (peer < boot.rank) // this rank is the higher one: it dials the lower rank's data listener on first use
+                {
+                    dial.enabled = true;
+                    dial.endpoint = boot.directory.entries[peer].data;
+                    dial.hello = Hello{kWireProtocolVersion, boot.communicator_id, static_cast<std::uint32_t>(boot.rank), static_cast<std::uint32_t>(boot.world_size), role};
+                    dial.peer = peer;
+                    dial.timeout = timeout;
+                }
+                return std::make_unique<LazyDataTransport>(std::move(dial));
+            };
+            channel->data = lazy_for(ConnectionRole::Data);
+            channel->coll_data = lazy_for(ConnectionRole::CollectiveData);
         }
         channel->worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, TensorCommWorker::kUnboundedAdmission, /*duplex=*/true);
+        channel->coll_worker = std::make_unique<TensorCommWorker>(/*pipeline_depth=*/2, TensorCommWorker::kUnboundedAdmission, /*duplex=*/true);
         mgr->channels_[peer] = std::move(channel);
     }
     aggregate_negotiation = fold_negotiation(negotiations, negotiated_ranks);
@@ -431,6 +497,7 @@ std::unique_ptr<ConnectionManager> ConnectionManager::establish(
         mgr->data_listener_endpoint_ = boot.directory.entries[boot.rank].data;
         mgr->data_listener_ = std::move(data_listener);
         mgr->data_installed_.assign(boot.world_size, false);
+        mgr->coll_installed_.assign(boot.world_size, false);
         mgr->start_data_acceptor();
     }
     return mgr;
@@ -457,12 +524,16 @@ void ConnectionManager::start_data_acceptor()
             expect.local_rank = boot_.rank;
             expect.world_size = boot_.world_size;
             expect.role = ConnectionRole::Data;
-            std::vector<bool> have;
+            expect.has_alt_role = true;
+            expect.alt_role = ConnectionRole::CollectiveData;
+            std::vector<bool> have, have_coll;
             {
                 std::lock_guard<std::mutex> lock(data_install_mutex_);
                 have = data_installed_;
+                have_coll = coll_installed_;
             }
             expect.already_connected = &have;
+            expect.already_connected_alt = &have_coll;
             Hello hello;
             try
             {
@@ -473,11 +544,12 @@ void ConnectionManager::start_data_acceptor()
                 continue; // a stranger, or a rejected (duplicate / foreign) dial: the reply was sent, the connection is dropped
             }
             connection->set_io_timeout(std::chrono::milliseconds(0));
+            const bool is_coll = hello.role == ConnectionRole::CollectiveData;
             {
                 std::lock_guard<std::mutex> lock(data_install_mutex_);
-                data_installed_[hello.rank] = true;
+                (is_coll ? coll_installed_ : data_installed_)[hello.rank] = true;
             }
-            static_cast<LazyDataTransport &>(*channels_[hello.rank]->data).install(std::move(connection));
+            static_cast<LazyDataTransport &>(is_coll ? *channels_[hello.rank]->coll_data : *channels_[hello.rank]->data).install(std::move(connection));
         }
     });
 }
@@ -606,20 +678,28 @@ PeerChannel &ConnectionManager::channel(std::size_t peer)
 bool ConnectionManager::busy() const
 {
     for (const auto &c : channels_)
-        if (c && c->worker->busy()) return true;
+        if (c && (c->worker->busy() || c->coll_worker->busy())) return true;
     return false;
 }
 
 void ConnectionManager::wait_idle()
 {
     for (const auto &c : channels_)
-        if (c) c->worker->wait_idle();
+        if (c)
+        {
+            c->worker->wait_idle();
+            c->coll_worker->wait_idle();
+        }
 }
 
 void ConnectionManager::set_fatal_handler(const std::function<void(const std::string &)> &handler)
 {
     for (const auto &c : channels_)
-        if (c) c->worker->set_fatal_handler(handler);
+        if (c)
+        {
+            c->worker->set_fatal_handler(handler);
+            c->coll_worker->set_fatal_handler(handler);
+        }
 }
 
 void ConnectionManager::abort_transfers(const std::string &reason)
@@ -629,7 +709,9 @@ void ConnectionManager::abort_transfers(const std::string &reason)
     {
         if (!c) continue;
         c->data->abort(reason);
+        c->coll_data->abort(reason);
         c->worker->abort(reason);
+        c->coll_worker->abort(reason);
     }
 }
 
@@ -747,14 +829,20 @@ bool ConnectionManager::data_connected(std::size_t peer) const
 {
     const auto &c = channels_.at(peer);
     if (!c) return false;
-    if (const auto *lazy = dynamic_cast<const LazyDataTransport *>(c->data.get())) return lazy->connected();
-    return true;
+    const auto *lazy = dynamic_cast<const LazyDataTransport *>(c->data.get());
+    const auto *lazy_coll = dynamic_cast<const LazyDataTransport *>(c->coll_data.get());
+    if (!lazy) return true;
+    return lazy->connected() || (lazy_coll && lazy_coll->connected()); // either domain's connection counts as "this peer has data connectivity"
 }
 
 void ConnectionManager::set_progress_paused(bool paused)
 {
     for (const auto &c : channels_)
-        if (c && c->worker) c->worker->set_progress_paused(paused);
+        if (c && c->worker)
+        {
+            c->worker->set_progress_paused(paused);
+            c->coll_worker->set_progress_paused(paused);
+        }
 }
 
 std::vector<std::size_t> ConnectionManager::connected_data_peers() const

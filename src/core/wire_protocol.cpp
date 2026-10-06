@@ -79,6 +79,7 @@ const char *connection_role_name(ConnectionRole role) noexcept
     {
     case ConnectionRole::Control: return "control";
     case ConnectionRole::Data: return "data";
+    case ConnectionRole::CollectiveData: return "collective-data";
     }
     return "unknown";
 }
@@ -168,6 +169,8 @@ Hello accept_handshake(Connection &connection, const AcceptExpectation &expect)
     reply.status = HelloStatus::Ok;
 
     const auto &h = in.hello;
+    const bool alt = expect.has_alt_role && h.role == expect.alt_role;
+    if (alt) reply.hello.role = expect.alt_role;
     const std::string who = "rank " + std::to_string(h.rank);
     if (h.wire_version != kWireProtocolVersion)
     {
@@ -189,7 +192,7 @@ Hello accept_handshake(Connection &connection, const AcceptExpectation &expect)
         reply.status = HelloStatus::RankOutOfRange;
         reply.text = "rank " + std::to_string(h.rank) + " outside [0, " + std::to_string(expect.world_size) + ")";
     }
-    else if (h.role != expect.role)
+    else if (h.role != expect.role && !alt)
     {
         reply.status = HelloStatus::UnexpectedRole;
         reply.text = std::string("a ") + connection_role_name(h.role) + " connection arrived on the " + connection_role_name(expect.role) + " endpoint";
@@ -199,7 +202,7 @@ Hello accept_handshake(Connection &connection, const AcceptExpectation &expect)
         reply.status = HelloStatus::UnexpectedRank;
         reply.text = "rank " + std::to_string(h.rank) + " should not connect to rank " + std::to_string(expect.local_rank) + " (the lower rank dials)";
     }
-    else if (expect.already_connected != nullptr && h.rank < expect.already_connected->size() && (*expect.already_connected)[h.rank])
+    else if (const auto *have = alt ? expect.already_connected_alt : expect.already_connected; have != nullptr && h.rank < have->size() && (*have)[h.rank])
     {
         reply.status = HelloStatus::DuplicateRank;
         reply.text = "duplicate rank " + std::to_string(h.rank) + ": another process already holds this rank";
