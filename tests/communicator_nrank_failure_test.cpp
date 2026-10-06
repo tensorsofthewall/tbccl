@@ -300,7 +300,8 @@ namespace
 int main()
 {
     std::thread([] {
-        std::this_thread::sleep_for(std::chrono::seconds(300));
+        static const char *w = std::getenv("TBCCL_TEST_WATCHDOG_S"); // sanitizer runs are several times slower
+        std::this_thread::sleep_for(std::chrono::seconds(w ? std::atoi(w) : 300));
         std::cerr << "[FAIL] watchdog: a failure test hung\n";
         std::_Exit(2);
     }).detach();
