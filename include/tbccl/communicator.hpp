@@ -281,14 +281,12 @@ public:
     // This communicator's resource slot for `kind` (null if its factory never used one). Diagnostics only.
     ProviderResourceSlot provider_resources(MemoryKind kind) const;
 
-    // Async P2P. `peer` must be the communicator's single other rank (0
-    // or 1). Returns a live Work; never blocks on transport/device work,
-    // only on TensorCommWorker's bounded queue (same contract as
-    // TensorCommWorker::enqueue). Throws std::runtime_error with a
-    // message tagged by ErrorCode (see error_code_name()) for validation
-    // failures caught before any network activity (null/undersized
-    // buffer, unregistered memory kind, wrong peer, communicator
-    // already failed).
+    // Ordering domains (wire protocol 4): point-to-point transfers and collectives travel on separate connections with separate workers. They may
+    // be in flight together, to the same peer, from any threads, and their relative submission order may differ between ranks. Each domain keeps its own contract: every rank
+    // issues the same collectives in the same order; P2P is FIFO per (peer, direction). Async P2P. `peer` must be the communicator's single other rank (0 or 1). Returns a live
+    // Work; never blocks on transport/device work, only on TensorCommWorker's bounded queue (same contract as TensorCommWorker::enqueue). Throws std::runtime_error with a message
+    // tagged by ErrorCode (see error_code_name()) for validation failures caught before any network activity (null/undersized buffer, unregistered memory kind, wrong peer,
+    // communicator already failed).
     Work send(
         const BufferView &buffer,
         std::size_t count,
