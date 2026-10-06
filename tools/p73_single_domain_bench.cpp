@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <dirent.h>
 #include <iostream>
 
 using namespace mesh_test;
@@ -12,8 +13,55 @@ using tbccl::BufferView;
 using tbccl::DataType;
 using tbccl::MemoryKind;
 
+static int proc_threads()
+{
+    int n = 0;
+    if (DIR *d = opendir("/proc/self/task"))
+    {
+        while (readdir(d) != nullptr) ++n;
+        closedir(d);
+    }
+    return n - 2;
+}
+
+// Per-world footprint: process-wide file descriptors and threads with a live W2 pair (both ranks in this process) after one P2P and one all_reduce, versus before it existed.
+static void footprint()
+{
+    const int fds0 = open_fd_count() - 1, th0 = proc_threads();
+    int fds1 = 0, th1 = 0;
+    run_world(2, [&](std::size_t rank, tbccl::Communicator &comm) {
+        std::vector<std::uint8_t> a(1 << 16, 1), b(1 << 16, 0);
+        std::vector<std::int32_t> r(1024, 1);
+        const BufferView va{MemoryKind::Host, a.data(), a.size(), 0}, vb{MemoryKind::Host, b.data(), b.size(), 0}, vr{MemoryKind::Host, r.data(), 4096, 0};
+        if (rank == 0)
+        {
+            comm.send(va, a.size(), DataType::UInt8, 1).wait();
+            comm.recv(vb, b.size(), DataType::UInt8, 1).wait();
+        }
+        else
+        {
+            comm.recv(vb, b.size(), DataType::UInt8, 0).wait();
+            comm.send(va, a.size(), DataType::UInt8, 0).wait();
+        }
+        comm.all_reduce(vr, vr, 1024, DataType::Int32, tbccl::ReduceOp::Sum).wait();
+        comm.barrier().wait();
+        if (rank == 0)
+        {
+            fds1 = open_fd_count() - 1;
+            th1 = proc_threads();
+        }
+    });
+    std::cout << "footprint (a live W2 pair, both ranks in this process, after one P2P, one all_reduce, one barrier): fds +" << fds1 - fds0 << ", threads +" << th1 - th0 << "\n";
+}
+
 int main(int argc, char **argv)
 {
+    for (int i = 1; i < argc; ++i)
+        if (std::string(argv[i]) == "--footprint")
+        {
+            footprint();
+            return 0;
+        }
     int iters = 200;
     bool ar_first = false; // run the all_reduce rounds before the P2P ones on a fresh communicator (a cold collective path)
     for (int i = 1; i < argc; ++i)

@@ -315,8 +315,7 @@ void test_collective_mismatch_with_p2p_in_flight()
             expect(c.has_error(), "the mismatching collective reported success (rank " + std::to_string(rank) + ")");
             coll_error[rank] = c.error();
             for (auto &x : w) expect(x.wait_for(std::chrono::seconds(20)), "a P2P Work did not terminate after the mismatch");
-            for (auto &x : w)
-                if (!x.has_error()) expect(rx == pattern(1 - rank, 3, 64 << 10), "a P2P receive that completed holds wrong data");
+            if (w.size() == 2 && !w[1].has_error()) expect(rx == pattern(1 - rank, 3, 64 << 10), "a P2P receive that completed holds wrong data"); // w[1] is the receive
         });
     for (auto &t : threads) t.join();
     bool named = false;

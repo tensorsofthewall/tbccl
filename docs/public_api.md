@@ -171,8 +171,9 @@ if (work.has_error()) { /* work.error() is a human-readable message */ }
 message tag: P2P is FIFO per peer and direction. Operations to different peers are independent (a receive that cannot complete yet never delays traffic with another peer), and
 send and receive on one peer pair do not block each other, so two ranks may send to each other simultaneously and a ring (every rank sends to its successor while receiving from its
 predecessor) completes. P2P messages carry a length header: a receive posted for a different byte count than the sender sent fails with `protocol_mismatch: ... size mismatch`, poisons the
-communicator (the stream position is unknown) and never reads beyond the posted size. A P2P `Work` shares a peer's lane with that peer's collective traffic, so do not interleave a collective with
-P2P to the same peer in an order that differs between ranks.
+communicator (the stream position is unknown) and never reads beyond the posted size. P2P and collectives are independent ordering domains (wire protocol 4, Phase 73): a P2P transfer travels on its own connection and worker, never on the collective domain's, so a collective and a P2P call may be in flight together to the same peer
+and their relative submission order may differ between ranks. Examples that are legal: rank 0 `all_reduce` then `send(1)` while rank 1 `recv(0)` then `all_reduce`; `send` then `all_reduce` on one rank against `all_reduce` then `recv` on the other;
+an application thread issuing P2P while another issues collectives. Still required: every rank issues the collectives in the same order, and P2P messages match FIFO per (peer, direction). A failure in either domain fails the communicator.
 
 ## Collectives
 
@@ -186,7 +187,7 @@ collectives in the same order. Phase 51 selects the N>2 algorithm internally (ra
 | `all_gather(input, outputs)` | local copy | specialised pairwise exchange | ring |
 | `all_reduce(send, recv, count, dtype, op)` | local | specialised heterogeneous engine (unchanged) | recursive doubling (power-of-two N <= 4, small), binomial tree (small), ring reduce-scatter + all-gather from ~96 KiB x (N-2) |
 
-Data connections for N>2 are created lazily by the first transfer over an edge; the control plane stays a full mesh. `ExternalMemoryProvider` gained one **optional** virtual, `reduce_backend_range` (reduce a received sub-range into a buffer; default: unsupported, which makes the ring all-reduce unavailable for that provider and the planner fall back). Host and CUDA providers implement it. Package version 0.4.0 at Phase 51 (0.5.0 from Phase 52), wire protocol version 3.
+Data connections for N>2 are created lazily by the first transfer over an edge; the control plane stays a full mesh. `ExternalMemoryProvider` gained one **optional** virtual, `reduce_backend_range` (reduce a received sub-range into a buffer; default: unsupported, which makes the ring all-reduce unavailable for that provider and the planner fall back). Host and CUDA providers implement it. Package version 0.4.0 at Phase 51 (0.5.0 from Phase 52), wire protocol version 3 (version 4 from Phase 73: a second data connection per rank pair, `ConnectionRole::CollectiveData`; see `docs/phase73_wire_protocol.md`).
 
 `broadcast` and `all_gather` are byte-generic (any dtype, FP8, packed INT4, ...). `all_reduce` accepts `ReduceOp::Sum` of Float32, Float64, Int32, Int64 everywhere, Int8/UInt8 (modulo-256 sum, associative
 so it extends to N>2), and Float16/BFloat16 **only for N=2**: for N>2 they are rejected up front with `unsupported: ... N>2 reduction semantics are not defined`. The N=2 path keeps its

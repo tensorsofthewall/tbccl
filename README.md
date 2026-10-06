@@ -6,7 +6,7 @@ framework-neutral use, built to move tensors between heterogeneous machines
 path. It is a transport and collective library only: it knows nothing about models,
 placement or any ML framework.
 
-**Version 0.5.0 - C ABI v1 - wire protocol 3.**
+**Version 0.5.1 (development, Phase 73 changes unreleased) - C ABI v1 - wire protocol 4** (Phase 73: P2P and collectives are independent ordering domains; wire-3 peers are not compatible).
 
 - N-rank `Communicator` (control-plane mesh, lazily opened data channels, rank-0 planned collectives).
 - Byte-generic `send` / `recv` / `broadcast` / `all_gather`; SUM/PRODUCT/MIN/MAX `all_reduce`
