@@ -1166,6 +1166,9 @@ if(BUILD_TESTING)
     set_tests_properties(mixed_domain_matrix_test PROPERTIES TIMEOUT 900)
     list(APPEND tbccl_dynamic_port_tests mixed_domain_matrix_test)
 
+    add_executable(single_domain_bench tools/single_domain_bench.cpp)
+    target_link_libraries(single_domain_bench PRIVATE tbccl Threads::Threads)
+
     add_executable(communicator_nrank_collectives_test
         tests/communicator_nrank_collectives_test.cpp
     )
