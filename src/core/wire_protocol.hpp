@@ -27,7 +27,8 @@ namespace tbccl::detail
 enum class ConnectionRole : std::uint32_t
 {
     Control = 1,
-    Data = 2,
+    Data = 2,            // point-to-point payloads (framed)
+    CollectiveData = 3,  // Phase 73: collective payloads, on their own connection so the two domains never share a byte stream
 };
 
 const char *connection_role_name(ConnectionRole role) noexcept;
@@ -64,6 +65,10 @@ struct AcceptExpectation
     ConnectionRole role = ConnectionRole::Control;
     // Ranks that already completed a handshake of this role on this listener.
     const std::vector<bool> *already_connected = nullptr;
+    // Phase 73: the data listener accepts two roles; the role in the Hello (never the arrival order) decides which connection a socket is.
+    bool has_alt_role = false;
+    ConnectionRole alt_role = ConnectionRole::CollectiveData;
+    const std::vector<bool> *already_connected_alt = nullptr;
 };
 
 // Dialing side. Sends Hello, reads HelloAck, verifies the echoed identity. Throws "protocol_mismatch: ..." if the peer

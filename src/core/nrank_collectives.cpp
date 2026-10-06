@@ -62,10 +62,10 @@ TransferWork post_transfer(PeerChannel &channel, TransferDirection direction, As
     request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
     request.direction = direction;
     request.backend = &backend;
-    request.transport = channel.data.get();
+    request.transport = channel.coll_data.get(); // Phase 73: the collective domain has its own connection and worker
     request.total_bytes = bytes;
     request.chunk_hint = 0;
-    return channel.worker->enqueue(request);
+    return channel.coll_worker->enqueue(request);
 }
 
 void copy_through_providers(ExternalMemoryProvider &from, ExternalMemoryProvider &to, std::size_t bytes)

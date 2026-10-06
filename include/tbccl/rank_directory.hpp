@@ -17,8 +17,9 @@ namespace tbccl
 // The version of the Communicator wire protocol (Hello, control frames, collective descriptors). It is independent of
 // the package version and of kProtocolVersion in peer_capabilities.hpp (the capability-record layout). Version 1 was the
 // implicit pre-Phase-50 N=2 bootstrap (TcpWorld hello + capability record); version 2 was Phase 50; version 3 (Phase 51) adds the algorithm id to the
-// collective verdict and the forced-algorithm field to the descriptor. Older versions are not wire-compatible and are rejected by the handshake.
-constexpr std::uint32_t kWireProtocolVersion = 3;
+// collective verdict and the forced-algorithm field to the descriptor; version 4 (Phase 73) adds a second data connection per rank pair (ConnectionRole::CollectiveData) so point-to-point and collective traffic are
+// independent ordering domains on separate byte streams. Older versions are not wire-compatible and are rejected by the handshake.
+constexpr std::uint32_t kWireProtocolVersion = 4;
 
 // The full-mesh runtime opens two sockets per rank pair. Validated at world_size 1..4; larger meshes are refused until a
 // sparse topology exists (Phase 51).
