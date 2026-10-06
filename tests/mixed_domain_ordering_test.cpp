@@ -252,8 +252,18 @@ void test_jitter(std::size_t iterations, std::size_t bytes, unsigned base_seed)
                 std::mt19937 rng(seed * 31u + static_cast<unsigned>(rank));
                 Reduce red(rank, bytes, it);
                 Bytes tx = pattern(rank, 70 + it % 5, bytes), rx(bytes, 0xEE), bc = rank == 0 ? pattern(0, 71, bytes) : Bytes(bytes, 0xEE);
-                std::vector<int> order = {0, 1, 2, 3}; // 0 all_reduce, 1 send, 2 recv, 3 broadcast
-                std::shuffle(order.begin(), order.end(), rng);
+                // 0 all_reduce, 1 send, 2 recv, 3 broadcast. The collectives keep ONE logical order on both ranks (that is the contract); the P2P operations and the
+                // interleaving of the two domains are random and differ between the ranks.
+                std::vector<int> p2p = {1, 2}, order;
+                std::shuffle(p2p.begin(), p2p.end(), rng);
+                std::vector<int> coll = {0, 3};
+                while (!coll.empty() || !p2p.empty())
+                {
+                    const bool take_coll = p2p.empty() || (!coll.empty() && rng() % 2 == 0);
+                    auto &from = take_coll ? coll : p2p;
+                    order.push_back(from.front());
+                    from.erase(from.begin());
+                }
                 std::vector<tbccl::Work> works;
                 for (int op : order)
                 {
@@ -481,7 +491,7 @@ std::string bootstrap_against_fake_peer(const std::vector<tbccl::detail::Connect
     dir.entries.push_back({0, listeners->control(), listeners->data()});
     dir.entries.push_back({1, {}, {}});
     const auto id = tbccl::CommunicatorId::generate();
-    std::string error;
+    std::string error, peer_error;
     std::unique_ptr<tbccl::Communicator> comm;
     std::thread rank0([&] {
         tbccl::CommunicatorOptions o;
@@ -525,11 +535,11 @@ std::string bootstrap_against_fake_peer(const std::vector<tbccl::detail::Connect
     }
     catch (const std::exception &e)
     {
-        if (error.empty()) error = std::string("fake peer: ") + e.what();
+        peer_error = std::string("fake peer: ") + e.what();
     }
     rank0.join();
     comm.reset();
-    return error;
+    return error.empty() ? peer_error : error; // rank 0's own verdict wins: the fake peer only sees its socket closed
 }
 
 void test_handshake_roles()
