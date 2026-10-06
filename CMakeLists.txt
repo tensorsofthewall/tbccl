@@ -1141,6 +1141,15 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_p2p_nrank_test PROPERTIES TIMEOUT 240)
     list(APPEND tbccl_dynamic_port_tests communicator_p2p_nrank_test)
 
+    # Direct mixed P2P + collective probe (reports; --gate makes a non-PASS scenario fail).
+    add_executable(mixed_domain_probe
+        tools/mixed_domain_probe.cpp
+    )
+    target_link_libraries(mixed_domain_probe PRIVATE tbccl Threads::Threads)
+    if(NOT MSVC)
+        target_compile_options(mixed_domain_probe PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
     add_executable(communicator_nrank_collectives_test
         tests/communicator_nrank_collectives_test.cpp
     )
