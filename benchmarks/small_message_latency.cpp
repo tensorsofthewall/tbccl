@@ -19,7 +19,7 @@
 //   replay     replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
 //              tools/cadence_profile.py (a real decode's communication calls); each rank replays its own file, so the waits for the peer's compute
 //              reproduce themselves. Reports the per-pass wall time and the communication overhead per step ((wall - sum of gaps) / steps), medians.
-// Internal experiment switches are environment variables read by libtbccl (TBCCL_LATENCY_TRACE, TBCCL_DIAG_*), see docs/progress_model.md.
+// Internal experiment switches are environment variables read by libtbccl (TBCCL_LATENCY_TRACE, TBCCL_DIAG_*), see docs/concepts/execution-and-progress.md.
 
 #include <tbccl/communicator.hpp>
 

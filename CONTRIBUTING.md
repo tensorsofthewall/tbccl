@@ -55,7 +55,7 @@ User-visible changes update the relevant documentation (`README.md` and `docs/`)
 - **C ABI:** frozen at v1 (`TBCCL_C_ABI_VERSION`). Layout or constant changes are breaking and need maintainer approval. Additions must be framework-neutral and backwards compatible; update `tests/c_api/abi_symbols_v1.txt` only deliberately.
 - **Wire protocol:** `kWireProtocolVersion` (currently 4). A change to what peers exchange on the wire bumps it; peers with different versions are rejected at the handshake. Describe the compatibility effect in the pull request.
 - **Package version:** semantic changes follow the versioning policy in the release documentation; do not bump versions in unrelated changes.
-- **Public API:** changes to `include/tbccl/` need maintainer review and documentation updates (`docs/public_api.md`, `docs/c_abi_v1.md`).
+- **Public API:** changes to `include/tbccl/` need maintainer review and documentation updates (`docs/reference/cpp-api-overview.md`, `docs/reference/c-abi.md`).
 
 ## AI-assisted contributions
 

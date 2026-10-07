@@ -191,7 +191,7 @@ if(TBCCL_ENABLE_METAL)
     target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/metal_backend.mm)
 endif()
 
-# --------------------------------------------------------------------------- The stable C ABI shim (docs/c_abi_v1.md). include/tbccl/tbccl.h plus the
+# --------------------------------------------------------------------------- The stable C ABI shim (docs/reference/c-abi.md). include/tbccl/tbccl.h plus the
 # symbols of TBCCL::tbccl_c are the ABI; TBCCL::tbccl stays the C++ target. The shim is written in C++ internally, wraps the final asynchronous runtime
 # and reimplements nothing. A host-only build and a CUDA build export the SAME symbol set (tbcclRegisterCudaSupport exists in both; the host-only one
 # returns TBCCL_UNSUPPORTED). ---------------------------------------------------------------------------
@@ -1257,7 +1257,7 @@ if(BUILD_TESTING)
     add_test(NAME c_api_mixed_domain_test COMMAND c_api_mixed_domain_test)
     set_tests_properties(c_api_mixed_domain_test PROPERTIES TIMEOUT 120)
 
-    # The documented quickstart (docs/c_api_quickstart.md) is a real program: built strictly and run as a test.
+    # The documented quickstart (docs/guides/c-api-quickstart.md) is a real program: built strictly and run as a test.
     add_executable(c_quickstart examples/c_quickstart.c)
     target_link_libraries(c_quickstart PRIVATE tbccl_c Threads::Threads)
     if(NOT MSVC)
@@ -2315,7 +2315,7 @@ endif()
 # component (tbccl_tensor_backend, benchmarks/tensor/), benchmarks/,
 # examples/, and tests/ are NOT installed; they remain source-tree/vendored
 # only (a deliberate, documented scope limit -- see
-# docs/public_api.md). A host-only external consumer needs nothing beyond
+# docs/reference/cpp-api-overview.md). A host-only external consumer needs nothing beyond
 # what this block installs.
 # ---------------------------------------------------------------------------
 

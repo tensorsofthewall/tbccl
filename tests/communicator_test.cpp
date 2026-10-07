@@ -1,6 +1,6 @@
 // Correctness tests for the public tbccl::Communicator API, using
 // Host-memory BufferViews only (MemoryKind::MetalShared reuses the exact
-// same code path -- see docs/framework_integration_architecture.md Section 5
+// same code path -- see docs/concepts/memory-providers.md
 // -- so these tests also exercise that path by construction). Real
 // TB4/CUDA/Metal coverage lives in separate test files.
 

@@ -5,7 +5,7 @@
 // (transport.hpp) and memory-backend code (which stays under
 // benchmarks/tensor/ -- this header has no CUDA/Metal awareness, only
 // enum labels for what a peer reports supporting). See
-// docs/transport_architecture.md for the intended future extension
+// docs/concepts/transports.md for the intended future extension
 // points (RDMA, native transports, Windows).
 //
 // This is intentionally small: enough to represent
@@ -107,7 +107,7 @@ PeerCapabilities local_capabilities();
 // Sends `local` over `connection` and blocks for the peer's own
 // PeerCapabilities in return, in that order on both sides (both callers
 // must agree on this send-then-recv order -- see
-// docs/transport_architecture.md). Throws on any I/O error (propagated
+// docs/concepts/transports.md). Throws on any I/O error (propagated
 // from Connection::send/recv) or malformed wire data.
 PeerCapabilities exchange_capabilities(
     Connection &connection,

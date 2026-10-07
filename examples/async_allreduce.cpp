@@ -8,7 +8,7 @@
 // exact, unmodified n2_all_reduce_tensor() engine the
 // benchmarks already use.
 //
-// Build with TBCCL installed (see docs/public_api.md) or from this
+// Build with TBCCL installed (see docs/reference/cpp-api-overview.md) or from this
 // source tree directly:
 //   --backend host         : portable, no device required.
 //   --backend cuda          : requires a CUDA device (Linux) and the

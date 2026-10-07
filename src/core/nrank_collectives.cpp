@@ -264,7 +264,7 @@ void reference_all_gather(
 // Binomial-tree all-reduce (the N>2 collective-selection work, latency oriented): rank 0 is the root. Reduce up the tree (a node receives each child's partial result
 // into the provider's scratch and reduces it into its own buffer, smallest subtree first), then broadcast the root's result down the same tree. 2*ceil(log2 N)
 // sequential levels of whole-buffer transfers; a fixed combination order for a fixed N, so the result is deterministic and identical on every rank (see
-// docs/numerical_reduction_semantics.md).
+// docs/reference/numerical-semantics.md).
 void tree_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
 {
     if (run.world == 1 || total_bytes == 0) return;

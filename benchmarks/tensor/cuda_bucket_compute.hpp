@@ -28,19 +28,17 @@ void launch_bucket_compute(
     int rounds,
     void *stream);
 
-// The exact same transform, computed on the CPU, for verification
-// (integer arithmetic, no floating-point determinism
-// concerns) and for the one-time untimed post-loop byte-exact check
-// (docs/benchmark_methodology.md's convention). Defined inline, here,
-// in plain C++ (NOT in cuda_bucket_compute.cu) so it is available on
-// every platform regardless of TBCCL_ENABLE_CUDA -- critical for the
-// CUDA compute-overlap benchmark's receiver role, which commonly runs
-// on a non- CUDA machine (e.g. the Mac mini's Metal-shared
-// destination) but still needs to verify CUDA-computed bytes it
-// received. The CUDA kernel in cuda_bucket_compute.cu uses an
-// intentional __device__ duplicate of this exact formula (matching
-// this codebase's established convention for small CUDA-side pattern
-// duplicates).
+// The exact same transform, computed on the CPU, for verification (integer
+// arithmetic, no floating-point determinism concerns) and for the one-time
+// untimed post-loop byte-exact check (docs/development/benchmark-methodology.md's
+// convention). Defined inline, here, in plain C++ (NOT in cuda_bucket_compute.cu)
+// so it is available on every platform regardless of TBCCL_ENABLE_CUDA --
+// critical for the CUDA compute-overlap benchmark's receiver role, which commonly
+// runs on a non- CUDA machine (e.g. the Mac mini's Metal-shared destination) but
+// still needs to verify CUDA-computed bytes it received. The CUDA kernel in
+// cuda_bucket_compute.cu uses an intentional __device__ duplicate of this exact
+// formula (matching this codebase's established convention for small CUDA-side
+// pattern duplicates).
 inline std::uint8_t expected_bucket_byte(std::size_t i, std::uint32_t seed, int rounds)
 {
     const std::uint64_t index = static_cast<std::uint64_t>(i);
