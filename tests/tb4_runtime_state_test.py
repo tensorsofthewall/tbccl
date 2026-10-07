@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for capture_tb4_runtime_state.py and compare_tb4_runtime_state.py.
 
-Phase 30 Part C/D/W. Covers the pure parsing helpers (against fixture
+The sustained-session reproduction work. Covers the pure parsing helpers (against fixture
 sysfs/procfs trees, never the real machine) and the snapshot-diff
 classifier's changed/unchanged/unavailable categorization.
 """
@@ -199,7 +199,7 @@ class DiffSnapshotsTests(unittest.TestCase):
 
 
 class GpuStateTests(unittest.TestCase):
-    """Phase 31 Part AA/106: GPU/workload capture must degrade gracefully
+    """GPU/workload capture must degrade gracefully
     (None, not an exception) when nvidia-smi is absent, and must not treat
     an unsupported field or an empty compute-process list as a failure."""
 

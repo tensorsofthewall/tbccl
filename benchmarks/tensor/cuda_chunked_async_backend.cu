@@ -38,8 +38,7 @@ namespace
 
     // Intentional duplicate of cuda_backend.cu's fill_pattern_kernel
     // (same convention as cuda_sync_bench.cu's own documented
-    // duplicate) -- this file must stay self-contained, per
-    // docs/phase35_device_pipeline_design.md.
+    // duplicate) -- this file must stay self-contained
     __global__ void fill_pattern_kernel(
         std::uint8_t *data, std::size_t count, std::uint32_t seed)
     {

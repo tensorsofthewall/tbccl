@@ -1,14 +1,14 @@
 #pragma once
 
-// Phase 41 Part P/AJ: the public entry point an external application
-// calls to enable tbccl::MemoryKind::Cuda support in the Communicator
-// API. This header has zero CUDA dependency (matches every other
-// include/tbccl/ header) -- it only declares the registration function;
-// the actual CUDA implementation (which does need CUDA types) is
-// compiled into the optional device component and linked in by the
-// application (see docs/public_api.md's install/link instructions).
-// Calling this is the ONLY CUDA-specific step a public-API consumer
-// ever needs -- no benchmark header is included, matching Part AE/155-156.
+// The public entry point an external application calls to enable
+// tbccl::MemoryKind::Cuda support in the Communicator API. This header has
+// zero CUDA dependency (matches every other include/tbccl/ header) -- it
+// only declares the registration function; the actual CUDA implementation
+// (which does need CUDA types) is compiled into the optional device
+// component and linked in by the application (see docs/public_api.md's
+// install/link instructions). Calling this is the ONLY CUDA-specific step
+// a public-API consumer ever needs -- no benchmark header is included,
+// matching.
 
 #include <tbccl/communicator.hpp>
 
@@ -28,9 +28,9 @@ namespace tbccl
 // any other unregistered MemoryKind).
 void register_cuda_support();
 
-// Phase 44: per-Communicator persistent CUDA staging counters (diagnostics/tests). Pinned staging is a single
-// grow-only block owned by the Communicator; in steady state (capacity already sufficient) no collective allocates
-// or frees pinned memory, and the AllReduce root's device scratch is likewise reused.
+// per-Communicator persistent CUDA staging counters (diagnostics/tests). Pinned staging is a single grow-only
+// block owned by the Communicator; in steady state (capacity already sufficient) no collective allocates or frees
+// pinned memory, and the AllReduce root's device scratch is likewise reused.
 struct CudaStagingStats
 {
     std::uint64_t pinned_alloc_count = 0;

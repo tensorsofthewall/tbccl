@@ -1,4 +1,4 @@
-// Phase 44: persistent, communicator-scoped CUDA staging. Counters prove reuse (no steady-state pinned/device
+// Persistent, communicator-scoped CUDA staging. Counters prove reuse (no steady-state pinned/device
 // allocation), correctness is byte/exact for every collective and memory-kind pairing, and ownership is per
 // communicator (independent capacity, clean destruction, failed growth keeps the old block usable).
 
@@ -310,8 +310,8 @@ void test_failed_growth_keeps_old_block()
         });
     const auto mid = p.stats();
     expect(mid.pinned_alloc_count == before.pinned_alloc_count && mid.pinned_capacity == before.pinned_capacity, "old block preserved");
-    // Phase 45: a device failure after the protocol started poisons the communicator (peers' stream position is unknown),
-    // so later operations are rejected; the preserved block is still intact and is freed once at destruction.
+    // A device failure after the protocol started poisons the communicator (peers' stream position is unknown), so later
+    // operations are rejected; the preserved block is still intact and is freed once at destruction.
     expect(p.c[0]->aborted(), "growth failure during an active collective poisons the communicator");
     bool rejected = false;
     try { run_op(p, Op::AllReduce, MiB, true, false); } catch (const std::exception &) { rejected = true; }
@@ -359,8 +359,8 @@ void test_stream_ordering_delayed_producer()
     }
 }
 
-// Phase 45: CUDA all_reduce blocked on a silent (alive, socket open) peer; abort fails the Work, the communicator
-// destructs promptly and the persistent staging resources are released exactly once.
+// CUDA all_reduce blocked on a silent (alive, socket open) peer; abort fails the Work, the communicator destructs
+// promptly and the persistent staging resources are released exactly once.
 void test_cuda_abort_silent_peer()
 {
     Pair p;

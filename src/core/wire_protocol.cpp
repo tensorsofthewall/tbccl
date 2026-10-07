@@ -1,4 +1,4 @@
-// Phase 50: handshake and control-frame encoding (wire_protocol.hpp). Private to libtbccl.
+// Handshake and control-frame encoding (wire_protocol.hpp). Private to libtbccl.
 
 #include <tbccl/error.hpp>
 #include "wire_protocol.hpp"
@@ -13,7 +13,7 @@ namespace tbccl::detail
 namespace
 {
 
-constexpr std::uint32_t kHelloMagic = 0x54424332U; // "TBC2": deliberately different from the pre-Phase-50 TcpWorld "TBCL"
+constexpr std::uint32_t kHelloMagic = 0x54424332U; // "TBC2": deliberately different from the pre-N-rank-runtime TcpWorld "TBCL"
 constexpr std::uint32_t kMessageHello = 1;
 constexpr std::uint32_t kMessageHelloAck = 2;
 constexpr std::size_t kHelloTextBytes = 64;

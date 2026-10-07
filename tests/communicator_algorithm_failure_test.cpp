@@ -1,6 +1,6 @@
-// Phase 51: failure behaviour of the optimized algorithms. A rank that dies (forked processes, abrupt exit, no Goodbye) or aborts while a ring / tree / dissemination
-// collective is running must take the communicator down as a unit: every healthy rank leaves the blocked operation with an error, no Work becomes terminal while a transport
-// thread can still touch its buffer (the buffers are freed right after the Work: ASan/TSan would flag any later access), and teardown is bounded.
+// Failure behaviour of the optimized algorithms. A rank that dies (forked processes, abrupt exit, no Goodbye) or aborts while a ring / tree / dissemination collective is
+// running must take the communicator down as a unit: every healthy rank leaves the blocked operation with an error, no Work becomes terminal while a transport thread can
+// still touch its buffer (the buffers are freed right after the Work: ASan/TSan would flag any later access), and teardown is bounded.
 
 #include <tbccl/error.hpp>
 #include "mesh_fork_support.hpp"

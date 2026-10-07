@@ -1,7 +1,8 @@
 #pragma once
 
-// Phase 49 test support shared by the host and CUDA low-precision tests: format traits for Float16 / BFloat16 (independent exact decode,
-// NaN predicate, the documented SUM semantics via the private conversion header), deterministic pattern generators and the edge-pattern lists.
+// The low-precision datatype work test support shared by the host and CUDA low-precision tests: format traits for Float16 / BFloat16
+// (independent exact decode, NaN predicate, the documented SUM semantics via the private conversion header), deterministic pattern generators
+// and the edge-pattern lists.
 
 #include "low_precision.hpp"
 

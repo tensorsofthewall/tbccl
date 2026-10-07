@@ -6,7 +6,7 @@ framework-neutral use, built to move tensors between heterogeneous machines
 path. It is a transport and collective library only: it knows nothing about models,
 placement or any ML framework.
 
-**Version 0.5.1 (development, Phase 73 changes unreleased) - C ABI v1 - wire protocol 4** (Phase 73: P2P and collectives are independent ordering domains; wire-3 peers are not compatible).
+**Version 0.5.1 (development, ordering-domain changes unreleased) - C ABI v1 - wire protocol 4** (P2P and collectives are independent ordering domains; wire-3 peers are not compatible).
 
 - N-rank `Communicator` (control-plane mesh, lazily opened data channels, rank-0 planned collectives).
 - Byte-generic `send` / `recv` / `broadcast` / `all_gather`; SUM/PRODUCT/MIN/MAX `all_reduce`
@@ -40,9 +40,7 @@ Consumers use `find_package(TBCCL CONFIG)`; C-only consumers link `TBCCL::tbccl_
 | C ABI v1, bootstrap, thread safety, quickstart | `docs/c_abi_v1.md`, `docs/c_api_bootstrap.md`, `docs/c_api_thread_safety.md`, `docs/c_api_quickstart.md` |
 | algorithms and the planner | `docs/collective_algorithms.md` |
 | numerical semantics, low precision | `docs/numerical_reduction_semantics.md`, `docs/quantized_payloads.md` |
-| design audits and per-phase reports | `docs/phaseNN_*.md` (latest: `phase52_report.md`; `phase53_plan.md` is the exo consumer) |
 | hardware, the Thunderbolt link, safety | `docs/mac_thunderbolt_access.md`, `docs/tb4_recovery.md`, `docs/tb4_busy_poll.md` |
-| agents | `AGENTS.md` |
 
 ### Algorithm selection: `TBCCL_ALGORITHM` (synchronous `World` API)
 
@@ -182,7 +180,7 @@ before choosing a value; see the controlled characterization below.
 
 ### Controlled TB4 latency characterization
 
-The Phase 20 sweep runner compares busy-poll settings with raw samples,
+The busy-poll sweep runner compares busy-poll settings with raw samples,
 per-rank steady-state CPU accounting and read-only link-health checks. It keeps
 the existing default and transport unchanged. See
 [the audited semantics and reproduction procedure](docs/tb4_busy_poll.md) and

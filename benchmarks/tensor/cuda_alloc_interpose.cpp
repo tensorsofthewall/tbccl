@@ -1,7 +1,7 @@
 // Diagnostic LD_PRELOAD shim: counts and times cudaMallocHost/cudaFreeHost/cudaMalloc/cudaFree calls
-// made by anything in the process (independent of TBCCL's own counters). Phase 44 uses it to prove
-// that steady-state collectives no longer allocate/free payload-sized pinned memory.
-// Read with dlsym(RTLD_DEFAULT, "tbccl_interpose_snapshot").
+// made by anything in the process (independent of TBCCL's own counters). The persistent CUDA staging
+// work uses it to prove that steady-state collectives no longer allocate/free payload-sized pinned
+// memory. Read with dlsym(RTLD_DEFAULT, "tbccl_interpose_snapshot").
 #include <dlfcn.h>
 
 #include <atomic>

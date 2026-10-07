@@ -1,15 +1,15 @@
-// Phase 19 regression tests for benchmarks/tensor/cuda_sync_bench.cu
-// (Part J, items 48-49). Only built/run when TBCCL_ENABLE_CUDA is on
+// the CUDA diagnostics work regression tests for benchmarks/tensor/cuda_sync_bench.cu
+// (, items 48-49). Only built/run when TBCCL_ENABLE_CUDA is on
 // and only meaningful with a CUDA device present at runtime.
 //
 // cuda_sync_bench is a standalone diagnostic tool (a plain main(),
-// not a library), so -- exactly as Phase 18's
+// not a library), so -- exactly as the CUDA synchronization-audit work's
 // tests/tensor_timing_scope_test.cpp did for tbccl_tensor_transfer_bench
 // -- this spawns the actual compiled binary (its path injected via
 // the TBCCL_CUDA_SYNC_BENCH_PATH compile definition) and inspects its
 // observable behavior: exit code and, where relevant, stderr text.
 // The tool's own internal correctness checks (byte-exact readback
-// against the deterministic pattern, added in Phase 19) are what
+// against the deterministic pattern, added in CUDA diagnostics) are what
 // actually verify "the selected synchronization strategy did not
 // return before GPU output was ready" (Part 49) -- a nonzero exit
 // code here means that check failed and threw.
@@ -97,11 +97,10 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 2: every synchronization mode (stream/event/stream-poll/
-    // event-poll) produces byte-correct GPU output -- exercised via
-    // --experiment sync-mode's own internal readback-and-verify check
-    // (added in Phase 19; a failure there throws and this process
-    // exits nonzero).
+    // Test 2: every synchronization mode (stream/event/stream-poll/ event-poll)
+    // produces byte-correct GPU output -- exercised via --experiment sync-mode's
+    // own internal readback-and-verify check (added in CUDA diagnostics; a failure
+    // there throws and this process exits nonzero).
     // -----------------------------------------------------------------------------
 
     void test_sync_mode_correctness_all_modes()
@@ -116,9 +115,9 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 3: H2D and D2H comparisons each verify their own
-    // correctness internally (Phase 19 addition) -- confirms both
-    // pageable and pinned paths in both directions.
+    // Test 3: H2D and D2H comparisons each verify their own correctness internally
+    // (the CUDA diagnostics work addition) -- confirms both pageable and pinned
+    // paths in both directions.
     // -----------------------------------------------------------------------------
 
     void test_h2d_and_d2h_correctness()
@@ -137,12 +136,11 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 4: zero and odd payload sizes, across every experiment --
-    // regression test for the Phase 19 zero-block-launch fix
-    // (launch_fill_pattern previously issued an invalid 0-block CUDA
-    // launch for size 0; no Phase 18 experiment's hardcoded size list
-    // ever included 0, so the bug was latent until --sizes made a
-    // 0-byte run possible).
+    // Test 4: zero and odd payload sizes, across every experiment -- regression
+    // test for the CUDA diagnostics zero-block-launch fix (launch_fill_pattern
+    // previously issued an invalid 0-block CUDA launch for size 0; no the CUDA
+    // synchronization-audit work experiment's hardcoded size list ever included 0,
+    // so the bug was latent until --sizes made a 0-byte run possible).
     // -----------------------------------------------------------------------------
 
     void test_zero_and_odd_sizes()
@@ -219,10 +217,9 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 7: the CUDA device-scheduling-flag matrix (Part G) runs
-    // successfully for every supported flag, each in its own fresh
-    // process (required: cudaSetDeviceFlags() must precede context
-    // init -- see Part G item 35).
+    // Test 7: the CUDA device-scheduling-flag matrix runs successfully for every
+    // supported flag, each in its own fresh process (required: cudaSetDeviceFlags()
+    // must precede context init -- see).
     // -----------------------------------------------------------------------------
 
     void test_device_schedule_flags()

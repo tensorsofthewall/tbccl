@@ -1,8 +1,8 @@
-// Phase 73: direct libtbccl probe of P2P + collective traffic on ONE communicator, below every framework adapter (Host buffers, loopback, W2).
+// Direct libtbccl probe of P2P + collective traffic on ONE communicator, below every framework adapter (Host buffers, loopback, W2).
 //
 // Each scenario gives every rank an ordered list of operations submitted back to back WITHOUT waiting (C = a collective of the chosen family, S = send to the
 // peer, R = recv from the peer), with seeded random submission jitter, and then waits for all the Works under a watchdog. Payloads are deterministic sentinels, so a
-// wrong result says whose bytes arrived where. Scenarios cover the same relative order on both ranks and the opposite order, which the intended contract (docs/phase73_*) says
+// wrong result says whose bytes arrived where. Scenarios cover the same relative order on both ranks and the opposite order, which the intended contract says
 // must be legal: collectives and P2P are independent ordering domains.
 //
 //   p73_mixed_domain_probe [--gate] [--seed N] [--family AR|BC|AG|BAR] [--bytes N]...

@@ -1,7 +1,7 @@
-// Phase 73: mixed P2P + collective traffic on one communicator with rank 0 on CUDA buffers and rank 1 on Host (a heterogeneous W2 world on one machine, one GPU).
-// all_reduce / broadcast / all_gather overlapped with a CUDA->Host send and a Host->CUDA receive, 4 KiB / 1 MiB / 16 MiB, in the same relative order on both ranks
-// and in each opposite order. Producer readiness goes through a user stream (no host synchronization before submission); consumers read on an independent stream.
-// This also exercises the CUDA provider's staging resources with a P2P and a collective transfer active at the same time (two workers per peer).
+// Mixed P2P + collective traffic on one communicator with rank 0 on CUDA buffers and rank 1 on Host (a heterogeneous W2 world on one machine, one GPU). all_reduce
+// / broadcast / all_gather overlapped with a CUDA->Host send and a Host->CUDA receive, 4 KiB / 1 MiB / 16 MiB, in the same relative order on both ranks and in
+// each opposite order. Producer readiness goes through a user stream (no host synchronization before submission); consumers read on an independent stream. This
+// also exercises the CUDA provider's staging resources with a P2P and a collective transfer active at the same time (two workers per peer).
 
 #include "mesh_test_support.hpp"
 

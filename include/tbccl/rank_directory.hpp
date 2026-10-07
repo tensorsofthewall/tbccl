@@ -1,9 +1,8 @@
 #pragma once
 
-// Phase 50: the framework-neutral identity and addressing types of an N-rank Communicator. libtbccl never discovers
-// peers itself (no c10d::Store, Python, Redis, etcd or exo KVS here): an adapter or application gathers, for every rank,
-// where it listens, and hands the result over as a RankDirectory together with one CommunicatorId shared by the ranks.
-// See docs/phase50_runtime_audit.md.
+// The framework-neutral identity and addressing types of an N-rank Communicator. libtbccl never discovers peers itself
+// (no c10d::Store, Python, Redis, etcd or exo KVS here): an adapter or application gathers, for every rank, where it
+// listens, and hands the result over as a RankDirectory together with one CommunicatorId shared by the ranks.
 
 #include <array>
 #include <cstddef>
@@ -14,15 +13,14 @@
 namespace tbccl
 {
 
-// The version of the Communicator wire protocol (Hello, control frames, collective descriptors). It is independent of
-// the package version and of kProtocolVersion in peer_capabilities.hpp (the capability-record layout). Version 1 was the
-// implicit pre-Phase-50 N=2 bootstrap (TcpWorld hello + capability record); version 2 was Phase 50; version 3 (Phase 51) adds the algorithm id to the
-// collective verdict and the forced-algorithm field to the descriptor; version 4 (Phase 73) adds a second data connection per rank pair (ConnectionRole::CollectiveData) so point-to-point and collective traffic are
-// independent ordering domains on separate byte streams. Older versions are not wire-compatible and are rejected by the handshake.
+// The version of the Communicator wire protocol (Hello, control frames, collective descriptors). It is independent of the package version and of kProtocolVersion in peer_capabilities.hpp (the capability-record
+// layout). Version 1 was the implicit pre-N-rank-runtime N=2 bootstrap (TcpWorld hello + capability record); version 2 was the N-rank runtime work; version 3 (the N>2 collective-selection work) adds the algorithm
+// id to the collective verdict and the forced-algorithm field to the descriptor; version 4 (the ordering-domain repair work) adds a second data connection per rank pair (ConnectionRole::CollectiveData) so
+// point-to-point and collective traffic are independent ordering domains on separate byte streams. Older versions are not wire-compatible and are rejected by the handshake.
 constexpr std::uint32_t kWireProtocolVersion = 4;
 
 // The full-mesh runtime opens two sockets per rank pair. Validated at world_size 1..4; larger meshes are refused until a
-// sparse topology exists (Phase 51).
+// sparse topology exists (the N>2 collective-selection work).
 constexpr std::size_t kMaxFullMeshWorldSize = 8;
 
 // A 128-bit identity token that keeps independent communicators between the same hosts from cross-connecting. It is not a

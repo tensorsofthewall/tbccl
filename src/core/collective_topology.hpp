@@ -1,8 +1,8 @@
 #pragma once
 
-// Phase 51: the internal collective topology: pure functions of (rank, root, world_size). There is NO public topology API and no machine/model knowledge: with no
-// outside information the rank order is [0, 1, ..., N-1], the ring is r-1 -> r -> r+1 (mod N) and trees are binomial trees over logical ranks relative to the root.
-// A future phase may build these from measured link properties; the algorithms only consume the functions below.
+// The internal collective topology: pure functions of (rank, root, world_size). There is NO public topology API and no machine/model knowledge: with no outside
+// information the rank order is [0, 1, ..., N-1], the ring is r-1 -> r -> r+1 (mod N) and trees are binomial trees over logical ranks relative to the root. A
+// future phase may build these from measured link properties; the algorithms only consume the functions below.
 
 #include <cstddef>
 #include <vector>

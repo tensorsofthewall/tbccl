@@ -1,4 +1,4 @@
-/* Phase 52: pins the C ABI v1 constants and struct layouts (docs/c_abi_v1.md) and the struct_size evolution rules. A failure here means the ABI was changed. */
+/* Pins the C ABI v1 constants and struct layouts (docs/c_abi_v1.md) and the struct_size evolution rules. A failure here means the ABI was changed. */
 
 #include "c_test_support.h"
 

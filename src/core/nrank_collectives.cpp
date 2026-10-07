@@ -1,4 +1,4 @@
-// Phase 50: reference N-rank collectives (nrank_collectives.hpp).
+// Reference N-rank collectives (nrank_collectives.hpp).
 
 #include "nrank_collectives.hpp"
 
@@ -62,7 +62,7 @@ TransferWork post_transfer(PeerChannel &channel, TransferDirection direction, As
     request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
     request.direction = direction;
     request.backend = &backend;
-    request.transport = channel.coll_data.get(); // Phase 73: the collective domain has its own connection and worker
+    request.transport = channel.coll_data.get(); // The collective domain has its own connection and worker
     request.total_bytes = bytes;
     request.chunk_hint = 0;
     return channel.coll_worker->enqueue(request);
@@ -165,9 +165,9 @@ void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provi
     }
 }
 
-// Binomial-tree broadcast (Phase 51): ceil(log2 N) levels. A node receives the whole payload from its parent, then sends it to its children (largest subtree first).
-// Children are served concurrently when the backend can be read by several lanes at once (direct host access); otherwise one after the other (a staged/CUDA
-// backend is not shared between concurrently running lanes).
+// Binomial-tree broadcast (the N>2 collective-selection work): ceil(log2 N) levels. A node receives the whole payload from its parent, then sends it to its children
+// (largest subtree first). Children are served concurrently when the backend can be read by several lanes at once (direct host access); otherwise one after the
+// other (a staged/CUDA backend is not shared between concurrently running lanes).
 void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root)
 {
     if (bytes == 0 || run.world == 1) return;
@@ -196,9 +196,10 @@ void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, 
     }
 }
 
-// Ring all-gather (Phase 51): N-1 steps. At step s every rank sends the chunk it received in the previous step (its own at s = 0) to its successor and, AT THE SAME
-// TIME, receives the next chunk from its predecessor: both transfers are posted before either is waited for, on the two independent lanes of two different
-// peers. Output slot q always holds rank q's input whatever the traversal order. Chunks are the per-rank buffers themselves, so any byte count works.
+// Ring all-gather (the N>2 collective-selection work): N-1 steps. At step s every rank sends the chunk it received in the previous step (its own at s = 0) to its
+// successor and, AT THE SAME TIME, receives the next chunk from its predecessor: both transfers are posted before either is waited for, on the two independent
+// lanes of two different peers. Output slot q always holds rank q's input whatever the traversal order. Chunks are the per-rank buffers themselves, so any byte
+// count works.
 void ring_all_gather(
     const CollectiveRun &run, ExternalMemoryProvider *in, std::vector<std::shared_ptr<ExternalMemoryProvider>> &outputs, std::size_t bytes)
 {
@@ -260,9 +261,10 @@ void reference_all_gather(
     }
 }
 
-// Binomial-tree all-reduce (Phase 51, latency oriented): rank 0 is the root. Reduce up the tree (a node receives each child's partial result into the provider's scratch
-// and reduces it into its own buffer, smallest subtree first), then broadcast the root's result down the same tree. 2*ceil(log2 N) sequential levels of whole-buffer
-// transfers; a fixed combination order for a fixed N, so the result is deterministic and identical on every rank (see docs/numerical_reduction_semantics.md).
+// Binomial-tree all-reduce (the N>2 collective-selection work, latency oriented): rank 0 is the root. Reduce up the tree (a node receives each child's partial result
+// into the provider's scratch and reduces it into its own buffer, smallest subtree first), then broadcast the root's result down the same tree. 2*ceil(log2 N)
+// sequential levels of whole-buffer transfers; a fixed combination order for a fixed N, so the result is deterministic and identical on every rank (see
+// docs/numerical_reduction_semantics.md).
 void tree_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
 {
     if (run.world == 1 || total_bytes == 0) return;
@@ -308,7 +310,7 @@ void tree_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider,
     }
 }
 
-// Ring all-reduce (Phase 51, bandwidth oriented) = ring reduce-scatter + ring all-gather over `count` elements split into N contiguous chunks that differ by at most
+// Ring all-reduce (the N>2 collective-selection work, bandwidth oriented) = ring reduce-scatter + ring all-gather over `count` elements split into N contiguous chunks that differ by at most
 // one element (any count, including count < N with empty chunks; chunk sizes are derived from `count` on every rank, so both ends of a transfer agree).
 //   reduce-scatter, N-1 steps: step s sends chunk (r - s - 1) mod N and receives chunk (r - s - 2) mod N (into the provider's scratch at the same offset), then
 //   reduces it into the local chunk; after the last step rank r owns the fully reduced chunk r.
@@ -347,8 +349,9 @@ void ring_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider,
     }
 }
 
-// Recursive-doubling all-reduce (Phase 51), power-of-two worlds only: round k exchanges the WHOLE buffer with rank XOR 2^k and reduces what arrived; log2 N rounds.
-// Both partners compute the same commutative sum, so every rank ends with identical bits. The planner never selects it for another world size.
+// Recursive-doubling all-reduce (the N>2 collective-selection work), power-of-two worlds only: round k exchanges the WHOLE buffer with rank XOR 2^k and reduces
+// what arrived; log2 N rounds. Both partners compute the same commutative sum, so every rank ends with identical bits. The planner never selects it for another
+// world size.
 void recursive_doubling_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype)
 {
     if (run.world == 1 || total_bytes == 0) return;

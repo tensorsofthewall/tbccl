@@ -1,4 +1,4 @@
-// Phase 49: host correctness of Int8 / UInt8 SUM. Overflow semantics are explicit: SUM is addition modulo 256 (two's complement for Int8),
+// Host correctness of Int8 / UInt8 SUM. Overflow semantics are explicit: SUM is addition modulo 256 (two's complement for Int8),
 // computed through unsigned arithmetic so no signed overflow ever occurs (UBSan must stay silent on every case here, including the overflow ones).
 //
 //   1. Every one of the 65536 (a, b) pairs of each type against an independent reference written with unsigned arithmetic only.

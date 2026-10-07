@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 41: the public, framework-independent communication runtime
+// The public, framework-independent communication runtime
 // entry point. See docs/framework_integration_architecture.md for the
 // full design and docs/public_api.md for usage documentation.
 //
@@ -45,7 +45,7 @@ struct CommunicatorAccess; // private test/diagnostic access (src/core/communica
 class CommunicatorListeners;
 
 // ---------------------------------------------------------------------
-// Memory provider extension point (Part D/I/N)
+// Memory provider extension point
 // ---------------------------------------------------------------------
 
 // What an external-buffer provider for one MemoryKind must supply. A
@@ -79,10 +79,10 @@ public:
     // LocalReduceBackend's existing contract in hetero_allreduce.hpp).
     virtual LocalReduceBackend &reduce_backend() = 0;
 
-    // Phase 51 (optional): like reduce_backend(), but for the byte range starting at `byte_offset` of the primary buffer, combining it with the scratch buffer at the SAME
-    // offset (primary[off ..] += scratch[off ..]). The N>2 ring all-reduce reduces one chunk at a time. The returned backend stays valid until the next call on this
-    // provider; calls are never concurrent. The built-in Host/MetalShared provider and the CUDA provider implement it. The default reports "unsupported", and a
-    // collective that needs it then fails on every rank before moving data.
+    // Like reduce_backend(), but for the byte range starting at `byte_offset` of the primary buffer, combining it with the scratch buffer at the SAME offset (primary[off
+    // ..] += scratch[off ..]). The N>2 ring all-reduce reduces one chunk at a time. The returned backend stays valid until the next call on this provider; calls are never
+    // concurrent. The built-in Host/MetalShared provider and the CUDA provider implement it. The default reports "unsupported", and a collective that needs it then fails
+    // on every rank before moving data.
     virtual LocalReduceBackend &reduce_backend_range(std::size_t /*byte_offset*/)
     {
         throw std::runtime_error("unsupported: this memory provider cannot reduce a sub-range of its buffer (needed by the ring all_reduce)");
@@ -90,15 +90,15 @@ public:
 };
 
 // Constructs a provider for one call's worth of work, wrapping `buffer`
-// (already-validated, non-owning) and respecting `context` (Part K/L
+// (already-validated, non-owning) and respecting `context` (
 // readiness semantics -- e.g. a CUDA provider waits on the supplied
 // stream before D2H).
 using MemoryProviderFactory = std::function<
     std::unique_ptr<ExternalMemoryProvider>(const BufferView &buffer, const ExecutionContext &context)>;
 
-// Phase 44: opaque, communicator-scoped storage for one MemoryKind's provider resources (e.g. persistent
-// pinned staging). Empty until a slot-aware factory fills it; owned by the Communicator and released after its
-// worker threads have stopped, so resources outlive every operation that can use them. Per-communicator, never
+// Opaque, communicator-scoped storage for one MemoryKind's provider resources (e.g. persistent pinned
+// staging). Empty until a slot-aware factory fills it; owned by the Communicator and released after its worker
+// threads have stopped, so resources outlive every operation that can use them. Per-communicator, never
 // process-global.
 using ProviderResourceSlot = std::shared_ptr<void>;
 
@@ -125,22 +125,22 @@ bool memory_kind_registered(MemoryKind kind);
 // Bootstrap
 // ---------------------------------------------------------------------
 
-// Phase 50: the legacy name of Endpoint (rank_directory.hpp), kept so existing callers compile unchanged.
+// The legacy name of Endpoint (rank_directory.hpp), kept so existing callers compile unchanged.
 using CommunicatorPeerEndpoint = Endpoint;
 
-// Framework-neutral bootstrap configuration (Part Y/Z) -- modeled
+// Framework-neutral bootstrap configuration -- modeled
 // directly on the already-clean TcpWorldOptions shape. No c10d::Store,
 // Python dict, or exo topology object anywhere near this type; an
 // out-of-tree framework adapter translates ITS bootstrap mechanism into
 // this struct.
 //
-// Phase 50 (N-rank): describe the world with `world_size`, one shared `communicator_id` and a `rank_directory` holding every
+// Describe the world with `world_size`, one shared `communicator_id` and a `rank_directory` holding every
 // rank's explicit control and data endpoint. The directory is assembled by whoever bootstraps the ranks (an adapter reading
 // its own store, an application, a launcher); libtbccl never discovers peers. Connections follow one rule: for every pair
 // the lower rank connects and the higher rank accepts, so a rank listens only if a higher rank exists
 // (rank_accepts_connections()).
 //
-// `peers` is the pre-Phase-50 convenience for world_size 1 or 2 and is mutually exclusive with `rank_directory`: it is
+// `peers` is the pre-N-rank-runtime convenience for world_size 1 or 2 and is mutually exclusive with `rank_directory`: it is
 // resolved into explicit endpoints (control = peers[r], data = peers[r].host : peers[r].port + 1000) with the nil
 // communicator id. New code and every N>2 world must use `rank_directory`.
 struct CommunicatorOptions
@@ -167,10 +167,10 @@ struct CommunicatorOptions
     std::chrono::milliseconds bootstrap_timeout{10000};
 };
 
-// Phase 50: control and data listeners bound ahead of Communicator::create(), so a rank can learn its ACTUAL ports (bind with
-// port 0), publish them through whatever bootstrap it uses, collect the other ranks' endpoints, and only then create the
-// communicator. Pass it as CommunicatorOptions::listeners; create() uses it instead of binding the directory entry
-// and consumes it. Only a rank that accepts connections (rank_accepts_connections()) needs one.
+// Control and data listeners bound ahead of Communicator::create(), so a rank can learn its ACTUAL ports (bind with port 0),
+// publish them through whatever bootstrap it uses, collect the other ranks' endpoints, and only then create the communicator.
+// Pass it as CommunicatorOptions::listeners; create() uses it instead of binding the directory entry and consumes it. Only a
+// rank that accepts connections (rank_accepts_connections()) needs one.
 class CommunicatorListeners
 {
 public:
@@ -192,7 +192,7 @@ private:
 };
 
 // ---------------------------------------------------------------------
-// Capabilities (Part U)
+// Capabilities
 // ---------------------------------------------------------------------
 
 // Read-only view of this communicator's negotiated capabilities (Part
@@ -204,7 +204,7 @@ class Capabilities
 public:
     bool supports_memory_kind(MemoryKind kind) const noexcept;
     bool supports_collective_all_reduce(MemoryKind kind, DataType datatype, ReduceOp op) const noexcept;
-    // Phase 43: byte-generic collectives (no datatype/op: nothing is interpreted or reduced).
+    // byte-generic collectives (no datatype/op: nothing is interpreted or reduced).
     bool supports_collective_broadcast(MemoryKind kind) const noexcept;
     bool supports_collective_all_gather(MemoryKind kind) const noexcept;
     std::size_t effective_max_chunk() const noexcept { return negotiation_.effective_max_chunk; }
@@ -215,8 +215,8 @@ public:
     // The single peer's capabilities when world_size == 2 (the lowest other rank otherwise; the local capabilities when
     // world_size == 1). Prefer for_rank() in code that handles more than two ranks.
     const PeerCapabilities &remote() const noexcept { return remote_; }
-    // Phase 50: the capabilities advertised by `rank` during the handshake (this rank's own for its own index). Heterogeneous
-    // worlds keep per-rank information; nothing is collapsed to one boolean. Throws std::out_of_range for rank >= world_size.
+    // The capabilities advertised by `rank` during the handshake (this rank's own for its own index). Heterogeneous worlds
+    // keep per-rank information; nothing is collapsed to one boolean. Throws std::out_of_range for rank >= world_size.
     const PeerCapabilities &for_rank(std::size_t rank) const { return rank_capabilities_.at(rank); }
     std::size_t world_size() const noexcept { return rank_capabilities_.size(); }
 
@@ -235,19 +235,19 @@ private:
 // Owns the communication runtime state required across operations:
 // negotiated capabilities, the data-plane Transport, a persistent
 // TensorCommWorker (P2P progress), and a persistent single-collective
-// executor thread (AllReduce progress, promoted from Phase 39's
-// BucketAllReduceWorker design with per-job failure isolation instead of
-// whole-worker abort -- see communicator.cpp). Construction is expensive
-// (real network bootstrap + capability negotiation); operation
-// submission is cheap (Part 104/105). Never touches externally-owned
-// caller buffers beyond reading/writing the bytes the caller asked to
-// move (Part 148).
+// executor thread (AllReduce progress, promoted from the bucketed
+// all-reduce overlap work's BucketAllReduceWorker design with per-job
+// failure isolation instead of whole-worker abort -- see
+// communicator.cpp). Construction is expensive (real network bootstrap +
+// capability negotiation); operation submission is cheap (Part 104/105).
+// Never touches externally-owned caller buffers beyond reading/writing
+// the bytes the caller asked to move (Part 148).
 class Communicator
 {
 public:
-    // Throws std::runtime_error (bounded -- Part BK, no infinite
-    // connect/accept hang; respects options.bootstrap_timeout) on
-    // bootstrap failure, wrong/unsupported world size, or capability
+    // Throws std::runtime_error (bounded, no infinite connect/accept
+    // hang; respects options.bootstrap_timeout) on bootstrap
+    // failure, wrong/unsupported world size, or capability
     // negotiation failure.
     static std::unique_ptr<Communicator> create(const CommunicatorOptions &options);
 
@@ -261,38 +261,32 @@ public:
     const Capabilities &capabilities() const noexcept;
 
     // True once a prior operation's transport/protocol failure has
-    // poisoned this communicator (Part BJ) -- subsequent operations fail
+    // poisoned this communicator -- subsequent operations fail
     // immediately with ErrorCode::PeerFailure rather than hanging. No
     // automatic reconnection is attempted.
     bool failed() const noexcept;
 
-    // Phase 45: communicator-wide, destructive, idempotent, thread-safe abort. NOT the same as Work::wait(timeout),
-    // which only stops the caller waiting and leaves the operation (and the communicator) intact.
-    // After abort(): new operations throw immediately; queued Works fail without running; the active operation is
-    // interrupted (its socket is shut down; no peer cooperation needed) and its Work fails only after TBCCL has
-    // stopped touching its buffers; abort() returns once that has happened. The communicator cannot be reused.
-    // The first reason (from abort() or from a fatal transport/protocol/device error) is kept.
-    // Limit: finite local device work already running (e.g. a user CUDA kernel TBCCL is synchronizing on) is not preempted.
-    // A caller-side Work::wait(timeout) expiring never aborts; failures detected before protocol start
-    // (invalid arguments) do not poison the communicator.
+    // communicator-wide, destructive, idempotent, thread-safe abort. NOT the same as Work::wait(timeout), which only stops
+    // the caller waiting and leaves the operation (and the communicator) intact. After abort(): new operations throw
+    // immediately; queued Works fail without running; the active operation is interrupted (its socket is shut down; no peer
+    // cooperation needed) and its Work fails only after TBCCL has stopped touching its buffers; abort() returns once that
+    // has happened. The communicator cannot be reused. The first reason (from abort() or from a fatal
+    // transport/protocol/device error) is kept. Limit: finite local device work already running (e.g. a user CUDA kernel
+    // TBCCL is synchronizing on) is not preempted. A caller-side Work::wait(timeout) expiring never aborts; failures
+    // detected before protocol start (invalid arguments) do not poison the communicator.
     void abort(const std::string &reason = "");
     bool aborted() const noexcept;
     std::string abort_reason() const;
 
-    // Phase 44: this communicator's resource slot for `kind` (null if its factory never used one). Diagnostics only.
+    // This communicator's resource slot for `kind` (null if its factory never used one). Diagnostics only.
     ProviderResourceSlot provider_resources(MemoryKind kind) const;
 
-    // Ordering domains (Phase 73, wire protocol 4): point-to-point transfers and collectives travel on separate connections with separate workers. They may be in flight together,
-    // to the same peer, from any threads, and their relative submission order may differ between ranks. Each domain keeps its own contract: every rank issues the same
-    // collectives in the same order; P2P is FIFO per (peer, direction).
-    // Async P2P. `peer` must be the communicator's single other rank (0
-    // or 1). Returns a live Work; never blocks on transport/device work,
-    // only on TensorCommWorker's bounded queue (same contract as
-    // TensorCommWorker::enqueue). Throws std::runtime_error with a
-    // message tagged by ErrorCode (see error_code_name()) for validation
-    // failures caught before any network activity (null/undersized
-    // buffer, unregistered memory kind, wrong peer, communicator
-    // already failed).
+    // Ordering domains (the ordering-domain repair work, wire protocol 4): point-to-point transfers and collectives travel on separate connections with separate workers. They may
+    // be in flight together, to the same peer, from any threads, and their relative submission order may differ between ranks. Each domain keeps its own contract: every rank
+    // issues the same collectives in the same order; P2P is FIFO per (peer, direction). Async P2P. `peer` must be the communicator's single other rank (0 or 1). Returns a live
+    // Work; never blocks on transport/device work, only on TensorCommWorker's bounded queue (same contract as TensorCommWorker::enqueue). Throws std::runtime_error with a message
+    // tagged by ErrorCode (see error_code_name()) for validation failures caught before any network activity (null/undersized buffer, unregistered memory kind, wrong peer,
+    // communicator already failed).
     Work send(
         const BufferView &buffer,
         std::size_t count,
@@ -308,14 +302,14 @@ public:
         const ExecutionContext &context = {});
 
     // Async N=2 SUM AllReduce, routed to the existing, unmodified
-    // n2_all_reduce_tensor() (Part W/120). Root is always rank 0 (Part
-    // X/129); there is no caller-visible root parameter. Returns
-    // ErrorCode::Unsupported (as a thrown std::runtime_error whose
-    // message starts with "unsupported: ") if world_size() != 2, op !=
-    // ReduceOp::Sum, or either buffer's memory kind has no registered
-    // provider. send_buf and recv_buf may be the same BufferView
-    // (in-place, the common case) or different (TBCCL copies send_buf's
-    // content into recv_buf's location first when they differ).
+    // n2_all_reduce_tensor(). Root is always rank 0; there is no
+    // caller-visible root parameter. Returns ErrorCode::Unsupported (as
+    // a thrown std::runtime_error whose message starts with
+    // "unsupported: ") if world_size() != 2, op != ReduceOp::Sum, or
+    // either buffer's memory kind has no registered provider. send_buf
+    // and recv_buf may be the same BufferView (in-place, the common
+    // case) or different (TBCCL copies send_buf's content into
+    // recv_buf's location first when they differ).
     Work all_reduce(
         const BufferView &send_buf,
         const BufferView &recv_buf,
@@ -324,14 +318,14 @@ public:
         ReduceOp op,
         const ExecutionContext &context = {});
 
-    // Phase 43: byte-generic N=2 Broadcast. In place from the caller's view: on `root` the buffer is
-    // the source, on the other rank it is the destination; `buffer.bytes` is authoritative and both
+    // byte-generic N=2 Broadcast. In place from the caller's view: on `root` the buffer is the
+    // source, on the other rank it is the destination; `buffer.bytes` is authoritative and both
     // ranks must pass the same size. Runs in the same FIFO ordering domain as all_reduce(). Throws
     // "unsupported: ..." for world_size != 2 or an unregistered memory kind, "invalid_argument: ..."
     // for root >= world_size or a null non-empty buffer.
     Work broadcast(const BufferView &buffer, std::size_t root, const ExecutionContext &context = {});
 
-    // Phase 43: byte-generic N=2 AllGather. `outputs` must hold exactly world_size() buffers, each of
+    // byte-generic N=2 AllGather. `outputs` must hold exactly world_size() buffers, each of
     // `input.bytes` bytes; on completion outputs[r] holds rank r's input on BOTH ranks (including
     // outputs[rank()] <- input, performed inside the runtime through the memory providers; skipped if
     // they alias). Deadlock-safe ordering: rank 0 sends then receives, rank 1 receives then sends.
@@ -341,8 +335,8 @@ public:
         const std::vector<BufferView> &outputs,
         const ExecutionContext &context = {});
 
-    // Phase 50: a barrier over every rank (no payload). The Work completes once every rank has entered the same barrier. Runs in the
-    // same FIFO ordering domain as the other collectives. world_size 1 completes immediately.
+    // A barrier over every rank (no payload). The Work completes once every rank has entered the same barrier. Runs in the same FIFO
+    // ordering domain as the other collectives. world_size 1 completes immediately.
     Work barrier();
 
 private:

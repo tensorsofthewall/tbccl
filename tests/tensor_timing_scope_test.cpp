@@ -1,4 +1,4 @@
-// Phase 18 timing-scope regression tests (Part H, items 42-44).
+// the CUDA synchronization-audit work timing-scope regression tests (, items 42-44).
 //
 // The ready/produce timing-boundary logic lives inside
 // tensor_transfer_bench.cpp's anonymous namespace (appropriately

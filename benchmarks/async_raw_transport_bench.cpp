@@ -1,19 +1,19 @@
-// Phase 33 diagnostic-only: measures raw Transport::send/recv in a
+// the async fast-path work diagnostic-only: measures raw Transport::send/recv in a
 // loop with the identical ack-based timing scope as
 // tbccl_async_transfer_bench, but WITHOUT TensorCommWorker at all --
 // isolates whether the queue/thread-handoff mechanism itself costs
 // anything beyond what a direct Transport call would cost on its own.
 //
-// Phase 34 extension: this binary now supports choosing, independently
+// the worker execution-context work extension: this binary now supports choosing, independently
 // per rank, whether the Transport::send()/recv() calls are made from
-// this process's main thread (--io-exec=main, the Phase 33 control) or
+// this process's main thread (--io-exec=main, the async fast-path control) or
 // from a minimal persistent benchmark-local worker thread
 // (--io-exec=worker, RawIoWorker, tensor/raw_io_worker.hpp).
 // RawIoWorker deliberately does NOT use
 // TensorCommWorker/StagingPool/AsyncMemoryBackend/ChunkPlan/
 // TransferWork -- it exists purely to answer "does moving the exact
 // same Transport call onto a background std::thread reproduce the
-// Phase 33 regression on its own?" (Part F/G of the Phase 34 plan).
+// the async fast-path work regression on its own?".
 //
 // Not part of the async substrate's public surface; a standalone
 // measurement tool only.
@@ -101,7 +101,8 @@ namespace
 
     // Diagnostics captured for one Linux thread by TID. Best-effort:
     // any field the running kernel does not expose is recorded as
-    // "unavailable" rather than guessed (Phase 34 Part 46).
+    // "unavailable" rather than guessed (the worker
+    // execution-context work Part 46).
     struct LinuxThreadDiag
     {
         pid_t tid = 0;
@@ -334,11 +335,11 @@ int main(int argc, char **argv)
         if (rank == 0)
         {
             auto listener = tbccl::tcp_listen(peers[0].host, peers[0].port, {});
-            // Part AO: machine-readable readiness marker printed right
-            // after listen()/bind() succeeds (well, right after
-            // tcp_listen returns -- the accept() below still blocks),
-            // so an orchestrating script can gate the peer's connect()
-            // on genuine listener readiness instead of a fixed sleep.
+            // Machine-readable readiness marker printed right after
+            // listen()/bind() succeeds (well, right after tcp_listen
+            // returns -- the accept() below still blocks), so an
+            // orchestrating script can gate the peer's connect() on
+            // genuine listener readiness instead of a fixed sleep.
             std::fprintf(stderr, "READY\n");
             std::fflush(stderr);
             connection = listener->accept();

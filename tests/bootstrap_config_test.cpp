@@ -1,4 +1,4 @@
-// Phase 50: CommunicatorOptions resolution (explicit rank directory vs the legacy N=2 `peers` list). Pure: no sockets.
+// CommunicatorOptions resolution (explicit rank directory vs the legacy N=2 `peers` list). Pure: no sockets.
 
 #include "bootstrap_config.hpp"
 

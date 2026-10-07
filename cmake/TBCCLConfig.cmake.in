@@ -16,7 +16,7 @@ else()
     set(TBCCL_cuda_FOUND FALSE)
 endif()
 
-# Phase 52: the stable C ABI shim (TBCCL::tbccl_c). Loaded after the CUDA component because a CUDA build's shim links it.
+# The stable C ABI shim (TBCCL::tbccl_c). Loaded after the CUDA component because a CUDA build's shim links it.
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/TBCCLCTargets.cmake")
     include("${CMAKE_CURRENT_LIST_DIR}/TBCCLCTargets.cmake")
     set(TBCCL_c_FOUND TRUE)

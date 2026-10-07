@@ -29,8 +29,8 @@ namespace
         }
     }
 
-    // Phase 39 Part D: optional stage-decomposition timing, disabled by
-    // default -- same pattern as Phase 33/35's TBCCL_ASYNC_TIMING (a
+    // Optional stage-decomposition timing, disabled by default -- same
+    // pattern as the async fast-path work's TBCCL_ASYNC_TIMING (a
     // single getenv() at first use, cached; prints directly to stderr
     // for a human/script-readable log, not threaded through any public
     // return value). Never adds cost to the normal hot path.
@@ -88,7 +88,7 @@ void n2_all_reduce_tensor(
         recv_request.transport = &transport;
         recv_request.total_bytes = total_bytes;
         recv_request.chunk_hint = chunk_hint;
-        recv_request.shared_lane = true; // Phase 50: keep the sequential single-FIFO behaviour on a duplex worker
+        recv_request.shared_lane = true; // Keep the sequential single-FIFO behaviour on a duplex worker
 
         const auto recv_start = Clock::now();
         TransferWork recv_work = worker.enqueue(recv_request);
@@ -146,7 +146,7 @@ void n2_all_reduce_tensor(
         recv_request.transport = &transport;
         recv_request.total_bytes = total_bytes;
         recv_request.chunk_hint = chunk_hint;
-        recv_request.shared_lane = true; // Phase 50: keep the sequential single-FIFO behaviour on a duplex worker
+        recv_request.shared_lane = true; // Keep the sequential single-FIFO behaviour on a duplex worker
 
         const auto recv_start = Clock::now();
         TransferWork recv_work = worker.enqueue(recv_request);

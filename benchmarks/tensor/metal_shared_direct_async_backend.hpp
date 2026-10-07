@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 40: a staging-copy-free AsyncMemoryBackend over an existing
+// A staging-copy-free AsyncMemoryBackend over an existing
 // TensorBackend of kind MetalShared. Unlike TensorBackendAsyncAdapter
 // (which is generic over any TensorBackend and never advertises direct
 // transport access), this wraps the fact that MetalShared's
@@ -12,7 +12,7 @@
 // constructing one with a non-MetalShared backend throws.
 //
 // This is "staging-copy-free direct access to CPU-visible Metal-shared
-// memory", NOT kernel zero-copy, GPUDirect, or RDMA (docs/phase40_metal_direct_design.md).
+// memory", NOT kernel zero-copy, GPUDirect, or RDMA.
 //
 // TensorBackendAsyncAdapter remains unchanged and is still the correct
 // choice for MetalPrivateStaged (whose real tensor storage is not

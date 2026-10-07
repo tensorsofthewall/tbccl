@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 32 Commit 4: adapts the existing Phase 17 TensorBackend
+// the async tensor-transfer work Commit 4: adapts the existing CUDA tensor-benchmark TensorBackend
 // (host/cuda-pageable/cuda-pinned/metal-shared/metal-private-staged,
 // tensor_backend.hpp) to the AsyncMemoryBackend interface
 // (tbccl/async_transfer.hpp), so CUDA/Metal tensors can move through
@@ -8,7 +8,7 @@
 // type -- exactly the boundary tensor_backend.hpp's own docstring
 // already established.
 //
-// Scope note (see docs/phase32_report.md item 41-45 for the full
+// Scope note (
 // rationale): this is a worker-thread-driven wrapper over
 // TensorBackend's existing *synchronous* stage_device_to_host()/
 // stage_host_to_device() calls, not the finer-grained per-chunk

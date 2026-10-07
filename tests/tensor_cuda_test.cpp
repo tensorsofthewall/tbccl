@@ -1,7 +1,7 @@
 // Correctness tests for benchmarks/tensor/cuda_backend.cu. Only
 // built/run when TBCCL_ENABLE_CUDA is on (see CMakeLists.txt) and
 // only meaningful with a CUDA device actually present at runtime --
-// make_backend() throws a clear, distinct error otherwise (Part C,
+// make_backend() throws a clear, distinct error otherwise (,
 // requirement 10), which main() below classifies as a skip rather
 // than a test failure.
 
@@ -241,9 +241,9 @@ int main()
     }
 
     // A device-presence check up front classifies "no GPU at runtime"
-    // as a skip, not a failure (Part C, requirement 10) -- every
-    // subsequent test would otherwise fail identically and
-    // uninformatively on a CI/build machine without a GPU.
+    // as a skip, not a failure (, requirement 10) -- every subsequent
+    // test would otherwise fail identically and uninformatively on a
+    // CI/build machine without a GPU.
     try
     {
         auto probe = make_backend(BackendKind::CudaPageable);

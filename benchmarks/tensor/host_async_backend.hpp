@@ -1,10 +1,10 @@
 #pragma once
 
-// Phase 32: a plain-host AsyncMemoryBackend (tbccl/async_transfer.hpp)
-// over a non-owning raw buffer. Used directly for host<->host
-// benchmarking (Part Q), and as the staging-side implementation other
-// backends (CUDA/Metal) can compose with for their own host-visible
-// staging buffer once GPU-side work has already completed (Commit 4).
+// A plain-host AsyncMemoryBackend (tbccl/async_transfer.hpp) over a
+// non-owning raw buffer. Used directly for host<->host benchmarking,
+// and as the staging-side implementation other backends (CUDA/Metal)
+// can compose with for their own host-visible staging buffer once
+// GPU-side work has already completed (Commit 4).
 
 #include <tbccl/async_transfer.hpp>
 
@@ -35,10 +35,10 @@ public:
         std::memcpy(buffer_ + chunk.offset, staging, chunk.size);
     }
 
-    // Phase 33 Part G/H: plain host CPU memory is already directly
-    // readable/writable by TcpTransport -- no staging copy is needed
-    // at all. stage_source_chunk()/commit_destination_chunk() above
-    // remain correct and are still used whenever a caller explicitly
+    // Plain host CPU memory is already directly readable/writable by
+    // TcpTransport -- no staging copy is needed at all.
+    // stage_source_chunk()/commit_destination_chunk() above remain
+    // correct and are still used whenever a caller explicitly
     // requests chunking/pipelining via chunk_hint != 0 (e.g. to
     // overlap transfer with compute) -- TensorCommWorker only takes
     // the direct path when chunk_hint == 0 (see async_transfer.hpp).

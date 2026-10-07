@@ -1,5 +1,5 @@
-// Phase 52: structured errors. The ErrorCode of a thrown call or of a terminal Work is decided where the failure happens and carried separately from the
-// message text; nothing derives the category from the text. Every category is injected and checked with a text that would mislead a string parser.
+// Structured errors. The ErrorCode of a thrown call or of a terminal Work is decided where the failure happens and carried separately from the message
+// text; nothing derives the category from the text. Every category is injected and checked with a text that would mislead a string parser.
 
 #include "mesh_test_support.hpp"
 
@@ -90,7 +90,8 @@ namespace
             expect(thrown_code([&] { comm.send(BufferView{MemoryKind::Host, nullptr, 64, 0}, 64, DataType::UInt8, (rank + 1) % 3); }, "null buffer") == ErrorCode::InvalidArgument, "null data -> InvalidArgument");
             expect(thrown_code([&] { comm.send(BufferView{MemoryKind::Cuda, buf.data(), buf.size(), 0}, buf.size(), DataType::UInt8, (rank + 1) % 3); }, "unregistered kind") == ErrorCode::Unsupported, "unregistered memory kind -> Unsupported");
             std::vector<float> f(16, 1.0f);
-            // FP16 reductions are rejected at N>2 (Phase 50) before anything is submitted: the call throws, the communicator stays usable.
+            // FP16 reductions are rejected at N>2 (the N-rank runtime work) before anything is submitted: the call throws, the
+            // communicator stays usable.
             expect(thrown_code([&] { comm.all_reduce(fview(f), fview(f), 32, DataType::Float16, ReduceOp::Sum); }, "FP16 all_reduce at N>2") == ErrorCode::Unsupported, "FP16 all_reduce at N>2 -> Unsupported");
             expect(!comm.failed(), "an Unsupported call does not poison the communicator");
 

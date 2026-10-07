@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 40: summarize tbccl_async_transfer_bench / tbccl_hetero_allreduce_bench
+"""Summarize tbccl_async_transfer_bench / tbccl_hetero_allreduce_bench
 / tbccl_bucketed_allreduce_bench JSON output for the Metal-direct A/B comparison.
 
 Usage:

@@ -1,10 +1,10 @@
-// Phase 32 Part AA-AH: host<->host large-tensor benchmark for the async
+// Host<->host large-tensor benchmark for the async
 // tensor-transfer substrate (TensorCommWorker/StagingPool/ChunkPlan).
 // Two processes (one per physical machine), one designated sender (the
 // --source-rank), one receiver. Connection setup: rank 0 listens and
 // accepts, rank 1 connects (same convention as create_tcp_world's
 // "connect to every lower-ranked peer" rule for the 2-peer case),
-// followed by a real PeerCapabilities exchange/negotiation (Part Y) --
+// followed by a real PeerCapabilities exchange/negotiation --
 // this is deliberately NOT skipped even though only one transport
 // exists, to exercise the real control-plane path this phase built.
 //
@@ -91,14 +91,15 @@ namespace
         std::string label; // free-form tag echoed into output, for sweep bookkeeping
         std::string backend = "host"; // host, cuda-pageable, cuda-pinned, metal-shared, metal-private-staged
         std::string metal_async_path = "adapter"; // adapter, direct -- only meaningful for --backend metal-shared
-        // Phase 34 diagnostic: the receiver's per-round std::fill +
-        // byte-pattern verify loop runs BEFORE the ack is sent, so it
-        // is included in the sender's own measured completion time
-        // (the ack is the sender's proof of destination-visible
-        // completion -- Part D). Disabling verification isolates
-        // whether this receiver-side CPU work, not Transport itself,
-        // is inflating the measured regression. Default true to match
-        // every prior phase's correctness-checked measurements.
+        // The worker execution-context work diagnostic: the
+        // receiver's per-round std::fill + byte-pattern verify loop
+        // runs BEFORE the ack is sent, so it is included in the
+        // sender's own measured completion time (the ack is the
+        // sender's proof of destination-visible completion).
+        // Disabling verification isolates whether this receiver-side
+        // CPU work, not Transport itself, is inflating the measured
+        // regression. Default true to match every prior phase's
+        // correctness-checked measurements.
         bool verify = true;
     };
 
@@ -190,9 +191,9 @@ int main(int argc, char **argv)
 
         auto connection = establish_connection(options);
 
-        // Real control-plane exchange (Part Y): negotiate before doing
-        // anything data-plane, even though this phase only has one
-        // transport to select.
+        // Real control-plane exchange: negotiate before doing anything
+        // data-plane, even though this phase only has one transport to
+        // select.
         const auto local_caps = tbccl::local_capabilities();
         const auto remote_caps = tbccl::exchange_capabilities(*connection, local_caps);
         const auto negotiation = tbccl::negotiate(local_caps, remote_caps);
@@ -206,7 +207,7 @@ int main(int argc, char **argv)
         const bool use_cuda_chunked_backend = (options.backend == "cuda-chunked");
         const bool use_device_backend = (options.backend != "host") && !use_cuda_chunked_backend;
 
-        // Host path: a plain buffer + HostAsyncBackend (Part Q).
+        // Host path: a plain buffer + HostAsyncBackend.
         std::vector<std::uint8_t> buffer;
         std::unique_ptr<tbccl_bench::tensor::HostAsyncBackend> host_backend;
 
@@ -220,11 +221,10 @@ int main(int argc, char **argv)
             (options.backend == "metal-shared") && (options.metal_async_path == "direct");
 
 #if defined(TBCCL_ENABLE_CUDA)
-        // Phase 35: the true per-chunk async CUDA D2H/H2D staging
-        // backend (docs/phase35_device_pipeline_design.md), selected
-        // via --backend cuda-chunked. Bypasses TensorBackend/
-        // TensorBackendAsyncAdapter's whole-buffer-only staging
-        // entirely.
+        // The true per-chunk async CUDA D2H/H2D staging backend,
+        // selected via --backend cuda-chunked. Bypasses
+        // TensorBackend/ TensorBackendAsyncAdapter's
+        // whole-buffer-only staging entirely.
         std::unique_ptr<tbccl_bench::tensor::CudaChunkedAsyncBackend> cuda_chunked_backend;
 #endif
 
@@ -288,19 +288,20 @@ int main(int argc, char **argv)
         const auto chunk_plan = tbccl::plan_chunks(options.bytes, options.chunk_bytes, 1);
         const std::size_t chunk_count = chunk_plan.empty() ? 1 : chunk_plan.size();
 
-        // Phase 34 finding: a per-round std::fill()+byte-verify on the
-        // receiver, done INSIDE this timed loop, was found to inflate
-        // every measured round's completion time by tens of
-        // milliseconds -- the ack for round N is only sent after the
-        // receiver's own work.wait() returns, but the receiver doesn't
-        // re-post its next recv() until it finishes that round's
-        // verify, so large sends back up against TCP flow control
-        // waiting on a receiver that's busy verifying instead of
-        // reading. tbccl_tensor_transfer_bench never had this problem:
-        // it verifies exactly ONCE, in an explicitly untimed round
-        // after the whole measured loop (see its own comment: "One
-        // untimed, full-byte-verified round -- never folded into the
-        // timing above"). This benchmark now matches that convention.
+        // The worker execution-context work finding: a per-round
+        // std::fill()+byte-verify on the receiver, done INSIDE this
+        // timed loop, was found to inflate every measured round's
+        // completion time by tens of milliseconds -- the ack for round
+        // N is only sent after the receiver's own work.wait() returns,
+        // but the receiver doesn't re-post its next recv() until it
+        // finishes that round's verify, so large sends back up against
+        // TCP flow control waiting on a receiver that's busy verifying
+        // instead of reading. tbccl_tensor_transfer_bench never had
+        // this problem: it verifies exactly ONCE, in an explicitly
+        // untimed round after the whole measured loop (see its own
+        // comment: "One untimed, full-byte-verified round -- never
+        // folded into the timing above"). This benchmark now matches
+        // that convention.
         auto run_one_transfer = [&](std::uint64_t transfer_id)
         {
             if (use_device_backend)
@@ -340,9 +341,9 @@ int main(int argc, char **argv)
                 throw std::runtime_error("transfer failed: " + work.error());
             }
 
-            // Part AE: match the synchronous benchmark's timing scope
-            // exactly -- completion_confirmed_us there is the SENDER's
-            // own local time from source-ready to receiving a 1-byte
+            // Match the synchronous benchmark's timing scope exactly
+            // -- completion_confirmed_us there is the SENDER's own
+            // local time from source-ready to receiving a 1-byte
             // application-level ACK the receiver only sends after its
             // OWN host_recv_data()+stage_host_to_device() have
             // returned. Without this, TransferWork::wait() for a Send

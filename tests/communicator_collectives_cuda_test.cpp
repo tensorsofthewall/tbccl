@@ -1,4 +1,4 @@
-// Phase 43: real-hardware CUDA coverage for Communicator::broadcast()/all_gather(): CUDA<->Host and
+// real-hardware CUDA coverage for Communicator::broadcast()/all_gather(): CUDA<->Host and
 // CUDA<->CUDA (same GPU), both roots, producer readiness through a user stream (no host sync before
 // submission) and an independent consumer stream after wait() (no device-wide synchronization).
 

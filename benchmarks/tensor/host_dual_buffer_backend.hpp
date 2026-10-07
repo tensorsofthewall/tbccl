@@ -1,14 +1,13 @@
 #pragma once
 
-// Phase 38: a plain-host AsyncMemoryBackend with two SEPARATE buffers
-// (source and destination), unlike HostAsyncBackend (host_async_backend.hpp)
-// which deliberately aliases both to the same buffer for its Phase 32
-// in-place round-trip use case. n2_all_reduce_tensor() needs a backend
-// where receiving a peer's contribution (into "destination") never
-// overwrites this rank's own local input (in "source") -- see
-// docs/phase38_collective_design.md Part 3's root/non-root completion
-// asymmetry, which depends on source and destination being genuinely
-// distinct storage.
+// A plain-host AsyncMemoryBackend with two SEPARATE buffers (source and
+// destination), unlike HostAsyncBackend (host_async_backend.hpp) which
+// deliberately aliases both to the same buffer for its the async
+// tensor-transfer work in-place round-trip use case. n2_all_reduce_tensor()
+// needs a backend where receiving a peer's contribution (into "destination")
+// never overwrites this rank's own local input (in "source") --.md Part 3's
+// root/non-root completion asymmetry, which depends on source and
+// destination being genuinely distinct storage.
 
 #include <tbccl/async_transfer.hpp>
 

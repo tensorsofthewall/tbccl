@@ -1,4 +1,4 @@
-// Phase 50: CommunicatorId and RankDirectory validation (include/tbccl/rank_directory.hpp). Pure functions: no sockets.
+// CommunicatorId and RankDirectory validation (include/tbccl/rank_directory.hpp). Pure functions: no sockets.
 
 #include <tbccl/error.hpp>
 #include <tbccl/rank_directory.hpp>

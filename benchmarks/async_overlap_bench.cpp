@@ -1,11 +1,11 @@
-// Phase 32 Part AJ-AO: compute/communication overlap microbenchmark.
+// Compute/communication overlap microbenchmark.
 // Producer side does real, deterministic work on each bucket (not
-// sleep -- Part AL item 138), then asynchronously transfers it while
+// sleep), then asynchronously transfers it while
 // continuing to compute the next bucket. Compares against a serial
 // control (compute everything, then communicate everything) using the
 // SAME buckets/buffers, over the SAME real TCP/TB4 connection.
 //
-// Scope note (see docs/phase32_report.md): the "compute" here is a
+// Scope note: the "compute" here is a
 // deterministic CPU-bound workload (repeated FNV-1a-style hashing over
 // the buffer), not a CUDA/Metal kernel -- building and validating a new
 // GPU compute kernel was out of scope for the time this benchmark could
@@ -225,7 +225,7 @@ int main(int argc, char **argv)
         // ---- T_async_overlap: compute bucket i, enqueue transfer i,
         // move on to compute bucket i+1 immediately -- transfer i
         // proceeds on TensorCommWorker's own threads while THIS thread
-        // computes bucket i+1 (Part AK item 134).
+        // computes bucket i+1.
         double async_overlap_us = 0;
         {
             const auto start = std::chrono::steady_clock::now();

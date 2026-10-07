@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only latency-relevant runtime-state snapshot for TB4 investigation.
 
-Phase 30 Part C. Extends tb4_health_snapshot.py (reused for boot_id, AER,
+The sustained-session reproduction work. Extends tb4_health_snapshot.py (reused for boot_id, AER,
 PCI topology, interface counters -- not duplicated here) with the broader
 set of state that can plausibly explain a change in steady-state latency
 or tail-event reproducibility across a reboot: IRQ effective affinity,
@@ -188,7 +188,7 @@ GPU_QUERY_FIELDS = [
 
 
 def gpu_state():
-    """Phase 31 Part E/B: read-only nvidia-smi telemetry. Returns None (not
+    """Read-only nvidia-smi telemetry. Returns None (not
     an error) when nvidia-smi is unavailable -- e.g. on the Mac, or a Linux
     machine with no NVIDIA GPU -- so callers never treat "no GPU" as a
     capture failure. A field nvidia-smi itself doesn't support on this

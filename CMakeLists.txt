@@ -16,9 +16,9 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
-# Phase 41 Part AJ: needed early for CMAKE_INSTALL_INCLUDEDIR, used by
-# tbccl's PUBLIC include directories below so the exported target works
-# correctly both from the build tree and from an installed prefix.
+# Needed early for CMAKE_INSTALL_INCLUDEDIR, used by tbccl's PUBLIC
+# include directories below so the exported target works correctly both
+# from the build tree and from an installed prefix.
 include(GNUInstallDirs)
 
 option(
@@ -115,10 +115,10 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Phase 17: heterogeneous tensor-transfer backends. Benchmark-only: the
-# tbccl library above has no CUDA/Metal awareness and no dependency on
-# anything below. Both backends default OFF; a host-only Linux or
-# macOS build never needs the CUDA Toolkit or Metal/Foundation.
+# Heterogeneous tensor-transfer backends. Benchmark-only: the tbccl library
+# above has no CUDA/Metal awareness and no dependency on anything below. Both
+# backends default OFF; a host-only Linux or macOS build never needs the CUDA
+# Toolkit or Metal/Foundation.
 # ---------------------------------------------------------------------------
 
 option(
@@ -191,11 +191,10 @@ if(TBCCL_ENABLE_METAL)
     target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/metal_backend.mm)
 endif()
 
-# ---------------------------------------------------------------------------
-# Phase 52: the stable C ABI shim (docs/c_abi_v1.md). include/tbccl/tbccl.h plus the symbols of TBCCL::tbccl_c are the ABI; TBCCL::tbccl stays the C++
-# target. The shim is written in C++ internally, wraps the final asynchronous runtime and reimplements nothing. A host-only build and a CUDA build export
-# the SAME symbol set (tbcclRegisterCudaSupport exists in both; the host-only one returns TBCCL_UNSUPPORTED).
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------- The stable C ABI shim (docs/c_abi_v1.md). include/tbccl/tbccl.h plus the
+# symbols of TBCCL::tbccl_c are the ABI; TBCCL::tbccl stays the C++ target. The shim is written in C++ internally, wraps the final asynchronous runtime
+# and reimplements nothing. A host-only build and a CUDA build export the SAME symbol set (tbcclRegisterCudaSupport exists in both; the host-only one
+# returns TBCCL_UNSUPPORTED). ---------------------------------------------------------------------------
 add_library(tbccl_c STATIC
     src/c_api/c_core.cpp
     src/c_api/c_work.cpp
@@ -296,9 +295,10 @@ else()
 endif()
 
 if(TBCCL_ENABLE_CUDA)
-    # Phase 18 standalone CUDA diagnostic (Part E/F): no TBCCL
-    # networking or TensorBackend involvement, deliberately decoupled
-    # so its timing can't be perturbed by or confused with either.
+    # The CUDA synchronization-audit work standalone CUDA diagnostic:
+    # no TBCCL networking or TensorBackend involvement, deliberately
+    # decoupled so its timing can't be perturbed by or confused with
+    # either.
     add_executable(cuda_sync_bench
         benchmarks/tensor/cuda_sync_bench.cu
     )
@@ -470,10 +470,11 @@ else()
     )
 endif()
 
-# Phase 14 diagnostic only — dumps the internal ring trace (see
-# ring_trace.hpp) for a handful of ReduceScatter invocations. Builds
-# fine without TBCCL_ENABLE_RING_TRACE, but prints no events in that
-# case (every ring_trace_* call is a no-op).
+# The loopback algorithm-sweep work diagnostic only — dumps the
+# internal ring trace (see ring_trace.hpp) for a handful of
+# ReduceScatter invocations. Builds fine without
+# TBCCL_ENABLE_RING_TRACE, but prints no events in that case (every
+# ring_trace_* call is a no-op).
 add_executable(tbccl_ring_trace_dump
     tools/tbccl_ring_trace_dump.cpp
 )
@@ -572,9 +573,9 @@ else()
     )
 endif()
 
-# Phase 36: plain .cpp (not .cu) so it builds on every platform -- the
-# sender role requires TBCCL_ENABLE_CUDA at runtime (checked, clear
-# error otherwise), the receiver role only needs tensor_backend.hpp's
+# Plain .cpp (not .cu) so it builds on every platform -- the sender
+# role requires TBCCL_ENABLE_CUDA at runtime (checked, clear error
+# otherwise), the receiver role only needs tensor_backend.hpp's
 # portable backend set (host/metal-shared), exactly like
 # tbccl_async_transfer_bench above.
 add_executable(tbccl_cuda_overlap_bench
@@ -602,7 +603,8 @@ else()
     )
 endif()
 
-# Phase 50 diagnostics: N=2 regression micro-benchmark (also built by hand against older libtbccl for the A/B) and the reference N-rank collectives.
+# The N-rank runtime work diagnostics: N=2 regression micro-benchmark (also built by hand against older libtbccl for the A/B) and the reference
+# N-rank collectives.
 add_executable(communicator_n2_bench benchmarks/communicator_n2_bench.cpp)
 target_link_libraries(communicator_n2_bench PRIVATE tbccl Threads::Threads)
 add_executable(communicator_algo_bench benchmarks/communicator_algo_bench.cpp)
@@ -611,7 +613,7 @@ add_executable(communicator_posting_probe benchmarks/communicator_posting_probe.
 target_link_libraries(communicator_posting_probe PRIVATE tbccl Threads::Threads)
 add_executable(communicator_nrank_bench benchmarks/communicator_nrank_bench.cpp)
 target_link_libraries(communicator_nrank_bench PRIVATE tbccl Threads::Threads)
-# Phase 55: process-per-rank small-message latency benchmark (loopback or two hosts).
+# process-per-rank small-message latency benchmark (loopback or two hosts).
 add_executable(small_message_latency benchmarks/small_message_latency.cpp)
 target_link_libraries(small_message_latency PRIVATE tbccl Threads::Threads)
 
@@ -1112,7 +1114,8 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME bootstrap_config_test COMMAND bootstrap_config_test)
 
-    # Phase 50 multi-rank tests: dynamic ports only (kernel-assigned, pre-bound listeners), so they need no shared-port lock.
+    # The N-rank runtime work multi-rank tests: dynamic ports only (kernel-assigned, pre-bound listeners), so they need no
+    # shared-port lock.
     add_executable(communicator_mesh_test
         tests/communicator_mesh_test.cpp
     )
@@ -1138,7 +1141,7 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_p2p_nrank_test PROPERTIES TIMEOUT 240)
     list(APPEND tbccl_dynamic_port_tests communicator_p2p_nrank_test)
 
-    # Phase 73: direct mixed P2P + collective probe (reports; --gate makes a non-PASS scenario fail).
+    # Direct mixed P2P + collective probe (reports; --gate makes a non-PASS scenario fail).
     add_executable(p73_mixed_domain_probe
         tools/p73_mixed_domain_probe.cpp
     )
@@ -1234,7 +1237,7 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_submission_test PROPERTIES TIMEOUT 600)
     list(APPEND tbccl_dynamic_port_tests communicator_submission_test)
 
-    # Phase 52: pure-C ABI tests (C11, strict warnings), linked through the C shim target only.
+    # pure-C ABI tests (C11, strict warnings), linked through the C shim target only.
     add_executable(c_api_functional_test tests/c_api/c_api_functional_test.c)
     target_link_libraries(c_api_functional_test PRIVATE tbccl_c Threads::Threads)
     target_include_directories(c_api_functional_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api)
@@ -1244,7 +1247,7 @@ if(BUILD_TESTING)
     add_test(NAME c_api_functional_test COMMAND c_api_functional_test)
     set_tests_properties(c_api_functional_test PROPERTIES TIMEOUT 300)
 
-    # Phase 73: collectives and P2P from separate application threads through the C ABI, and a mixed abort.
+    # Collectives and P2P from separate application threads through the C ABI, and a mixed abort.
     add_executable(c_api_mixed_domain_test tests/c_api/c_api_mixed_domain_test.c)
     target_link_libraries(c_api_mixed_domain_test PRIVATE tbccl_c Threads::Threads)
     target_include_directories(c_api_mixed_domain_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/c_api)
@@ -1263,7 +1266,8 @@ if(BUILD_TESTING)
     add_test(NAME c_quickstart COMMAND c_quickstart)
     set_tests_properties(c_quickstart PROPERTIES TIMEOUT 60)
 
-    # Phase 52 diagnostic: caller-side submission cost (C++ API vs the C wrapper), not a ctest.
+    # the C ABI v1 work diagnostic: caller-side submission cost (C++ API vs the C wrapper), not
+    # a ctest.
     add_executable(communicator_submit_bench benchmarks/communicator_submit_bench.cpp)
     target_include_directories(communicator_submit_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_link_libraries(communicator_submit_bench PRIVATE tbccl_c Threads::Threads)
@@ -1908,7 +1912,7 @@ if(BUILD_TESTING)
     )
     set_tests_properties(communicator_test PROPERTIES TIMEOUT 60)
 
-    # Phase 55: the internal latency trace (on: ordered events per operation; `off` argument: nothing recorded).
+    # The internal latency trace (on: ordered events per operation; `off` argument: nothing recorded).
     add_executable(latency_trace_test tests/latency_trace_test.cpp)
     target_link_libraries(latency_trace_test PRIVATE tbccl Threads::Threads)
     add_test(NAME latency_trace_test COMMAND latency_trace_test)
@@ -1942,11 +1946,11 @@ if(BUILD_TESTING)
     )
     set_tests_properties(metal_shared_direct_async_backend_test PROPERTIES TIMEOUT 60)
 
-    # Phase 18 (Part H): exercises tbccl_tensor_transfer_bench's
-    # --timing-scope ready/produce CLI behavior by spawning the actual
-    # compiled binary -- its logic lives in that .cpp's anonymous
-    # namespace, so this is the CLI's real testable surface. Host
-    # backend only, so no CUDA/Metal dependency.
+    # Exercises tbccl_tensor_transfer_bench's --timing-scope
+    # ready/produce CLI behavior by spawning the actual compiled
+    # binary -- its logic lives in that .cpp's anonymous namespace, so
+    # this is the CLI's real testable surface. Host backend only, so
+    # no CUDA/Metal dependency.
     add_executable(tensor_timing_scope_test
         tests/tensor_timing_scope_test.cpp
     )
@@ -2162,12 +2166,12 @@ if(BUILD_TESTING)
             COMMAND cuda_reduce_backend_test
         )
 
-        # Phase 19 (Part J): exercises cuda_sync_bench's synchronization-
-        # mode/H2D/D2H correctness and CLI validation by spawning the
-        # actual compiled binary -- it is a standalone diagnostic tool
-        # (a plain main(), not a library), so this is its real
-        # testable surface, exactly as tensor_timing_scope_test does
-        # for tbccl_tensor_transfer_bench.
+        # Exercises cuda_sync_bench's synchronization- mode/H2D/D2H
+        # correctness and CLI validation by spawning the actual compiled
+        # binary -- it is a standalone diagnostic tool (a plain main(),
+        # not a library), so this is its real testable surface, exactly
+        # as tensor_timing_scope_test does for
+        # tbccl_tensor_transfer_bench.
         add_executable(cuda_sync_bench_test
             tests/cuda_sync_bench_test.cpp
         )
@@ -2265,7 +2269,8 @@ if(BUILD_TESTING)
         )
     endif()
 
-    # Phase 20 scripts and opt-in benchmark telemetry; no physical TB4 required.
+    # the TB4 latency work scripts and opt-in benchmark telemetry; no physical
+    # TB4 required.
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
         add_test(NAME tb4_sweep_test
@@ -2290,11 +2295,11 @@ if(BUILD_TESTING)
     endif()
 
     # Every test binds fixed loopback ports (and the Python harness tests spawn tools on dynamic ones), and the ranges are dense: pairs of tests hard-code the
-    # SAME base (28820, 28900, 29100, 29550, 32100), and Communicator-based tests also bind a data port at control port + 1000 that lands inside other
-    # tests' ranges (e.g. communicator_test 29100 -> 30100 vs reduce_test 30100). Run in parallel they intermittently fail with "bind failed ... Address
-    # already in use" (seen as a Mac hetero_allreduce_test failure in Phase 48, tensor_backend_async_adapter_test and, in Phase 49, reduce_test on
-    # Linux). One shared RESOURCE_LOCK makes ctest run them one at a time whatever -j says, and covers tests added later automatically.
-    # Phase 50 tests allocate every port dynamically (listed in tbccl_dynamic_port_tests) and are left out of the lock.
+    # SAME base (28820, 28900, 29100, 29550, 32100), and Communicator-based tests also bind a data port at control port + 1000 that lands inside other tests'
+    # ranges (e.g. communicator_test 29100 -> 30100 vs reduce_test 30100). Run in parallel they intermittently fail with "bind failed ... Address already in
+    # use" (seen as a Mac hetero_allreduce_test failure in vLLM pipeline-parallel study, tensor_backend_async_adapter_test and, in low-precision datatype,
+    # reduce_test on Linux). One shared RESOURCE_LOCK makes ctest run them one at a time whatever -j says, and covers tests added later automatically. The
+    # N-rank runtime work tests allocate every port dynamically (listed in tbccl_dynamic_port_tests) and are left out of the lock.
     get_property(tbccl_all_tests DIRECTORY PROPERTY TESTS)
     foreach(t IN LISTS tbccl_all_tests)
         if(NOT t IN_LIST tbccl_dynamic_port_tests)
@@ -2305,13 +2310,13 @@ if(BUILD_TESTING)
 endif()
 
 # ---------------------------------------------------------------------------
-# Phase 41 Part AJ: install/export support for the core tbccl library --
-# the actual public API surface (include/tbccl/*.hpp + libtbccl). The
-# optional CUDA/Metal device component (tbccl_tensor_backend,
-# benchmarks/tensor/), benchmarks/, examples/, and tests/ are NOT
-# installed; they remain source-tree/vendored this phase (a deliberate,
-# documented scope limit -- see docs/public_api.md). A host-only
-# external consumer needs nothing beyond what this block installs.
+# Install/export support for the core tbccl library -- the actual public API
+# surface (include/tbccl/*.hpp + libtbccl). The optional CUDA/Metal device
+# component (tbccl_tensor_backend, benchmarks/tensor/), benchmarks/,
+# examples/, and tests/ are NOT installed; they remain source-tree/vendored
+# this phase (a deliberate, documented scope limit -- see
+# docs/public_api.md). A host-only external consumer needs nothing beyond
+# what this block installs.
 # ---------------------------------------------------------------------------
 
 include(CMakePackageConfigHelpers)
@@ -2340,7 +2345,7 @@ install(DIRECTORY include/tbccl
     FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h"
 )
 
-# Phase 52: the C ABI shim (TBCCL::tbccl_c), exported separately so it may depend on the optional CUDA component's export.
+# The C ABI shim (TBCCL::tbccl_c), exported separately so it may depend on the optional CUDA component's export.
 install(TARGETS tbccl_c
     EXPORT TBCCLCTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

@@ -1,4 +1,4 @@
-// Phase 49: host correctness of the 16-bit floating-point reduction types (Float16, BFloat16) and, from the integer commit on, Int8/UInt8.
+// Host correctness of the 16-bit floating-point reduction types (Float16, BFloat16) and, from the integer commit on, Int8/UInt8.
 //
 //   1. Conversions are proven by construction, with no oracle: every one of the 65536 bit patterns decodes to an independently
 //      computed exact value; for every pair of adjacent positive patterns the exact midpoint rounds to the EVEN neighbor and the floats

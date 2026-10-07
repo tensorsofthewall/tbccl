@@ -1,4 +1,4 @@
-// Phase 50: CommunicatorOptions -> explicit, validated world description (bootstrap_config.hpp).
+// CommunicatorOptions -> explicit, validated world description (bootstrap_config.hpp).
 
 #include <tbccl/error.hpp>
 #include "bootstrap_config.hpp"

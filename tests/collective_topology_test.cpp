@@ -1,4 +1,4 @@
-// Phase 51: ring / binomial-tree / chunk-partition helper functions. Pure.
+// Ring / binomial-tree / chunk-partition helper functions. Pure.
 
 #include "collective_topology.hpp"
 

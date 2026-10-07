@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 55: stage-by-stage latency report from TBCCL_LATENCY_TRACE files (loopback: both ranks share one clock).
+"""Stage-by-stage latency report from TBCCL_LATENCY_TRACE files (loopback: both ranks share one clock).
 
     latency_trace_report.py <rank0 trace file> <rank1 trace file> [--skip N]
 

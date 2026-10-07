@@ -1,8 +1,8 @@
-// Phase 38: host-only correctness tests for n2_all_reduce_tensor()
+// host-only correctness tests for n2_all_reduce_tensor()
 // (tbccl/hetero_allreduce.hpp), over real local TCP loopback connections
 // via TcpTransport -- no GPU involved (Part AK: prove the executor itself
-// on host first, matching the Phase 32 async-substrate test convention in
-// tests/async_transfer_test.cpp).
+// on host first, matching the async tensor-transfer async-substrate test
+// convention in tests/async_transfer_test.cpp).
 
 #include <tbccl/hetero_allreduce.hpp>
 #include <tbccl/tcp.hpp>
@@ -46,9 +46,9 @@ namespace
         }
     };
 
-    // Deterministic small-integer-valued float pattern (Part F): sums
-    // stay exactly representable in float32, so verification can use
-    // exact equality rather than a tolerance.
+    // Deterministic small-integer-valued float pattern: sums stay
+    // exactly representable in float32, so verification can use exact
+    // equality rather than a tolerance.
     float value_for(std::size_t i, std::uint32_t seed, std::uint32_t modulus)
     {
         return static_cast<float>((i + seed) % modulus);
@@ -244,7 +244,7 @@ namespace
 
     // A backend whose commit_destination_chunk always throws, to verify
     // n2_all_reduce_tensor() propagates a failed TransferWork as an
-    // exception rather than hanging or silently succeeding (Part AN).
+    // exception rather than hanging or silently succeeding.
     class ThrowingRecvBackend final : public tbccl::AsyncMemoryBackend
     {
     public:

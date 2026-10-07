@@ -1,4 +1,4 @@
-// Phase 17 heterogeneous tensor-transfer benchmark, built entirely
+// the CUDA tensor-benchmark work heterogeneous tensor-transfer benchmark, built entirely
 // over the TensorBackend abstraction (benchmarks/tensor/
 // tensor_backend.hpp) -- --local-backend cuda-pinned/metal-shared/etc.
 // work automatically depending on which of TBCCL_ENABLE_CUDA/
@@ -11,13 +11,13 @@
 //                    to-host and host-to-device staging cost in
 //                    isolation, by copying directly between two
 //                    backend instances' host-visible staging areas
-//                    (bypassing World entirely) -- see Part F/G/H.
+//                    (bypassing World entirely) -- see.
 //
 //   network-only     Exactly 2 ranks. --source-rank streams `--sizes`
 //                    payloads to its peer back-to-back; reports the
 //                    sender's per-send() latency distribution and the
 //                    aggregate wall-clock throughput. Always uses the
-//                    host backend (Part E's network-only baseline is
+//                    host backend (the network-only baseline is
 //                    explicitly host-only).
 //
 //   latency-floor    Exactly 2 ranks. A request/response (ping-pong)
@@ -30,10 +30,10 @@
 //   end-to-end       Exactly 2 ranks, each using its own
 //                    --local-backend (they may legitimately differ --
 //                    that is the heterogeneous transfer this mode
-//                    measures). Implements Part I's control protocol
+//                    measures). Implements the control protocol
 //                    (a fixed-width handshake validating both
 //                    invocations agree before any timed transfer) and
-//                    Part J's destination-completion ACK: the
+//                    the destination-completion ACK: the
 //                    completion-confirmed latency spans from the
 //                    source tensor being ready through the
 //                    destination's accelerator-completion ACK being
@@ -103,9 +103,10 @@ namespace
         BackendKind local_backend = BackendKind::Host;
         std::size_t source_rank = 0;
 
-        // "ready" (default, matches Phase 17's only behavior exactly --
-        // see Part 18's timing audit) or "produce". Only end-to-end and
-        // ack-calibration modes consult this; ignored otherwise.
+        // "ready" (default, matches the CUDA tensor-benchmark work's
+        // only behavior exactly -- see Part 18's timing audit) or
+        // "produce". Only end-to-end and ack-calibration modes consult
+        // this; ignored otherwise.
         std::string timing_scope = "ready";
 
         std::vector<std::size_t> sizes;
@@ -581,17 +582,19 @@ namespace
         std::string allocation_type = "NA";
         AllocationStats alloc_stats;
 
-        // Phase 18, Part C/D: which of the two disjoint timing
-        // boundaries `stats`/`completion_confirmed_us` describes --
-        // "ready" (producer excluded, Phase 17's only behavior) or
-        // "produce" (producer included). "NA" for modes/rows where the
-        // distinction doesn't apply (staging-only/network-only/
-        // latency-floor). producer_enqueue_us is the CPU time to
-        // *submit* the producer's GPU work, kept separate from
-        // source_sync_us (the time spent *waiting* for it, via
-        // prepare_source()) per Part D item 19 -- these answered very
-        // differently in the Phase 18 CUDA audit (enqueue ~4us,
-        // sync ~1.3-1.9ms).
+        // The CUDA synchronization-audit work, Part C/D: which of the
+        // two disjoint timing boundaries
+        // `stats`/`completion_confirmed_us` describes -- "ready"
+        // (producer excluded, the CUDA tensor-benchmark work's only
+        // behavior) or "produce" (producer included). "NA" for
+        // modes/rows where the distinction doesn't apply
+        // (staging-only/network-only/ latency-floor).
+        // producer_enqueue_us is the CPU time to *submit* the
+        // producer's GPU work, kept separate from source_sync_us (the
+        // time spent *waiting* for it, via prepare_source()) per Part
+        // D item 19 -- these answered very differently in the CUDA
+        // synchronization-audit CUDA audit (enqueue ~4us, sync
+        // ~1.3-1.9ms).
         std::string timing_scope = "NA";
         double producer_enqueue_us = kNA;
     };
@@ -1185,7 +1188,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // end-to-end / ack-calibration (Part I/J)
+    // end-to-end / ack-calibration
     //
     // Shared implementation: ack-calibration is exactly the
     // end-to-end protocol with the backend forced to Host regardless
@@ -1314,13 +1317,13 @@ namespace
                     if (i == options.warmup) cpu.begin();
                     const std::uint32_t seed = static_cast<std::uint32_t>(0x3000 + i);
 
-                    // Phase 18, Part C: this is the ONLY difference
+                    // the CUDA synchronization-audit work, Part C: this is the ONLY difference
                     // between the two timing scopes -- where
                     // `interval_start` (the primary timer's start) is
                     // captured relative to the producer's work.
                     //
                     // "ready": generate + synchronize the source BEFORE
-                    // starting the timer (Phase 17's only behavior,
+                    // starting the timer (the CUDA tensor-benchmark work's only behavior,
                     // and the default here) -- completion_confirmed_us
                     // then measures the cost of communicating an
                     // ALREADY-ready tensor, deliberately excluding

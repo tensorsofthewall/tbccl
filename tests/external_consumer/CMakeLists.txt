@@ -1,10 +1,10 @@
-# Phase 49: an out-of-tree consumer of an INSTALLED TBCCL (no source-tree headers, no add_subdirectory). Built by scripts/check_external_consumer.sh.
+# An out-of-tree consumer of an INSTALLED TBCCL (no source-tree headers, no add_subdirectory). Built by scripts/check_external_consumer.sh.
 cmake_minimum_required(VERSION 3.20)
 project(tbccl_external_consumer CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Phase 50: the package uses SameMajorVersion, so a consumer written against an older 0.x release (default 0.1) keeps finding a newer 0.y install.
+# The package uses SameMajorVersion, so a consumer written against an older 0.x release (default 0.1) keeps finding a newer 0.y install.
 set(TBCCL_REQUIRED_VERSION 0.1 CACHE STRING "minimum TBCCL version this consumer asks for")
 find_package(TBCCL ${TBCCL_REQUIRED_VERSION} CONFIG REQUIRED)
 find_package(Threads REQUIRED)

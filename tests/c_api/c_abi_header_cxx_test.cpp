@@ -1,5 +1,5 @@
-// Phase 52: tbccl.h included from C++ (extern "C" guard, no C++-hostile constructs) alongside the C++ API without conflicts, and the C result mapping agrees
-// with ErrorCode for every code.
+// tbccl.h included from C++ (extern "C" guard, no C++-hostile constructs) alongside the C++ API without conflicts, and the C result mapping agrees with
+// ErrorCode for every code.
 #include <tbccl/tbccl.h>
 
 #include <tbccl/communicator.hpp>

@@ -1,9 +1,9 @@
 #pragma once
 
-// Phase 36: a deterministic, tunable CUDA compute workload used to
-// simulate a DDP-like gradient-bucket production pattern (Part F).
-// Declared separately from its .cu implementation so non-CUDA
-// translation units never see a CUDA type (matching
+// A deterministic, tunable CUDA compute workload used to simulate
+// a DDP-like gradient-bucket production pattern. Declared
+// separately from its .cu implementation so non-CUDA translation
+// units never see a CUDA type (matching
 // cuda_backend.hpp/cuda_chunked_async_backend.hpp's convention).
 
 #include <cstddef>
@@ -15,12 +15,12 @@ namespace tbccl_bench::tensor
 // Launches a per-byte deterministic hash-mix transform on `device_ptr`
 // (device-resident, `bytes` long), with `rounds` iterations of mixing
 // per byte -- more rounds means more GPU time, used for compute-time
-// calibration (Part G). Writes every byte of the buffer (Part AU: no
-// "touches 4 bytes, transfers 16 MiB" realism gap). Asynchronous:
-// returns once the kernel is launched, not once it completes --
-// callers synchronize `stream` explicitly when they need completion
-// (Part L/M: host-side stream synchronization, not CUDA events, is
-// the first thing this phase tries).
+// calibration. Writes every byte of the buffer (Part AU: no "touches 4
+// bytes, transfers 16 MiB" realism gap). Asynchronous: returns once
+// the kernel is launched, not once it completes -- callers synchronize
+// `stream` explicitly when they need completion (Part L/M: host-side
+// stream synchronization, not CUDA events, is the first thing this
+// phase tries).
 void launch_bucket_compute(
     void *device_ptr,
     std::size_t bytes,
@@ -34,12 +34,13 @@ void launch_bucket_compute(
 // (docs/benchmark_methodology.md's convention). Defined inline, here,
 // in plain C++ (NOT in cuda_bucket_compute.cu) so it is available on
 // every platform regardless of TBCCL_ENABLE_CUDA -- critical for the
-// Phase 36 benchmark's receiver role, which commonly runs on a non-
-// CUDA machine (e.g. the Mac mini's Metal-shared destination) but
-// still needs to verify CUDA-computed bytes it received. The CUDA
-// kernel in cuda_bucket_compute.cu uses an intentional __device__
-// duplicate of this exact formula (matching this codebase's
-// established convention for small CUDA-side pattern duplicates).
+// CUDA compute-overlap benchmark's receiver role, which commonly runs
+// on a non- CUDA machine (e.g. the Mac mini's Metal-shared
+// destination) but still needs to verify CUDA-computed bytes it
+// received. The CUDA kernel in cuda_bucket_compute.cu uses an
+// intentional __device__ duplicate of this exact formula (matching
+// this codebase's established convention for small CUDA-side pattern
+// duplicates).
 inline std::uint8_t expected_bucket_byte(std::size_t i, std::uint32_t seed, int rounds)
 {
     const std::uint64_t index = static_cast<std::uint64_t>(i);

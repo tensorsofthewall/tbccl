@@ -1,8 +1,8 @@
-// Phase 38 Part Y: the heterogeneous N=2 SUM AllReduce benchmark.
+// The heterogeneous N=2 SUM AllReduce benchmark.
 // Linux CUDA rank <-> Mac Metal-shared rank (or host<->host for a
 // portable reference run), comparing:
 //   --algo sync  : the EXISTING, unmodified tbccl::reduce()+broadcast()
-//                  (Part AC/AB's "existing synchronous collective
+//                  (the "existing synchronous collective
 //                  baseline"), called in-place directly over a
 //                  TensorBackend's host-visible staging pointer.
 //   --algo async : the new n2_all_reduce_tensor() (hetero_allreduce.hpp),
@@ -96,7 +96,7 @@ namespace
         std::size_t root = 0;
         std::string backend = "host"; // host, cuda, metal-shared
         std::size_t count = 1024 * 1024; // float32 elements
-        std::size_t chunk_bytes = 262144; // Phase 35 anchor, Part X
+        std::size_t chunk_bytes = 262144; // the CUDA/Metal device-pipeline work anchor
         std::size_t warmup = 3;
         std::size_t iterations = 10;
         std::string algo = "both"; // sync, async, both
@@ -150,8 +150,8 @@ namespace
         return static_cast<float>((i + seed) % modulus);
     }
 
-    // Per-rank deterministic seed/modulus (Part F): small integer-valued
-    // floats, sums stay exactly representable, so verification uses exact
+    // Per-rank deterministic seed/modulus: small integer-valued floats,
+    // sums stay exactly representable, so verification uses exact
     // equality.
     constexpr std::uint32_t kSeedRank0 = 11, kModRank0 = 127;
     constexpr std::uint32_t kSeedRank1 = 97, kModRank1 = 113;
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
 
         // -----------------------------------------------------------
         // SYNC reference: unmodified tbccl::reduce()+broadcast() over a
-        // TensorBackend's host-visible staging pointer (Part AC/AB).
+        // TensorBackend's host-visible staging pointer.
         // -----------------------------------------------------------
         if (run_sync)
         {
@@ -278,7 +278,7 @@ int main(int argc, char **argv)
                 }
             }
 
-            // One untimed, fully-verified round (Part Z).
+            // One untimed, fully-verified round.
             {
                 auto *src = static_cast<float *>(const_cast<void *>(backend->source_staging_data()));
                 for (std::size_t i = 0; i < count; ++i) src[i] = value_for(i, local_seed, local_mod);
@@ -314,7 +314,7 @@ int main(int argc, char **argv)
             // Both ranks already share a working World (above); use it as
             // a readiness barrier so rank 1's connect() cannot race ahead
             // of rank 0's listen() -- a fixed sleep() cannot guarantee
-            // this ordering (Part CI).
+            // this ordering.
             tbccl::barrier(*world);
             if (rank == 0)
             {
@@ -339,7 +339,7 @@ int main(int argc, char **argv)
             std::vector<double> completion_us;
             bool verify_ok = true;
 
-            // Backend setup, kind-specific (Part W).
+            // Backend setup, kind-specific.
             tbccl::AsyncMemoryBackend *recv_backend = nullptr;
             tbccl::AsyncMemoryBackend *send_backend = nullptr;
             tbccl::LocalReduceBackend *reduce_backend = nullptr;
@@ -414,8 +414,7 @@ int main(int argc, char **argv)
                 {
                     // Root's send-back leg must read the post-reduce
                     // result from destination_staging_data() (mutable),
-                    // not source_staging_data() (const) -- see
-                    // docs/phase38_collective_design.md Part 4/5.
+                    // not source_staging_data() (const) --.
                     metal_send_from_result = std::make_unique<tbccl_bench::tensor::HostAsyncBackend>(
                         metal_backend->destination_staging_data(), bytes);
                     send_backend = metal_send_from_result.get();

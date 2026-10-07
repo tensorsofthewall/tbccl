@@ -145,7 +145,7 @@ struct CudaExternalAsyncBackend::Impl
     cudaStream_t stream = nullptr;
     bool owns_stream = true;
 
-    // Part L: one persistent, reused event for producer-stream
+    // One persistent, reused event for producer-stream
     // readiness -- never allocated per chunk/call.
     cudaEvent_t ready_event = nullptr;
 

@@ -1,12 +1,13 @@
-// Phase 14 diagnostic tool: runs a handful of ring ReduceScatter
-// invocations between two ranks and dumps the merged ring trace
-// (calling-thread events + the persistent worker's own events) to
-// stdout, sorted by timestamp, so the T0-T4 executor handoff and the
-// send/recv/reduce stage breakdown can be inspected directly. Only
-// meaningful when built with -DTBCCL_ENABLE_RING_TRACE=ON; with
-// tracing compiled out, this still runs but prints no events (every
-// ring_trace_* call is a no-op). Internal/diagnostic only — not
-// installed, not part of the public API.
+// The loopback algorithm-sweep work diagnostic tool: runs a handful
+// of ring ReduceScatter invocations between two ranks and dumps the
+// merged ring trace (calling-thread events + the persistent worker's
+// own events) to stdout, sorted by timestamp, so the T0-T4 executor
+// handoff and the send/recv/reduce stage breakdown can be inspected
+// directly. Only meaningful when built with
+// -DTBCCL_ENABLE_RING_TRACE=ON; with tracing compiled out, this
+// still runs but prints no events (every ring_trace_* call is a
+// no-op). Internal/diagnostic only — not installed, not part of the
+// public API.
 
 #include <tbccl/collectives.hpp>
 #include <tbccl/tcp_world.hpp>

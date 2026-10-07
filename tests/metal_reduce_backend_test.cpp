@@ -1,4 +1,4 @@
-// Phase 38 Part CA: a dedicated Metal-shared local-reduction correctness
+// A dedicated Metal-shared local-reduction correctness
 // test, real Mac hardware only. Verifies HostReduceBackend (reused
 // unchanged for Metal-shared per Part R -- Metal-shared memory is already
 // CPU-addressable, so no separate GPU-side Metal reduction kernel is
@@ -148,8 +148,8 @@ namespace
     void test_repeated_reuse()
     {
         // Same two backend allocations, reused across several rounds with
-        // distinct seeds each time -- Part CA's "repeated reuse" check,
-        // proving no leftover state contaminates a later round.
+        // distinct seeds each time -- the "repeated reuse" check, proving
+        // no leftover state contaminates a later round.
         constexpr std::size_t kCount = 4096;
         const std::size_t bytes = kCount * sizeof(float);
 

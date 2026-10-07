@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 50: opt-in communication trace (TBCCL_TRACE=1), off by default and free when off. One line per event, every line starting with
+// opt-in communication trace (TBCCL_TRACE=1), off by default and free when off. One line per event, every line starting with
 // the communicator-id prefix, rank and world size so interleaved logs of several ranks stay readable:
 //
 //   [tbccl 1234.567 comm=1a2b3c4d rank=2/4] work=7 all_reduce #3 post recv peer=0 bytes=4096 dtype=float32 op=sum

@@ -1,5 +1,5 @@
-// Phase 51: lazy data channels. For world_size > 2 the data plane starts EMPTY (the control plane is the only full mesh) and a data connection is made the
-// first time something needs it. Checked through the private diagnostic debug_connected_data_peers().
+// Lazy data channels. For world_size > 2 the data plane starts EMPTY (the control plane is the only full mesh) and a data connection is made the first
+// time something needs it. Checked through the private diagnostic debug_connected_data_peers().
 
 #include "mesh_test_support.hpp"
 

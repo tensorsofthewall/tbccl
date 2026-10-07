@@ -18,10 +18,10 @@ public:
         std::shared_ptr<CudaStagingResources> resources)
         : primary_(buffer.data, buffer.bytes, nullptr, resources), bytes_(buffer.bytes), resources_(std::move(resources))
     {
-        // Part L: source readiness -- if the caller supplied a CUDA
-        // stream, make our copy stream wait on it before any D2H starts
-        // reading the external buffer, instead of requiring the caller
-        // to cudaDeviceSynchronize() first.
+        // Source readiness -- if the caller supplied a CUDA stream,
+        // make our copy stream wait on it before any D2H starts reading
+        // the external buffer, instead of requiring the caller to
+        // cudaDeviceSynchronize() first.
         if (context.kind == tbccl::ExecutionContextKind::CudaStream)
         {
             primary_.wait_for_producer_stream(context.native_handle);

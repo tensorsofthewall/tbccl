@@ -12,7 +12,7 @@ namespace tbccl_bench::tensor
 // every staging stage is a no-op (the buffer World::send()/recv()
 // touch already *is* the source/destination storage). This makes
 // HostBackend the network-only baseline every other backend's
-// staging overhead is measured against (Part E).
+// staging overhead is measured against.
 std::unique_ptr<TensorBackend> make_host_backend();
 
 } // namespace tbccl_bench::tensor

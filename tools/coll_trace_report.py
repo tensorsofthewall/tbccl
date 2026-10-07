@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 56: per-stage latency of N=2 collectives (AllGather / the decode chain) from TBCCL_LATENCY_TRACE files, one process at a time.
+"""Per-stage latency of N=2 collectives (AllGather / the decode chain) from TBCCL_LATENCY_TRACE files, one process at a time.
 
     coll_trace_report.py <trace file> [--skip N] [--json]
 

@@ -484,8 +484,9 @@ namespace
 
     // -----------------------------------------------------------------------------
     // Cross-collective sequencing: ring reduce_scatter composed with
-    // barrier/broadcast/all_gather(reference)/all_reduce and, crucially
-    // for phase 11, ring all_gather — both orders, separate buffers.
+    // barrier/broadcast/all_gather(reference)/all_reduce and, crucially for the
+    // optimized ring all-reduce work, ring all_gather — both orders, separate
+    // buffers.
     // -----------------------------------------------------------------------------
 
     template <typename Before, typename After>
@@ -718,7 +719,8 @@ namespace
     }
 
     // Ring AllGather <-> ring ReduceScatter, both orders — the pair
-    // phase 11's optimized AllReduce will compose directly.
+    // the optimized ring all-reduce work's optimized AllReduce will
+    // compose directly.
     void test_ring_allgather_then_ring_rs()
     {
         run_interleaved(

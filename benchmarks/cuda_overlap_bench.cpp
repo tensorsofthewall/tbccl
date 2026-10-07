@@ -1,9 +1,9 @@
-// Phase 36: real CUDA compute / TBCCL communication overlap benchmark.
+// Real CUDA compute / TBCCL communication overlap benchmark.
 // Simulates a DDP-like gradient-bucket production pattern (NOT actual
-// DDP, Part CL) -- N independent CUDA buckets, each genuinely computed
+// DDP) -- N independent CUDA buckets, each genuinely computed
 // by a real GPU kernel on the SENDER (always Linux/CUDA), then
 // communicated with TBCCL's existing per-chunk async CUDA staging
-// (CudaChunkedAsyncBackend, Phase 35) to a portable RECEIVER backend
+// (CudaChunkedAsyncBackend, the CUDA/Metal device-pipeline work) to a portable RECEIVER backend
 // (host or Metal shared, matching async_transfer_bench.cpp's existing
 // cross-platform pattern -- Part AP/CE: the receiver does no compute
 // and must build/run on a non-CUDA machine).
@@ -17,7 +17,7 @@
 // a CPU/sleep substitute for the authoritative result); the receiver
 // role requires only tensor_backend.hpp's portable backend set.
 //
-// Central design decision (Part I/M): this benchmark deliberately uses
+// Central design decision: this benchmark deliberately uses
 // ONLY the existing CudaChunkedAsyncBackend's cudaStreamSynchronize()-
 // per-chunk design, with ZERO new cudaEvent_t machinery. Correctness
 // of "communication never reads a bucket before its compute finishes"
@@ -33,12 +33,12 @@
 // overlap this phase exists to measure, achieved with no new
 // synchronization primitives.
 //
-// Schedules (Part J/K): "serial" computes every bucket, synchronizes
+// Schedules: "serial" computes every bucket, synchronizes
 // once, THEN enqueues every transfer, THEN waits all -- the
 // authoritative non-overlapped baseline. "overlap" interleaves compute
 // and enqueue per bucket as described above. "compute-only" and
 // "comm-only" isolate each half for the speedup/hidden-fraction
-// calculation (Parts T/U).
+// calculation.
 
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/peer_capabilities.hpp>
@@ -192,7 +192,7 @@ namespace
     // --calibrate mode: no networking at all. Finds, by simple scaling
     // + linear interpolation, a round count whose kernel time is close
     // to --calibrate-target-us for --bucket-bytes, then prints it.
-    // Part G: calibration happens once, outside any measured loop; this
+    // Calibration happens once, outside any measured loop; this
     // mode's whole purpose is to be run once ahead of time to pick
     // --compute-rounds for the real experiment. CUDA-only (the sender
     // side is always CUDA; calibration only makes sense there).
@@ -295,7 +295,7 @@ int main(int argc, char **argv)
 
         // Generic AsyncMemoryBackend handles for whichever concrete
         // type this role actually uses -- TransferRequest/
-        // TensorCommWorker never know the difference (Part AN).
+        // TensorCommWorker never know the difference.
         std::vector<tbccl::AsyncMemoryBackend *> backend_ptrs(options.bucket_count, nullptr);
 
 #if defined(TBCCL_ENABLE_CUDA)
@@ -303,8 +303,9 @@ int main(int argc, char **argv)
 #endif
 
         // Receiver-side (or any non-CUDA role): portable TensorBackend
-        // (host or metal-shared) wrapped by the existing Phase 32
-        // adapter -- identical to async_transfer_bench.cpp's pattern.
+        // (host or metal-shared) wrapped by the existing async
+        // tensor-transfer adapter -- identical to
+        // async_transfer_bench.cpp's pattern.
         std::vector<std::unique_ptr<tbccl_bench::tensor::TensorBackend>> device_backends;
         std::vector<std::unique_ptr<tbccl_bench::tensor::TensorBackendAsyncAdapter>> device_adapters;
 
@@ -352,10 +353,10 @@ int main(int argc, char **argv)
             }
         }
 
-        // Part CG: queue_depth sized to the whole batch so enqueue()
-        // never blocks waiting for TensorCommWorker to drain mid-batch
-        // -- that would serialize the very overlap this benchmark
-        // measures. Measured and reported (Part CH) via enqueue_us.
+        // Queue_depth sized to the whole batch so enqueue() never
+        // blocks waiting for TensorCommWorker to drain mid-batch --
+        // that would serialize the very overlap this benchmark
+        // measures. Measured and reported via enqueue_us.
         std::unique_ptr<tbccl::TensorCommWorker> worker;
         if (do_comm)
         {
@@ -366,18 +367,19 @@ int main(int argc, char **argv)
         // TensorBackendAsyncAdapter::begin_transfer() resets its
         // "already staged this round"/"chunks committed this round"
         // bookkeeping and must be called once before EVERY transfer
-        // that reuses it (Phase 32 convention) -- the chunk count is
-        // fixed for a given (bucket_bytes, chunk_bytes), so compute it
-        // once here and call begin_transfer() per round below.
+        // that reuses it (the async tensor-transfer work convention)
+        // -- the chunk count is fixed for a given (bucket_bytes,
+        // chunk_bytes), so compute it once here and call
+        // begin_transfer() per round below.
         const auto chunk_plan = tbccl::plan_chunks(options.bucket_bytes, options.chunk_bytes, 1);
         const std::size_t chunk_count = chunk_plan.empty() ? 1 : chunk_plan.size();
 
 #if defined(TBCCL_ENABLE_CUDA)
-        // Part U: comm-only mode uses precomputed buckets -- filled
-        // ONCE here, outside the timed loop, with content_round=0 (no
-        // compute happens per round in this mode, so content never
-        // changes between rounds; the final verify step below uses the
-        // same content_round=0 to match).
+        // Comm-only mode uses precomputed buckets -- filled ONCE here,
+        // outside the timed loop, with content_round=0 (no compute
+        // happens per round in this mode, so content never changes
+        // between rounds; the final verify step below uses the same
+        // content_round=0 to match).
         if (is_sender && !do_compute)
         {
             for (std::size_t i = 0; i < options.bucket_count; ++i)
@@ -483,7 +485,7 @@ int main(int argc, char **argv)
                                 throw std::runtime_error("bucket transfer failed: " + s.work->error());
                         }
                     }
-                    // Part BA: one batch-level ack, not per-bucket --
+                    // One batch-level ack, not per-bucket --
                     // establishes destination-confirmed completion for
                     // the whole iteration, matching the established
                     // sync-vs-async timing-scope convention at the

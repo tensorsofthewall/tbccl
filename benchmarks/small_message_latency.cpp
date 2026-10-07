@@ -1,4 +1,4 @@
-// Phase 55: process-per-rank small-message latency benchmark for the N=2 Communicator (Host memory), usable on loopback and across two hosts.
+// process-per-rank small-message latency benchmark for the N=2 Communicator (Host memory), usable on loopback and across two hosts.
 //
 //   small_message_latency --rank R --peers <ip0:port0,ip1:port1> --modes p2p,oneway,simul,allgather,allreduce,chain
 //                         [--sizes 64,256,...] [--iters N] [--warmup W] [--cpu CORE[,CORE...]] [--gap-us N] [--label NAME]
@@ -11,12 +11,12 @@
 //   simul      both ranks post a send and a recv at once, then wait (round trip)
 //   allgather  N=2 all_gather of `bytes` per rank
 //   allreduce  in-place Float32 SUM
-//   chain      the Phase 54 decode chain: rank 0 send+wait then all_gather; rank 1 recv+wait then all_gather (one iteration)
+//   chain      the latency-attribution decode chain: rank 0 send+wait then all_gather; rank 1 recv+wait then all_gather (one iteration)
 //   --gap-mode sleep|spin   how the idle gaps (--gap-us, --profile) are spent: sleep (default; the application is idle, cores may enter deep idle) or spin (the
 //                           application thread stays busy, as a CUDA synchronize does)
-//   idle       Phase 56: create the communicator, do nothing for --iters seconds (default 30), report the process CPU use over that time (busy cores;
+//   idle       the cold-progress work: create the communicator, do nothing for --iters seconds (default 30), report the process CPU use over that time (busy cores;
 //              an idle communicator must not spin, with or without a progress experiment enabled)
-//   replay     Phase 56: replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
+//   replay     the cold-progress work: replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
 //              tools/cadence_profile.py (a real decode's communication calls); each rank replays its own file, so the waits for the peer's compute
 //              reproduce themselves. Reports the per-pass wall time and the communication overhead per step ((wall - sum of gaps) / steps), medians.
 // Internal experiment switches are environment variables read by libtbccl (TBCCL_LATENCY_TRACE, TBCCL_DIAG_*), see docs/progress_model.md.

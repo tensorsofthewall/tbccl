@@ -1,12 +1,11 @@
 #pragma once
 
-// Phase 38: the simplest-correct LocalReduceBackend (tbccl/
-// hetero_allreduce.hpp) -- a plain CPU loop over two caller-supplied
-// pointers. Used for BOTH the host backend and the Metal-shared backend
-// (Part R of the Phase 38 plan): Metal-shared memory is already
-// CPU-addressable, so no separate GPU-side Metal reduction kernel is
-// needed unless Part S's gate (CPU reduction > 10% of end-to-end time)
-// is actually tripped.
+// The simplest-correct LocalReduceBackend (tbccl/ hetero_allreduce.hpp)
+// -- a plain CPU loop over two caller-supplied pointers. Used for BOTH
+// the host backend and the Metal-shared backend: Metal-shared memory is
+// already CPU-addressable, so no separate GPU-side Metal reduction
+// kernel is needed unless the gate (CPU reduction > 10% of end-to-end
+// time) is actually tripped.
 
 #include <tbccl/hetero_allreduce.hpp>
 #include <tbccl/reduction.hpp>
@@ -64,7 +63,7 @@ private:
         {
             if constexpr (std::is_integral_v<T>)
             {
-                // Phase 39 Part AC: bucketed AllReduce sums arbitrary
+                // Bucketed AllReduce sums arbitrary
                 // CUDA-compute-kernel output bytes reinterpreted as
                 // Int32 words, which overflows routinely -- go through
                 // the matching unsigned type so wraparound is

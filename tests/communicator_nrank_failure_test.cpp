@@ -1,4 +1,4 @@
-// Phase 50: communicator-wide failure and abort at world_size 4 (loopback, dynamic ports). A rank that dies, goes silent or aborts must take the
+// communicator-wide failure and abort at world_size 4 (loopback, dynamic ports). A rank that dies, goes silent or aborts must take the
 // whole communicator down: every healthy rank leaves its blocked operation with an error, becomes terminal, and tears down in bounded time.
 //
 // Abrupt rank death needs a real process: those cases fork one process per rank (the sockets are then closed by the kernel, with no Goodbye).

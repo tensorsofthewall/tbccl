@@ -9,20 +9,20 @@ captures the trace buffer, then restores every setting it touched -- even on
 error or interruption (SIGINT/SIGTERM), so no global tracing state is left
 enabled afterward.
 
-Phase 22 Part H. Not invoked automatically -- requires explicit user
-authorization per run (see Part H item 42).
+The tail-latency root-cause work. Not invoked automatically -- requires explicit user
+authorization per run.
 
-Phase 26 Part G extended this script with a receive-path event set
+The receive-path investigation work extended this script with a receive-path event set
 (RECEIVE_EVENTS) covering IRQ -> softirq -> NAPI -> GRO/skb-receive ->
 socket-wakeup, discovered via --list-available-events against this
-kernel's actual /sys/kernel/tracing/available_events (Part F item 19 --
-no event name here was invented; see docs/phase26_report.md item 12 for
+kernel's actual /sys/kernel/tracing/available_events (
+no event name here was invented
 the full availability table). Unlike the scheduler events, none of these
 support per-PID filtering (irq/softirq/napi/net/sock tracepoints have no
 task-identifying field to filter on) -- they are inherently system-wide,
 which is safe here only because capture windows are short and the only
 traffic on thunderbolt0 during a benchmark run is the benchmark itself
-(Part G item 26).
+.
 """
 import argparse
 import json
@@ -41,11 +41,11 @@ DEFAULT_EVENTS = [
 ]
 
 # Confirmed present and firing for thunderbolt0 traffic via a live smoke
-# test (Phase 26 Part F item 19-20): irq_handler_entry fires twice per
-# receive event (irq=177 then irq=178, both name=thunderbolt -- this
-# driver's two MSI-X vectors), followed by softirq_entry vec=3
-# [action=NET_RX], napi_poll for dev=thunderbolt0, and
-# napi_gro_receive_entry dev=thunderbolt0 (GRO is active, so
+# test (the receive-path investigation work item 19-20):
+# irq_handler_entry fires twice per receive event (irq=177 then irq=178,
+# both name=thunderbolt -- this driver's two MSI-X vectors), followed by
+# softirq_entry vec=3 [action=NET_RX], napi_poll for dev=thunderbolt0,
+# and napi_gro_receive_entry dev=thunderbolt0 (GRO is active, so
 # netif_receive_skb_entry does not fire for this device -- see the
 # availability table). sk_data_ready fires once the socket layer is
 # notified. Together these give a complete irq->softirq->napi->skb->
@@ -59,9 +59,9 @@ RECEIVE_EVENTS = [
     "sock/sk_data_ready",
 ]
 
-# Phase 27 Part G/H: this running kernel exposes both a Thunderbolt
-# control-plane group and a thunderbolt_net (USB4NET) data-plane group
-# (confirmed via --list-available-events, not assumed). Per Part G item 33,
+# This running kernel exposes both a Thunderbolt control-plane group and a
+# thunderbolt_net (USB4NET) data-plane group (confirmed via
+# --list-available-events, not assumed). Per,
 # thunderbolt:tb_tx/tb_rx/tb_event are treated as control/configuration-
 # plane events, not USB4NET data payload traces, unless the running
 # kernel's own event format proves otherwise (see --dump-event-format).
@@ -80,7 +80,8 @@ THUNDERBOLT_DATA_EVENTS = [
 
 # Present but deliberately not enabled by default (Part H item 42: "avoid
 # allocation/free traces unless necessary") -- alloc/free/invalid-frame
-# traces are high-frequency and not needed to answer Phase 27's question.
+# traces are high-frequency and not needed to answer the NHI ring-cadence
+# work's question.
 THUNDERBOLT_DATA_EVENTS_EXTRA = [
     "thunderbolt_net/tbnet_alloc_rx_frame",
     "thunderbolt_net/tbnet_alloc_tx_frame",
@@ -92,16 +93,15 @@ THUNDERBOLT_DATA_EVENTS_EXTRA = [
 # None of the Thunderbolt control/data events carry a task-identifying
 # field either (confirmed via their format files -- see
 # --dump-event-format) -- system-wide for the same reason RECEIVE_EVENTS
-# are (Part G item 26).
-# Events with no task-identifying field to filter on -- system-wide even
-# when a PID filter is requested for the rest of the session (documented,
-# not silently pretended to be scoped; Part G item 26).
+# are. Events with no task-identifying field to filter on -- system-wide
+# even when a PID filter is requested for the rest of the session
+# (documented, not silently pretended to be scoped;).
 SYSTEM_WIDE_EVENTS = set(RECEIVE_EVENTS) | set(THUNDERBOLT_CONTROL_EVENTS) \
     | set(THUNDERBOLT_DATA_EVENTS) | set(THUNDERBOLT_DATA_EVENTS_EXTRA)
 
-# Phase 29 Part F/G: candidate functions for Tier-1 narrow function tracing,
-# selected from a direct read of the exact v6.18.34 kernel source (Phase 28's
-# provenance, reused -- Part C item 12) covering the full ring-servicing
+# Candidate functions for Tier-1 narrow function tracing, selected from a
+# direct read of the exact v6.18.34 kernel source (the interrupt-throttling
+# experiment work's provenance, reused) covering the full ring-servicing
 # path: ring_msix (the actual MSI-X handler registered under name
 # "thunderbolt" -- confirmed to be what irq_handler_entry traces), the
 # NAPI/workqueue dispatch inside it, and the two functions that check the
@@ -109,8 +109,8 @@ SYSTEM_WIDE_EVENTS = set(RECEIVE_EVENTS) | set(THUNDERBOLT_CONTROL_EVENTS) \
 # ring_work for the workqueue/TX path -- tb_ring_alloc_tx() always passes
 # start_poll=NULL, so TX servicing is unconditionally workqueue-based while
 # RX is unconditionally NAPI-based, confirmed from source, not assumed).
-# Filtered against this kernel's actual available_filter_functions before
-# use (Part F item 28 -- do not assume traceability).
+# Filtered against this kernel's actual available_filter_functions before use
+# (Part F item 28 -- do not assume traceability).
 NHI_FUNCTIONS = [
     "ring_msix",
     "ring_work",
@@ -201,8 +201,8 @@ class TraceSession:
 
     def __init__(self, events, function_filter=None):
         self.events = events
-        # Phase 29 Part G: optional Tier-1 narrow function tracing (a list
-        # of function names to restrict the function tracer to, via
+        # Optional Tier-1 narrow function tracing (a list of function
+        # names to restrict the function tracer to, via
         # set_ftrace_filter). None means function tracing is left alone
         # entirely (current_tracer/set_ftrace_filter are not touched at
         # all) -- the default, preserving every prior phase's behavior.
@@ -230,7 +230,7 @@ class TraceSession:
                 # application trace -- switching to it (instead of the
                 # default "local", a per-CPU clock not directly comparable
                 # across CPUs or to CLOCK_MONOTONIC) avoids needing
-                # statistical clock calibration entirely (Part F item 32).
+                # statistical clock calibration entirely.
                 write_text(clock_path, "mono")
         set_ftrace_pid_path = TRACEFS / "set_ftrace_pid"
         if set_ftrace_pid_path.exists():
@@ -258,7 +258,8 @@ class TraceSession:
             # set_ftrace_filter must be narrowed BEFORE current_tracer is
             # switched to "function" -- otherwise there is a window where
             # the function tracer runs unfiltered (system-wide), exactly
-            # the set_ftrace_pid mistake Phase 22 made for tracepoints.
+            # the set_ftrace_pid mistake the tail-latency root-cause work
+            # made for tracepoints.
             write_text(TRACEFS / "set_ftrace_filter", "")  # clear first
             for name in self.function_filter:
                 # Appending (not overwriting) each name is the documented
@@ -281,7 +282,7 @@ class TraceSession:
         filter file -- set_ftrace_pid alone does NOT scope tracepoint
         events enabled via events/*/*/enable, only the function tracer.
 
-        Phase 29 discovery: when self.function_filter is active (Tier-1
+        the NHI DMA-ring work discovery: when self.function_filter is active (Tier-1
         NHI function tracing), set_ftrace_pid is deliberately NOT written.
         ring_msix/ring_work/tb_ring_poll run in interrupt or workqueue
         context, never attributed to the benchmark's own PID -- writing
@@ -327,10 +328,11 @@ class TraceSession:
                 # The unset readback on this kernel is the literal string
                 # "#### all functions enabled ####" (confirmed via
                 # --dump-state), not empty -- writing that placeholder back
-                # verbatim is rejected (EINVAL), same class of bug as
-                # Phase 26's filter-file restoration quirks. Either that
-                # placeholder or genuine emptiness means "no filter was
-                # set," which is restored by writing "".
+                # verbatim is rejected (EINVAL), same class of bug as the
+                # receive-path investigation work's filter-file restoration
+                # quirks. Either that placeholder or genuine emptiness
+                # means "no filter was set," which is restored by writing
+                # "".
                 if original and "all functions enabled" not in original:
                     try:
                         write_text(filter_path, original)
@@ -356,13 +358,14 @@ class TraceSession:
                 # The read-back value when no PID filter is set is "no pid"
                 # on this kernel ("-1" on some others) -- writing either
                 # back verbatim is rejected with EINVAL (confirmed via a
-                # Phase 26 smoke test). The actual clear operation this
-                # kernel accepts is writing a single space (also confirmed
-                # empirically), which is what set_pid_filter() replaces
-                # here rather than skipping the restore entirely -- a
-                # stale pid left in set_ftrace_pid is functionally inert
-                # (current_tracer stays "nop"), but restoring it properly
-                # avoids leaking any session state into the next one.
+                # receive-path investigation smoke test). The actual clear
+                # operation this kernel accepts is writing a single space
+                # (also confirmed empirically), which is what
+                # set_pid_filter() replaces here rather than skipping the
+                # restore entirely -- a stale pid left in set_ftrace_pid is
+                # functionally inert (current_tracer stays "nop"), but
+                # restoring it properly avoids leaking any session state
+                # into the next one.
                 try:
                     write_text(set_ftrace_pid_path, " ")
                 except TracefsUnavailable as error:
@@ -379,16 +382,17 @@ class TraceSession:
                 print(f"WARNING: failed to restore {event}: {error}", file=sys.stderr)
         for event, original in self.original_event_filter.items():
             if not looks_like_real_filter_expression(original):
-                # Either genuinely empty, or (Phase 26 discovery: a real
-                # kernel state this project's own earlier smoke-testing
-                # produced) the file echoes a stale "none\nparse_error:
-                # Field not found..." banner left over from a PREVIOUS
-                # failed write elsewhere on the system -- that banner is
-                # not a filter to restore, it is the kernel's read-back for
-                # "no filter set, and here is why the last attempt to set
-                # one failed." Treating it as literal text to write back
-                # only reproduces the same parse error. Either way there is
-                # no real filter to restore.
+                # Either genuinely empty, or (the receive-path
+                # investigation work discovery: a real kernel state this
+                # project's own earlier smoke-testing produced) the file
+                # echoes a stale "none\nparse_error: Field not found..."
+                # banner left over from a PREVIOUS failed write elsewhere
+                # on the system -- that banner is not a filter to restore,
+                # it is the kernel's read-back for "no filter set, and here
+                # is why the last attempt to set one failed." Treating it
+                # as literal text to write back only reproduces the same
+                # parse error. Either way there is no real filter to
+                # restore.
                 continue
             try:
                 write_text(event_filter_path(event), original)
@@ -443,8 +447,8 @@ def run_benchmark(command_argv, timeout_seconds, session, run_as_user):
 
 
 def list_available_events(output_path):
-    """Read-only discovery of every tracepoint this kernel exposes (Phase 26
-    Part F item 19-20) -- does not enable, filter, or capture anything. Run
+    """Read-only discovery of every tracepoint this kernel exposes (the receive-path investigation work
+) -- does not enable, filter, or capture anything. Run
     under the same sudo grant as a normal capture (this script's own path is
     already covered by the existing NOPASSWD sudoers entry, so no new grant
     is needed for read-only discovery)."""
@@ -461,7 +465,7 @@ def list_available_events(output_path):
 
 def check_filter_functions(candidates, output_path):
     """Read-only: which of `candidates` actually appear in
-    available_filter_functions on this running kernel (Phase 29 Part F
+    available_filter_functions on this running kernel (the NHI DMA-ring work
     item 26/28 -- do not assume traceability; a static function can be
     inlined/optimized away and simply absent). Grep-style substring
     match against the function-name column (ignoring any trailing
@@ -485,11 +489,11 @@ def event_format_path(event):
 
 def dump_event_formats(events, output_path):
     """Read-only: dump each event's format file (field names/types/offsets
-    as the running kernel actually defines them) -- Phase 27 Part G item
-    32/Part H item 41's explicit requirement to document tracepoint fields
+    as the running kernel actually defines them) -- the NHI ring-cadence work item
+    32/the explicit requirement to document tracepoint fields
     from the running kernel before interpreting captures, since no
     matching .c source is available for this build (see
-    docs/phase27_report.md item 7)."""
+ item 7)."""
     result = {}
     for event in events:
         path = event_format_path(event)
@@ -502,7 +506,7 @@ def dump_state(events, output_path):
     """Read-only: print tracing_on/trace_clock/set_ftrace_pid and each
     event's current enable/filter content, without touching anything.
     Debugging aid for verifying TraceSession restoration against the real
-    kernel (Part G item 24)."""
+    kernel."""
     state = {
         "tracing_on": read_text(TRACEFS / "tracing_on").strip(),
         "trace_clock": read_text(TRACEFS / "trace_clock").strip(),
@@ -553,7 +557,7 @@ def reset_state(events, output_path):
     """Emergency cleanup, read-write but conservative: force tracing_on to
     0, disable each of --events, and clear any real (non-empty) filter
     text by writing "" (the ftrace-documented way to clear a filter --
-    unlike the bare "0" this script's restore path used before Phase 26,
+    unlike the bare "0" this script's restore path used before the receive-path investigation work,
     which is rejected by irq/napi/net/sock tracepoints). Does not touch
     trace_clock or set_ftrace_pid, since those are read back as valid
     values by TraceSession and don't get corrupted by a failed write the

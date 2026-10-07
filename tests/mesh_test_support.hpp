@@ -1,8 +1,8 @@
 #pragma once
 
-// Phase 50: multi-rank Communicator test scaffolding. Every rank is a thread of this process with its own Communicator over real loopback
-// sockets. Ports are never hard-coded: each rank pre-binds CommunicatorListeners on port 0 (the kernel picks), publishes the actual
-// control/data endpoints into the shared directory, and only then calls Communicator::create(). Tests built on this need no ctest port lock.
+// multi-rank Communicator test scaffolding. Every rank is a thread of this process with its own Communicator over real loopback sockets.
+// Ports are never hard-coded: each rank pre-binds CommunicatorListeners on port 0 (the kernel picks), publishes the actual control/data
+// endpoints into the shared directory, and only then calls Communicator::create(). Tests built on this need no ctest port lock.
 
 #include <tbccl/communicator.hpp>
 

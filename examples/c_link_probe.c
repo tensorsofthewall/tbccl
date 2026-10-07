@@ -1,4 +1,4 @@
-/* TBCCL C ABI cross-host correctness probe (Phase 52): one process per rank, possibly on different hosts. NOT a benchmark: payloads <= 1 MiB and about a dozen
+/* TBCCL C ABI cross-host correctness probe (the C ABI v1 work): one process per rank, possibly on different hosts. NOT a benchmark: payloads <= 1 MiB and about a dozen
  * operations. The "application" that exchanges the endpoint blobs is the operator (file + scp):
  *
  *   c_link_probe gen-id                                   print a fresh 32-hex-digit unique id

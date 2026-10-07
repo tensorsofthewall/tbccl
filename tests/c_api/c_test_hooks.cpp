@@ -1,5 +1,5 @@
-// Phase 52: test-only access for the pure-C tests. The C ABI deliberately has no way to hold transport progress; the tests need one to prove submission does not depend
-// on it, so this file (compiled into the C tests only, never installed) reaches the private runtime hook through the shim's handle wrapper.
+// test-only access for the pure-C tests. The C ABI deliberately has no way to hold transport progress; the tests need one to prove submission does not depend on it, so
+// this file (compiled into the C tests only, never installed) reaches the private runtime hook through the shim's handle wrapper.
 #include "c_internal.hpp"
 #include "communicator_debug.hpp"
 

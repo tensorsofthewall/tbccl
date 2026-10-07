@@ -1,7 +1,7 @@
 #pragma once
 
-// Phase 51: a view of [offset, offset + size) of another AsyncMemoryBackend, so a ring step can move one chunk of a provider's buffer through the unchanged transfer
-// engine (staged or direct). Private to libtbccl.
+// A view of [offset, offset + size) of another AsyncMemoryBackend, so a ring step can move one chunk of a provider's buffer through the unchanged transfer engine
+// (staged or direct). Private to libtbccl.
 
 #include <tbccl/async_transfer.hpp>
 

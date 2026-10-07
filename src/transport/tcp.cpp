@@ -608,8 +608,8 @@ bool busy_poll_supported()
 #endif
 }
 
-// Phase 32 Part E: thin Transport adapter over an existing Connection.
-// See transport.hpp for why this exists as a separate seam rather than
+// Thin Transport adapter over an existing Connection. See
+// transport.hpp for why this exists as a separate seam rather than
 // treating Connection itself as "the" transport abstraction.
 TcpTransport::TcpTransport(std::unique_ptr<Connection> connection)
     : connection_(std::move(connection))

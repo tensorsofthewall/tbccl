@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Phase 30 Part X: bounded, non-mutating sustained-session runner.
+"""Bounded, non-mutating sustained-session runner.
 
 Launches one Mac(source)->Linux(sink) end-to-end host/64KiB session (the
-Phase 24-27 trigger shape: a single continuous process/TCP connection,
+27 trigger shape: a single continuous process/TCP connection,
 warmup + measured iterations), optionally under the Linux-side ftrace
 diagnostic stack (--include-receive-events --include-thunderbolt-events,
-and --include-nhi-functions for Phase 29's Tier-1 function tracer), with
+and --include-nhi-functions for the NHI DMA-ring work's Tier-1 function tracer), with
 a read-only runtime-state snapshot taken immediately before and after.
 
 This script does not change any system configuration -- CPU governor,
 IRQ affinity, offloads, power management, and every other item in the
-Phase 30 plan's "explicitly out of scope" list are left untouched. It
+The sustained-session reproduction work plan's "explicitly out of scope" list are left untouched. It
 only starts/stops the benchmark process pair and the (already-existing,
-Phase 22/26/27/29-built) tracefs capture, both of which are the same
+The tail-latency root-cause work/27/29-built) tracefs capture, both of which are the same
 kind of bounded, restoring action those phases already used.
 
 Requires: passwordless sudo for capture_tb4_scheduler_trace.py's exact

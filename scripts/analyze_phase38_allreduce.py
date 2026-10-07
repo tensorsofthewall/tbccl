@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 38: summarize tbccl_hetero_allreduce_bench JSON output pairs.
+"""Summarize tbccl_hetero_allreduce_bench JSON output pairs.
 
 Each AllReduce run produces two JSON files (one per rank, rank 0's is
 authoritative for timing since it's the side this script is pointed at by

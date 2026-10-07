@@ -1,10 +1,10 @@
-// Phase 49: real-GPU correctness of Float16 / BFloat16 SUM and Int8 / UInt8 modulo-256 SUM.
+// real-GPU correctness of Float16 / BFloat16 SUM and Int8 / UInt8 modulo-256 SUM.
 //
 //   1. Kernel level (CudaExternalReduceBackend, the provider behind Communicator::all_reduce on MemoryKind::Cuda): the device result equals the
 //      documented host semantics (float32 widen, one float32 add, round once, ties-to-even) BIT FOR BIT, for an edge-pattern cross product, random
 //      vectors of assorted lengths and, when TBCCL_EXHAUSTIVE_LOWP=1, every one of the 2^32 (a, b) pairs of each format. NaN results are compared
 //      as "is NaN" (payloads are not preserved identically across host and device).
-//   2. Communicator level on loopback with real devices: CUDA <-> Host in both rank orientations and CUDA <-> CUDA (same GPU), for the Phase 48
+//   2. Communicator level on loopback with real devices: CUDA <-> Host in both rank orientations and CUDA <-> CUDA (same GPU), for the vLLM pipeline-parallel study
 //      TP-audit shapes ([1,1024] .. [512,1024]) and odd sizes, in place.
 //   3. Producer readiness: the CUDA operand is written by a delayed kernel on a non-blocking user stream and all_reduce is submitted immediately
 //      (no host synchronization); the result must contain the delayed write.
@@ -222,7 +222,8 @@ namespace
     template <class F>
     void test_communicator_shapes()
     {
-        // Phase 48 TP-audit shapes [T, 1024] for T = 1, 4, 12, 128, 512, plus 1 element, an odd count and 1 MiB of 16-bit elements.
+        // The vLLM pipeline-parallel study work TP-audit shapes [T, 1024] for T = 1, 4, 12, 128, 512, plus 1 element, an odd count
+        // and 1 MiB of 16-bit elements.
         const std::size_t counts[] = {1, 17, 1 * 1024, 4 * 1024, 12 * 1024, 128 * 1024, 512 * 1024};
         for (std::size_t count : counts)
         {

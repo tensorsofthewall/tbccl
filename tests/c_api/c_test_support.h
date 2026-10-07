@@ -1,4 +1,4 @@
-/* Phase 52: shared helpers for the pure-C ABI tests: assertions, a portable barrier (macOS has no pthread_barrier_t), and an in-process N-rank world whose
+/* Shared helpers for the pure-C ABI tests: assertions, a portable barrier (macOS has no pthread_barrier_t), and an in-process N-rank world whose
  * ranks exchange endpoint blobs through a shared array (a test-only exchange mechanism: libtbccl contains no bootstrap service). */
 #ifndef TBCCL_C_TEST_SUPPORT_H
 #define TBCCL_C_TEST_SUPPORT_H

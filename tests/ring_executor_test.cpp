@@ -1,5 +1,5 @@
 // Tests for the persistent ring execution infrastructure
-// (ring_executor.hpp) introduced in Phase 13, independent from the
+// (ring_executor.hpp) introduced in persistent ring-worker, independent from the
 // large existing collective correctness suites
 // (all_gather_ring_test.cpp / reduce_scatter_ring_test.cpp /
 // all_reduce_ring_test.cpp, all left untouched — see CMakeLists.txt).
@@ -795,11 +795,12 @@ namespace
     // getenv/setenv/unsetenv on the same name), and could even let two
     // ranks briefly observe different override values for the same
     // logical collective call, which is exactly the unsupported
-    // mismatched-algorithm-across-ranks scenario the Phase 12 override
-    // contract warns can deadlock. So each EnvOverride here is applied
-    // once, on this single controlling thread, strictly before its
-    // run_on_ranks() call spawns any rank threads — mirroring
-    // algorithm_selector_test.cpp's forced-mode integration tests.
+    // mismatched-algorithm-across-ranks scenario the
+    // per-invocation-thread ring override contract warns can deadlock.
+    // So each EnvOverride here is applied once, on this single
+    // controlling thread, strictly before its run_on_ranks() call
+    // spawns any rank threads — mirroring algorithm_selector_test.cpp's
+    // forced-mode integration tests.
     void test_forced_public_api_algorithms()
     {
         constexpr std::size_t kSize = 3;

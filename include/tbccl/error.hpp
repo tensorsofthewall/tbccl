@@ -1,8 +1,8 @@
 #pragma once
 
-// Phase 52: the typed error carrier. Every EXPECTED failure that can reach a caller (a thrown call, or the terminal state of a Work) carries an
-// ErrorCode that was decided where the failure happened. Message text keeps its historical "tag: detail" shape for human readers and for the
-// torch-tbccl error mapper, but nothing in TBCCL (and no C ABI shim) derives the category from the text: the code and the text are independent.
+// The typed error carrier. Every EXPECTED failure that can reach a caller (a thrown call, or the terminal state of a Work) carries an ErrorCode
+// that was decided where the failure happened. Message text keeps its historical "tag: detail" shape for human readers and for the torch-tbccl
+// error mapper, but nothing in TBCCL (and no C ABI shim) derives the category from the text: the code and the text are independent.
 
 #include <tbccl/types.hpp>
 

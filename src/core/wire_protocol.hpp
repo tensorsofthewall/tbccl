@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 50: the Communicator wire protocol, private to libtbccl. Every integer is explicitly serialized big-endian into a
+// The Communicator wire protocol, private to libtbccl. Every integer is explicitly serialized big-endian into a
 // fixed-size buffer (no struct is ever sent), so nothing depends on sizeof, padding or host endianness.
 //
 //   Hello / HelloAck   128 bytes   first message on every control and data connection (the dialing side sends Hello,
@@ -10,7 +10,7 @@
 //
 // The handshake exists to fail fast and clearly: wrong communicator id, duplicate rank, rank outside [0, world_size),
 // world-size mismatch, wire protocol version mismatch and an unexpected connection role are all answered with a rejection
-// and surface as "protocol_mismatch: ..." on BOTH sides. See docs/phase50_runtime_audit.md.
+// and surface as "protocol_mismatch: ..." on BOTH sides.
 
 #include <tbccl/rank_directory.hpp>
 #include <tbccl/transport.hpp>
@@ -28,7 +28,7 @@ enum class ConnectionRole : std::uint32_t
 {
     Control = 1,
     Data = 2,            // point-to-point payloads (framed)
-    CollectiveData = 3,  // Phase 73: collective payloads, on their own connection so the two domains never share a byte stream
+    CollectiveData = 3,  // Collective payloads, on their own connection so the two domains never share a byte stream
 };
 
 const char *connection_role_name(ConnectionRole role) noexcept;
@@ -65,7 +65,7 @@ struct AcceptExpectation
     ConnectionRole role = ConnectionRole::Control;
     // Ranks that already completed a handshake of this role on this listener.
     const std::vector<bool> *already_connected = nullptr;
-    // Phase 73: the data listener accepts two roles; the role in the Hello (never the arrival order) decides which connection a socket is.
+    // The data listener accepts two roles; the role in the Hello (never the arrival order) decides which connection a socket is.
     bool has_alt_role = false;
     ConnectionRole alt_role = ConnectionRole::CollectiveData;
     const std::vector<bool> *already_connected_alt = nullptr;
@@ -87,8 +87,8 @@ enum class ControlFrameType : std::uint32_t
 {
     Abort = 1,
     Goodbye = 2,
-    // Phase 51: collective descriptors (rank -> rank 0) and verdicts (rank 0 -> rank), carried on the control plane in the frame's 256-byte area so the
-    // data plane can stay sparse. FIFO per peer, like everything on a control connection.
+    // Collective descriptors (rank -> rank 0) and verdicts (rank 0 -> rank), carried on the control plane in the frame's 256-byte area so the data
+    // plane can stay sparse. FIFO per peer, like everything on a control connection.
     CollectiveDescriptor = 3,
     CollectiveVerdict = 4,
 };

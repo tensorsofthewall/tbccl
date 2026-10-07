@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 17 tensor-transfer backend abstraction. This is deliberately
+// the CUDA tensor-benchmark work tensor-transfer backend abstraction. This is deliberately
 // small and benchmark-specific (not a general tensor runtime): each
 // backend owns exactly one deterministically-generated source buffer
 // and one destination buffer of the same capacity, and exposes the
@@ -16,14 +16,14 @@
 // only network primitives a backend uses; no new public TBCCL API is
 // introduced.
 //
-// Buffer lifetime (Part H): a backend's source/destination buffers
+// Buffer lifetime: a backend's source/destination buffers
 // must not be reallocated or released while any stage that reads or
 // writes them (device kernel, staging copy, World::send/recv) is
 // still in flight. Every stage method below is synchronous/blocking
 // with respect to its own effects -- when a stage method returns, its
 // effect is guaranteed complete and it is always safe to proceed to
 // the next stage or to reuse/reallocate the buffer. Overlapping
-// stages (double-buffering) is explicitly out of scope for Phase 17.
+// stages (double-buffering) is explicitly out of scope for the CUDA tensor-benchmark work.
 
 #include <cstddef>
 #include <cstdint>
@@ -70,7 +70,7 @@ BackendKind parse_backend_kind(const std::string &name);
 // cuda-*/metal-* are true only when TBCCL_ENABLE_CUDA/TBCCL_ENABLE_METAL
 // were on at build time). Checked before make_backend() so an
 // unavailable backend produces a clear, distinct error rather than a
-// generic communication failure (Part C, requirement 10).
+// generic communication failure (, requirement 10).
 bool backend_kind_available(BackendKind kind);
 
 struct AllocationStats

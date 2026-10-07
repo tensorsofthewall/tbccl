@@ -1,9 +1,9 @@
 #pragma once
 
-// Phase 50: the multi-peer connection runtime behind Communicator, private to libtbccl.
+// The multi-peer connection runtime behind Communicator, private to libtbccl.
 //
 // A ConnectionManager owns one PeerChannel per remote rank. All Communicator traffic goes through a PeerChannel; nothing
-// above this class knows how the channels were made (full mesh today; Phase 51 may make them lazy or sparse without
+// above this class knows how the channels were made (full mesh today; the N>2 collective-selection work may make them lazy or sparse without
 // touching Communicator). For world_size <= kMaxFullMeshWorldSize it eagerly builds a full mesh with this rule: for every rank
 // pair the LOWER rank dials and the HIGHER rank accepts, so exactly two sockets exist per pair (control, data) and there are
 // no connect/connect races. Phases: all control connections, then all data connections, then a capability exchange over the
@@ -12,10 +12,10 @@
 // PeerChannel:
 //   control   Hello, capability record, and (after bootstrap) Abort / Goodbye frames; one persistent watcher thread per
 //             channel is added with the abort-propagation work
-//   data      point-to-point payload bytes (a connection of its own since Phase 73 for collectives: see coll_data)
+//   data      point-to-point payload bytes (a connection of its own since ordering-domain repair for collectives: see coll_data)
 //   worker    a duplex TensorCommWorker: independent send and receive lanes, so one direction never delays the other and
 //             different peers make independent progress
-//   coll_data / coll_worker   Phase 73: the same pair for collective payload bytes (wire protocol 4, ConnectionRole::CollectiveData)
+//   coll_data / coll_worker   the ordering-domain repair work: the same pair for collective payload bytes (wire protocol 4, ConnectionRole::CollectiveData)
 
 #include "bootstrap_config.hpp"
 #include "collective_protocol.hpp"
@@ -45,10 +45,10 @@ struct PeerChannel
     std::size_t peer_rank = 0;
     // Destruction order (reverse of declaration): worker threads are joined before the transport they use is closed.
     std::unique_ptr<Connection> control;
-    // Phase 73: two independent ordering domains per peer, each with its OWN data connection and duplex worker, so a point-to-point byte can never be consumed by
-    // collective receive logic or the reverse, whatever the relative order of the two kinds of calls on either rank.
-    // `data` / `worker`: the point-to-point domain (framed messages). `coll_data` / `coll_worker`: the collective domain (every collective's child transfers).
-    // Each transport is a TcpTransport established at bootstrap for world_size 2, a LazyDataTransport (connects on first use) above that.
+    // Two independent ordering domains per peer, each with its OWN data connection and duplex worker, so a point-to-point byte can never be consumed by
+    // collective receive logic or the reverse, whatever the relative order of the two kinds of calls on either rank. `data` / `worker`: the point-to-point domain
+    // (framed messages). `coll_data` / `coll_worker`: the collective domain (every collective's child transfers). Each transport is a TcpTransport established at
+    // bootstrap for world_size 2, a LazyDataTransport (connects on first use) above that.
     std::unique_ptr<Transport> data;
     std::unique_ptr<Transport> coll_data;
     std::unique_ptr<TensorCommWorker> worker;
@@ -65,7 +65,7 @@ struct PeerChannel
 // the peer is relaying for); `peer_lost` means the control connection broke without a Goodbye or an Abort frame.
 using PeerEventHandler = std::function<void(std::size_t peer, std::size_t origin, const std::string &reason, bool peer_lost)>;
 
-// Phase 51: collective descriptors and verdicts received on the control plane, queued per peer in arrival order. Waits are interruptible by abort().
+// Collective descriptors and verdicts received on the control plane, queued per peer in arrival order. Waits are interruptible by abort().
 class CollectiveMailbox
 {
 public:
@@ -76,10 +76,10 @@ public:
     std::vector<std::uint8_t> wait_verdict(std::size_t peer);
     void abort(const std::string &reason);
 
-    // Phase 51 (rank 0 only): while rank 0 runs a collective that does not wait for every descriptor (the dissemination barrier), every arriving descriptor
-    // for THAT sequence is compared with rank 0's own, so "rank 1 called broadcast while the others are in a barrier" is caught as soon as the descriptor arrives
-    // (from the watcher thread) and `fatal` aborts the communicator, instead of the barrier waiting for tokens that never come. Descriptors that arrived
-    // earlier are checked at set_current() time.
+    // While rank 0 runs a collective that does not wait for every descriptor (the dissemination barrier), every arriving descriptor for THAT sequence is compared
+    // with rank 0's own, so "rank 1 called broadcast while the others are in a barrier" is caught as soon as the descriptor arrives (from the watcher thread) and
+    // `fatal` aborts the communicator, instead of the barrier waiting for tokens that never come. Descriptors that arrived earlier are checked at set_current()
+    // time.
     void set_current(const CollectiveDescriptor &mine, std::function<void(const std::string &)> fatal);
     void clear_current();
 
@@ -132,7 +132,7 @@ public:
     // Interrupts every data transport (a blocked send/recv unwinds), wakes every mailbox waiter and fails every queued request. Idempotent.
     void abort_transfers(const std::string &reason);
 
-    // Phase 51: collective control messages. send_* write one control frame to `peer` (best effort ordering: FIFO per peer); the mailbox receives what peers sent.
+    // Collective control messages. send_* write one control frame to `peer` (best effort ordering: FIFO per peer); the mailbox receives what peers sent.
     void send_collective_frame(std::size_t peer, bool is_verdict, const std::vector<std::uint8_t> &bytes);
     CollectiveMailbox &mailbox() noexcept { return mailbox_; }
 

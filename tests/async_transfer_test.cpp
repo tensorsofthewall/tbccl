@@ -1,8 +1,9 @@
-// Tests for the Phase 32 portable async tensor-transfer substrate
-// (async_transfer.hpp): ChunkPlan correctness, StagingPool race-safety,
-// and TensorCommWorker lifecycle/ordering/error-propagation, all over
-// real local TCP loopback connections via TcpTransport -- no GPU
-// involved (Part Q: host path first, validates the substrate itself).
+// Tests for the async tensor-transfer portable async tensor-transfer
+// substrate (async_transfer.hpp): ChunkPlan correctness, StagingPool
+// race-safety, and TensorCommWorker
+// lifecycle/ordering/error-propagation, all over real local TCP
+// loopback connections via TcpTransport -- no GPU involved (Part Q:
+// host path first, validates the substrate itself).
 
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/tcp.hpp>
@@ -35,7 +36,7 @@ namespace
 
     // A deterministic byte pattern that varies by both transfer ID and
     // chunk index, so stale-slot-reuse / chunk-ordering bugs produce a
-    // detectable mismatch rather than silently passing (Part R item 69).
+    // detectable mismatch rather than silently passing.
     std::uint8_t pattern_byte(std::uint64_t transfer_id, std::size_t i)
     {
         const std::uint64_t v =
@@ -46,8 +47,8 @@ namespace
     // Minimal host-memory AsyncMemoryBackend for testing: source/
     // destination are plain std::vector<uint8_t> the test owns.
     // stage_source_chunk/commit_destination_chunk are synchronous
-    // memcpys -- Part H item 36's explicit allowance ("host backend can
-    // complete readiness immediately").
+    // memcpys -- the explicit allowance ("host backend can complete
+    // readiness immediately").
     class VectorAsyncBackend : public tbccl::AsyncMemoryBackend
     {
     public:
@@ -66,9 +67,9 @@ namespace
             std::memcpy(buffer_.data() + chunk.offset, staging, chunk.size);
         }
 
-        // Phase 33: plain host memory is directly transport-accessible
-        // -- exercises TensorCommWorker's direct path (chunk_hint == 0)
-        // in these tests, not just the staged path via
+        // Plain host memory is directly transport-accessible --
+        // exercises TensorCommWorker's direct path (chunk_hint == 0) in
+        // these tests, not just the staged path via
         // stage_source_chunk()/commit_destination_chunk() above.
         bool supports_direct_transport_access() const noexcept override { return true; }
         const void *direct_source_data() const noexcept override { return buffer_.data(); }
@@ -318,14 +319,14 @@ namespace
             {1 << 20, 65536, 2},  // large multi-chunk
             {1 << 20, 65536, 4},  // large multi-chunk, depth 4
             {4096, 0, 1},         // whole-payload single chunk (staged, depth > 1 irrelevant since chunk_hint==0)
-            // Phase 33 Part AI item 134: direct path (chunk_hint == 0,
-            // HostAsyncBackend/VectorAsyncBackend both report
-            // supports_direct_transport_access()==true) at the sizes
-            // the plan explicitly asks for. depth is irrelevant here --
-            // the direct path bypasses StagingPool/pipeline_depth
-            // entirely -- included anyway to prove that's true (a
-            // mismatched depth would only matter if this secretly fell
-            // through to the staged path).
+            // The async fast-path work item 134: direct path
+            // (chunk_hint == 0, HostAsyncBackend/VectorAsyncBackend
+            // both report supports_direct_transport_access()==true) at
+            // the sizes the plan explicitly asks for. depth is
+            // irrelevant here -- the direct path bypasses
+            // StagingPool/pipeline_depth entirely -- included anyway to
+            // prove that's true (a mismatched depth would only matter
+            // if this secretly fell through to the staged path).
             {1, 0, 1},            // 1 byte, direct path
             {4096, 0, 4},         // 4 KiB, direct path
             {256 * 1024, 0, 1},   // 256 KiB, direct path
@@ -347,11 +348,10 @@ namespace
     }
 
     // Multiple outstanding TransferWork objects, waited in a different
-    // order than enqueued (Part AU item 165-168): completion of one
-    // must not accidentally imply completion of another, and ordered
-    // submission over the single persistent connection must still
-    // deliver each transfer's exact bytes to the exact matching
-    // receive call.
+    // order than enqueued: completion of one must not accidentally
+    // imply completion of another, and ordered submission over the
+    // single persistent connection must still deliver each transfer's
+    // exact bytes to the exact matching receive call.
     void test_multiple_outstanding_transfers_ordered_wire_any_order_wait()
     {
         const std::uint16_t port = kBasePort + 100;
@@ -400,10 +400,10 @@ namespace
                 }
 
                 // Wait in reverse order (C, then A, then B is the
-                // classic "any order" case from Part AU item 165) --
-                // this only affects when THIS thread observes
-                // completion, not the underlying processing order,
-                // which is still FIFO on the worker.
+                // classic "any order" case from) -- this only
+                // affects when THIS thread observes completion, not
+                // the underlying processing order, which is still
+                // FIFO on the worker.
                 works[2].wait();
                 works[0].wait();
                 works[1].wait();
@@ -517,7 +517,7 @@ namespace
     // -------------------------------------------------------------
 
     // enqueue() blocks once queue_depth is reached, rather than
-    // growing unbounded (Part AG).
+    // growing unbounded.
     void test_enqueue_backpressure_blocks_when_queue_full()
     {
         const std::uint16_t port = kBasePort + 300;
@@ -583,7 +583,7 @@ namespace
     // -------------------------------------------------------------
 
     // Destroying a TensorCommWorker with no outstanding work must not
-    // hang (Part AW item 173).
+    // hang.
     void test_worker_shutdown_does_not_deadlock()
     {
         for (int i = 0; i < 5; ++i)
@@ -635,14 +635,15 @@ namespace
         std::cout << "[PASS] test_worker_stats_reflect_submitted_completed_failed\n";
     }
 
-    // Phase 33 Part AJ item 137-139: direct-path buffer lifetime
-    // contract. The SAME source/destination buffers are reused across
-    // 3 rounds with distinct content each round, only being
-    // overwritten AFTER the previous round's TransferWork::wait() has
-    // returned -- proves the direct path (which hands the caller's own
-    // buffer straight to Transport::send/recv, no TBCCL-owned copy)
-    // never reads/writes stale content and never needs a hidden
-    // defensive copy to stay correct.
+    // The async fast-path work item 137-139: direct-path buffer
+    // lifetime contract. The SAME source/destination buffers are
+    // reused across 3 rounds with distinct content each round, only
+    // being overwritten AFTER the previous round's
+    // TransferWork::wait() has returned -- proves the direct path
+    // (which hands the caller's own buffer straight to
+    // Transport::send/recv, no TBCCL-owned copy) never reads/writes
+    // stale content and never needs a hidden defensive copy to stay
+    // correct.
     void test_direct_path_buffer_reused_only_after_wait()
     {
         const std::uint16_t port = kBasePort + 500;

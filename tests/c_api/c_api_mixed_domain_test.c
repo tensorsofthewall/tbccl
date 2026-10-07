@@ -1,4 +1,4 @@
-/* Phase 73: the C ABI gets the repaired ordering semantics with no API change. Collectives and point-to-point are independent ordering domains:
+/* The C ABI gets the repaired ordering semantics with no API change. Collectives and point-to-point are independent ordering domains:
  * - one application thread per rank submits all_reduces while another submits send/recv, in opposite relative orders on the two ranks (pure C, pthreads);
  * - an all_reduce and a recv pending together are both terminal with TBCCL_ABORTED after tbcclCommAbort from another thread. */
 #define _POSIX_C_SOURCE 200809L

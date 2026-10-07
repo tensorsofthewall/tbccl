@@ -1,10 +1,10 @@
 #pragma once
 
-// Phase 41: framework-independent public runtime types. This header,
-// and every other header directly under include/tbccl/, has no CUDA or
-// Objective-C/Metal dependency -- see docs/framework_integration_architecture.md.
-// DataType/ReduceOp already exist (tbccl/reduction.hpp); this header adds
-// the remaining small enums the public Communicator/BufferView API needs.
+// framework-independent public runtime types. This header, and every other header
+// directly under include/tbccl/, has no CUDA or Objective-C/Metal dependency --
+// see docs/framework_integration_architecture.md. DataType/ReduceOp already exist
+// (tbccl/reduction.hpp); this header adds the remaining small enums the public
+// Communicator/BufferView API needs.
 
 #include <string>
 
@@ -27,12 +27,12 @@ enum class MemoryKind
 
 std::string memory_kind_name(MemoryKind kind);
 
-// What kind of execution context a caller's buffer was produced under
-// (Part K). Host means "already synchronized, safe to read now" --
-// every prior phase's benchmark-owned-tensor convention. CudaStream
-// carries an opaque native stream handle, cast to cudaStream_t only
-// inside the CUDA-specific provider implementation -- this header never
-// includes a CUDA header.
+// What kind of execution context a caller's buffer was produced under.
+// Host means "already synchronized, safe to read now" -- every prior
+// phase's benchmark-owned-tensor convention. CudaStream carries an
+// opaque native stream handle, cast to cudaStream_t only inside the
+// CUDA-specific provider implementation -- this header never includes a
+// CUDA header.
 enum class ExecutionContextKind
 {
     Host,
@@ -49,11 +49,11 @@ struct ExecutionContext
 };
 
 // Structured errors so framework adapters can branch without parsing
-// exception strings (Part R). The C++ API still throws
-// std::runtime_error with a human-readable message (repository style,
-// matching every existing TBCCL entry point) -- ErrorCode is carried
-// alongside via CommunicatorError (communicator.hpp) and is the only
-// thing that crosses the C ABI.
+// exception strings. The C++ API still throws std::runtime_error with
+// a human-readable message (repository style, matching every existing
+// TBCCL entry point) -- ErrorCode is carried alongside via
+// CommunicatorError (communicator.hpp) and is the only thing that
+// crosses the C ABI.
 enum class ErrorCode
 {
     Success,
@@ -64,11 +64,11 @@ enum class ErrorCode
     Timeout,
     DeviceError,
     InternalError,
-    // Phase 50 (appended): the communicator was aborted (explicitly, by a peer, or after a fatal failure), and the peer
-    // or wire protocol disagrees with this rank (communicator id, world size, rank, protocol version, collective descriptor).
+    // The communicator was aborted (explicitly, by a peer, or after a fatal failure), and the peer or wire protocol disagrees
+    // with this rank (communicator id, world size, rank, protocol version, collective descriptor).
     Aborted,
     ProtocolMismatch,
-    // Phase 52 (appended): an admission resource (descriptor allocation, an explicit limit) was unavailable. Never reported by waiting.
+    // An admission resource (descriptor allocation, an explicit limit) was unavailable. Never reported by waiting.
     ResourceExhausted,
 };
 

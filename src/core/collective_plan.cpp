@@ -1,4 +1,4 @@
-// Phase 51: CollectivePlanner (collective_plan.hpp).
+// CollectivePlanner (collective_plan.hpp).
 
 #include <tbccl/error.hpp>
 #include "collective_plan.hpp"
@@ -121,7 +121,8 @@ CollectivePlan plan_collective(
         plan.algorithm = forced;
         return plan;
     }
-    // Defaults, from the Phase 51 measurements (see PlannerThresholds). bytes is the per-rank payload of the collective.
+    // Defaults, from the N>2 collective-selection measurements (see PlannerThresholds). bytes is the per-rank payload of
+    // the collective.
     switch (kind)
     {
     case CollectiveKind::Barrier:

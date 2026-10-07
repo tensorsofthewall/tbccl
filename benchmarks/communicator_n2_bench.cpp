@@ -1,9 +1,9 @@
-// Phase 50: N=2 Communicator regression micro-benchmark, loopback, Host memory, built from this one source against either the pre-Phase-50 or the
+// N=2 Communicator regression micro-benchmark, loopback, Host memory, built from this one source against either the pre-N-rank-runtime or the
 // current libtbccl (it only uses the legacy `peers` bootstrap and send/recv/all_reduce). Two threads act as the two ranks. Prints one JSON line
 // per case: median / p25 / p75 microseconds over `iters` timed operations after `warmup`. Nothing is verified inside the timed loop.
 //   p2p      rank 0 sends `bytes` to rank 1, rank 1 sends them back (one round trip, reported as round-trip time)
 //   allreduce  in-place Float32 SUM of `bytes`
-//   p2p_x    both ranks post a send and a recv at the same time (round trip); only for payloads that fit the socket buffers (the pre-Phase-50
+//   p2p_x    both ranks post a send and a recv at the same time (round trip); only for payloads that fit the socket buffers (the pre-N-rank-runtime
 //            single-FIFO worker deadlocks on larger ones, which is the point of the duplex lanes)
 // Usage: communicator_n2_bench <port> <iters> [bytes ...]
 

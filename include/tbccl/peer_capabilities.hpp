@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 32 Part C/D: control-plane capability description and
+// control-plane capability description and
 // negotiation, kept deliberately separate from data-plane transport
 // (transport.hpp) and memory-backend code (which stays under
 // benchmarks/tensor/ -- this header has no CUDA/Metal awareness, only
@@ -8,7 +8,7 @@
 // docs/transport_architecture.md for the intended future extension
 // points (RDMA, native transports, Windows).
 //
-// This is intentionally small (Part D item 17): enough to represent
+// This is intentionally small: enough to represent
 // today's real OS/transport/memory-backend/async-capability set, not a
 // general-purpose extensible schema. New values are added to the enums
 // below as new backends/transports are actually implemented, not
@@ -38,19 +38,18 @@ enum class OsKind : std::uint8_t
     MacOS = 2,
     // Exists as a capability value so a future Windows peer can
     // advertise itself through the same wire format without a protocol
-    // version bump (Part D item 18) -- no Windows code runs this
-    // phase.
+    // version bump -- no Windows code runs this phase.
     Windows = 3,
 };
 
 std::string os_kind_name(OsKind kind);
 
-// Transport identifiers a peer can advertise it supports. Phase 32
-// advertises only "tcp" -- the others exist so this enum doesn't need
-// another protocol-version bump the day a real second transport
-// exists, but negotiate() only ever picks a transport both peers
-// report AND that this build actually implements (never a pretend
-// capability, Part Z item 100).
+// Transport identifiers a peer can advertise it supports. The async
+// tensor-transfer work advertises only "tcp" -- the others exist so
+// this enum doesn't need another protocol-version bump the day a real
+// second transport exists, but negotiate() only ever picks a
+// transport both peers report AND that this build actually implements
+// (never a pretend capability).
 enum class TransportKind : std::uint8_t
 {
     Tcp = 0,
@@ -77,8 +76,7 @@ enum class MemoryBackendKind : std::uint8_t
 std::string memory_backend_kind_name(MemoryBackendKind kind);
 
 // What kind of device->host readiness signal a peer's async memory
-// backend can use instead of a blocking device synchronize (Part D
-// item 17, Part H).
+// backend can use instead of a blocking device synchronize.
 enum class AsyncCapability : std::uint8_t
 {
     CudaEvents = 0,
@@ -130,7 +128,7 @@ struct NegotiationResult
     std::size_t effective_alignment = 1;
 };
 
-// Applies the negotiation rules (Part D items 19-20, Part Z item 98):
+// Applies the negotiation rules:
 // - protocol_version must match exactly, else fail with a clear reason
 //   (never silently proceed on a version mismatch).
 // - transport: intersect both sides' advertised transports with what

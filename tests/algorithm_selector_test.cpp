@@ -941,10 +941,11 @@ namespace
         EnvUnset unset_ag("TBCCL_ALL_GATHER_ALGORITHM");
 
         // N=2 is a Phase 15 policy change (was always Reference under
-        // Phase 12): Ring now resolves at any tested size, so even a
-        // small, otherwise-Reference-favoring-under-the-old-policy
-        // 4 KiB contribution must dispatch through ring_all_gather()
-        // and still produce correct output.
+        // the per-invocation-thread ring work): Ring now resolves at
+        // any tested size, so even a small,
+        // otherwise-Reference-favoring-under-the-old-policy 4 KiB
+        // contribution must dispatch through ring_all_gather() and
+        // still produce correct output.
         run_all_gather_dispatch(kAllGatherAutoRingN2Base, 2, 4096);
 
         std::cout << "[PASS] test_public_all_gather_auto_ring_n2\n";

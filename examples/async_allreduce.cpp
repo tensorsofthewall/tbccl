@@ -1,4 +1,4 @@
-// Phase 41 Part AL/AY: the standalone reference example for the public
+// The standalone reference example for the public
 // TBCCL runtime API. Uses ONLY public, installed headers
 // (<tbccl/communicator.hpp> and friends) -- no benchmark headers, no
 // internal TBCCL classes. This is also the vehicle for Part AY's
@@ -77,11 +77,11 @@ struct Options
     std::vector<PeerEndpoint> peers;
     std::string backend = "host"; // host, cuda, metal-shared
     std::size_t count = 1 << 20;  // float32 elements, ~4MiB
-    std::size_t rounds = 1;       // Part AZ/BD: >1 reuses the same Communicator
+    std::size_t rounds = 1;       // >1 reuses the same Communicator
                                    // and buffer for a steady-state timing
                                    // comparison against the old benchmark path
                                    // (round 1 is a cold first-call, not
-                                   // representative -- see docs/phase41_report.md).
+                                   // representative --.md).
 };
 
 Options parse_args(int argc, char **argv)

@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 49 (internal, not installed): host arithmetic for the 16-bit floating-point reduction types.
+// Host arithmetic for the 16-bit floating-point reduction types.
 //
 // Float16 (IEEE 754 binary16) and BFloat16 travel as raw 16-bit words; no compiler _Float16/__bf16 type appears in any
 // header (the public API only names DataType::Float16 / DataType::BFloat16). A SUM is defined as
@@ -9,7 +9,7 @@
 //
 // for every element. For N = 2 that is exactly one rounding per element, and it is the same arithmetic the CUDA kernels perform,
 // so host and device results agree bit for bit. (For N > 2 a sequential algorithm re-rounds after each pairwise add; N > 2
-// low-precision semantics are not defined by Phase 49.)
+// low-precision semantics are not defined by the low-precision datatype work.)
 //
 // NaN: any NaN operand produces a NaN result; payloads are not preserved bit for bit across host and CUDA (callers and tests
 // assert "is NaN", never a payload). +/-inf and overflow follow IEEE round-to-nearest-even.

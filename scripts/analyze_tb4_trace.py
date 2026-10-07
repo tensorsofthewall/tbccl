@@ -187,7 +187,7 @@ def analyze_run(directory):
 
 
 def historical_incidents(root):
-    """Build snapshot-association records from preserved Phase 20 artifacts."""
+    """Build snapshot-association records from preserved the TB4 latency work artifacts."""
     rows = []
     seen = set()
     root = Path(root)
@@ -304,16 +304,16 @@ def parse_diagnostic_file(path):
     return batches[-1]
 
 
-# Phase 22 Part H/M: correlate a Linux receiver's application trace with a
-# bounded scheduler trace (from capture_tb4_scheduler_trace.py) and,
-# optionally, a packet capture, to classify slow iterations per item 70.
-# The scheduler trace's tracefs events use trace_clock=mono, which the
-# capture script sets to be identical (same clock, units, epoch) to the
-# application trace's CLOCK_MONOTONIC -- no calibration needed between
-# those two. A packet capture's timestamps are in CLOCK_REALTIME, so
-# correlating against it requires the realtime<->monotonic offset the
-# caller derives from the application trace's own bracketing clock
-# samples (clock_sample_monotonic_ns / clock_sample_realtime_ns).
+# Correlate a Linux receiver's application trace with a bounded scheduler
+# trace (from capture_tb4_scheduler_trace.py) and, optionally, a packet
+# capture, to classify slow iterations per item 70. The scheduler trace's
+# tracefs events use trace_clock=mono, which the capture script sets to be
+# identical (same clock, units, epoch) to the application trace's
+# CLOCK_MONOTONIC -- no calibration needed between those two. A packet
+# capture's timestamps are in CLOCK_REALTIME, so correlating against it
+# requires the realtime<->monotonic offset the caller derives from the
+# application trace's own bracketing clock samples
+# (clock_sample_monotonic_ns / clock_sample_realtime_ns).
 
 def sched_cycles_for_pid(sched_result, pid):
     """Returns [(sleep_ts, wakeup_ts, run_ts)] sleep/wakeup/resume cycles
@@ -354,11 +354,11 @@ def sched_cycles_for_pid(sched_result, pid):
     return cycles
 
 
-# Phase 23 Part E/F/G: classify packets in a capture (application-level
+# Classify packets in a capture (application-level
 # completion ACK vs. plain TCP ACK vs. tensor payload) and compute, from
 # ONE machine's own local capture clock only, the interval between a prior
 # completion ACK and the next tensor payload -- never comparing timestamps
-# from two different machines' captures directly (Part F item 28/29).
+# from two different machines' captures directly.
 #
 # Classification is by observed payload length only (confirmed against
 # real captures in this phase): the benchmark's completion ACK is always a
@@ -414,7 +414,7 @@ def ack_to_payload_intervals(
     gap until the next tensor-payload packet on the SAME capture. Both
     timestamps come from one machine's own capture -- comparing the
     resulting distributions between two machines' captures (rather than
-    subtracting their timestamps) is Part F's dual-end method.
+    subtracting their timestamps) is the dual-end method.
 
     The final measured iteration's completion ack has no legitimate next
     payload (the run ends after it) -- without a bound, it would pair with
@@ -493,7 +493,7 @@ def packet_silence_gaps(pcap_path, min_gap_us=200):
 
 def classify_slow_iterations(
         app_trace, sched_result=None, pcap_path=None, slow_threshold_us=500, gaps=None):
-    """Part M items 68-70: per-iteration diagnostics + classification for
+    """Per-iteration diagnostics + classification for
     every receiver-side iteration slower than slow_threshold_us.
 
     Classifications are only made from intervals actually observed in this
@@ -572,11 +572,11 @@ def classify_slow_iterations(
     return rows
 
 
-# Phase 24: aggregate a run_tb4_tail_trigger_sweep.py output into a
-# condition-level slow-event summary, and a position-in-burst ("first-N")
-# breakdown. Kept here rather than in the sweep script itself so both the
-# sweep runner and any future ad-hoc trigger data can be analyzed with the
-# same code (Part N item 52's "avoid duplicating packet/trace parsing").
+# Aggregate a run_tb4_tail_trigger_sweep.py output into a condition-level
+# slow-event summary, and a position-in-burst ("first-N") breakdown. Kept
+# here rather than in the sweep script itself so both the sweep runner and
+# any future ad-hoc trigger data can be analyzed with the same code (the
+# "avoid duplicating packet/trace parsing").
 
 def summarize_by_condition(sweep_output, thresholds=(500, 800, 1000)):
     """sweep_output: the parsed JSON from run_tb4_tail_trigger_sweep.py
@@ -636,17 +636,17 @@ def summarize_by_position(sweep_output):
     return rows
 
 
-# Phase 25 Part G/M: decompose the Mac sender boundary preceding a slow
-# Linux iteration, and classify which sub-interval expands. Discovered in
-# this phase's own data that two genuinely distinct mechanisms exist
-# among slow events: (1) the completion-ack packet is visible on Mac's
-# own bridge0 capture promptly, but Mac's TCP-level ack / application
-# ack_received lags far behind it (implicates Mac-local processing); (2)
-# nothing at all is observed on Mac's bridge0 until near the very end of
-# the wait (implicates something upstream of Mac's local capture point --
-# Linux's own emission or network/TB4 transit). Distinguishing these does
-# not require cross-host timestamps: both are computed purely from Mac's
-# own local capture and Mac's own application trace, in Mac's own clock.
+# Decompose the Mac sender boundary preceding a slow Linux iteration, and
+# classify which sub-interval expands. Discovered in this phase's own
+# data that two genuinely distinct mechanisms exist among slow events:
+# (1) the completion-ack packet is visible on Mac's own bridge0 capture
+# promptly, but Mac's TCP-level ack / application ack_received lags far
+# behind it (implicates Mac-local processing); (2) nothing at all is
+# observed on Mac's bridge0 until near the very end of the wait
+# (implicates something upstream of Mac's local capture point -- Linux's
+# own emission or network/TB4 transit). Distinguishing these does not
+# require cross-host timestamps: both are computed purely from Mac's own
+# local capture and Mac's own application trace, in Mac's own clock.
 
 def mac_realtime_offset(mac_app_trace):
     return mac_app_trace['clock_sample_realtime_ns'] - mac_app_trace['clock_sample_monotonic_ns']
@@ -760,7 +760,7 @@ def classify_mac_sender_boundary(
             elif row['mac_send_to_packet_us'] is not None and row['mac_send_to_packet_us'] < gap_threshold_us:
                 # Every Mac-local interval (ack_wait through post-send
                 # emission) was normal -- by elimination, the delay lies
-                # after Mac's own local packet observation (Part M
+                # after Mac's own local packet observation (
                 # classification H): network/TB4 transit, or Linux-side
                 # processing before Linux's own capture point.
                 row['classification'] = 'delay after Mac local packet observation'
@@ -781,9 +781,9 @@ def classify_mac_sender_boundary(
 
 def sender_boundary_report(
         linux_app_trace, mac_app_trace, mac_packets, slow_threshold_us=1000):
-    """Part T item 81/82: full per-slow-event table plus a same-run normal
+    """Full per-slow-event table plus a same-run normal
     baseline (excluding candidate tails, >=800us, from the baseline itself
-    -- Part T item 82)."""
+)."""
     linux_entries_by_index = {e['iteration_index']: e for e in linux_app_trace['entries']}
     mac_entries_by_index = {e['iteration_index']: e for e in mac_app_trace['entries']}
     offset_ns = mac_realtime_offset(mac_app_trace)
@@ -800,8 +800,8 @@ def sender_boundary_report(
             row['linux_recv_us'] = recv_us
             slow_rows.append(row)
         elif recv_us < 800:
-            # Same-run normal baseline, excluding candidate tails
-            # (Part T item 82).
+            # Same-run normal baseline, excluding candidate
+            # tails.
             row = classify_mac_sender_boundary(
                 index, mac_entries_by_index, mac_packets, offset_ns)
             if row.get('mac_ack_wait_us') is not None:
@@ -828,7 +828,7 @@ def sender_boundary_report(
     }
 
 
-# Phase 26 Part F/H/P: Linux receive-path decomposition (irq -> softirq ->
+# Linux receive-path decomposition (irq -> softirq ->
 # napi/skb-receive -> socket-wakeup), from capture_tb4_scheduler_trace.py's
 # --include-receive-events trace_text. trace_clock=mono means these
 # timestamps are already in the same seconds-since-boot CLOCK_MONOTONIC
@@ -838,7 +838,7 @@ def sender_boundary_report(
 # This kernel exposes irq_handler_entry, softirq_entry (vec=3 == NET_RX),
 # napi_poll, napi_gro_receive_entry, netif_receive_skb_entry, and
 # sk_data_ready (confirmed via a live smoke test against real thunderbolt0
-# traffic -- Part F item 19-20; see docs/phase26_report.md for the full
+# traffic
 # available_events table). It does NOT expose a separate NAPI poll *entry*
 # tracepoint (only one combined post-poll napi_poll event), so "NAPI
 # processing" and "capture/skb-receive visibility" cannot be independently
@@ -856,7 +856,7 @@ IRQ_NUMBER_LINE = re.compile(r'irq=(\d+)')
 def parse_receive_path_trace(trace_text, device='thunderbolt0'):
     """Flat, time-sorted list of receive-path kernel events relevant to
     `device`, extracted from raw ftrace trace text. These tracepoints are
-    system-wide (no per-PID filter applies to them, Part G item 26) --
+    system-wide (no per-PID filter applies to them) --
     filtering by name=thunderbolt / dev=<device> narrows to the interface
     of interest for irq_handler_entry/napi_gro_receive_entry/napi_poll.
     sk_data_ready carries no per-device field at all; it is included
@@ -900,7 +900,7 @@ def receive_path_events_in_window(events, window_start_s, window_end_s, margin_s
     return). Deliberately not the first occurrence: this device's
     irq_handler_entry/softirq/napi/wakeup events fire in a continuous
     background cadence roughly every 60-90us regardless of real TCP
-    traffic (Phase 26 finding -- this is the thunderbolt-net driver's own
+    traffic (the receive-path investigation work finding -- this is the thunderbolt-net driver's own
     RX ring polling substrate), so "first in window" would pick up an
     unrelated earlier cycle rather than the one that actually gated this
     iteration's data delivery. The margin allows a little slack since the
@@ -921,7 +921,7 @@ def receive_path_events_in_window(events, window_start_s, window_end_s, margin_s
 
 def irq_cadence_gaps(events, event_kind='irq_handler_entry'):
     """Consecutive-timestamp gaps (seconds, sorted) for one event kind --
-    the basis for irq_silence_overlap(). Discovered in Phase 26 live
+    the basis for irq_silence_overlap(). Discovered in receive-path investigation live
     capture: this driver's irq_handler_entry (and the softirq/napi/skb
     events that follow each one within a few microseconds) fires in a
     tight, continuous ~60-90us cadence throughout the run, REGARDLESS of
@@ -938,7 +938,7 @@ def irq_cadence_gaps(events, event_kind='irq_handler_entry'):
 
 
 def irq_cadence_baseline(gaps, anomaly_threshold_us=500):
-    """Same-run normal irq-to-irq cadence stats (Part Q), excluding gaps
+    """Same-run normal irq-to-irq cadence stats, excluding gaps
     already >= anomaly_threshold_us so a real silence event doesn't
     inflate its own baseline."""
     normal = [g[2] for g in gaps if g[2] < anomaly_threshold_us]
@@ -963,15 +963,15 @@ def irq_silence_overlap(window_start_s, window_end_s, gaps, anomaly_threshold_us
 def classify_receive_path_event(
         window_start_s, window_end_s, receive_events, irq_gaps=None,
         baseline=None, prompt_threshold_us=150, irq_anomaly_threshold_us=500):
-    """Part R items 66-72's decision tree for one slow iteration.
+    """The decision tree for one slow iteration.
 
-    Primary signal (Part R item 66, Part H classification A): does an
+    Primary signal (, Part H classification A): does an
     anomalous gap in the continuous irq_handler_entry cadence overlap this
     iteration's window? If so, the delay is upstream of all traced
     receiver network processing -- softirq/NAPI/socket-wakeup are never
     even reached during the gap, so checking their timing is moot. Only
     when no such gap overlaps the window does the finer irq->softirq->
-    skb->wakeup decomposition (Part R items 67-71) apply, using the FIRST
+    skb->wakeup decomposition apply, using the FIRST
     receive-path event cycle actually inside the window (not "nearest to
     window_start", since the cadence is continuous and unrelated cycles
     would otherwise be picked up -- see irq_cadence_gaps' docstring).
@@ -1026,7 +1026,7 @@ def classify_receive_path_event(
 
 
 def receive_path_baseline(events, normal_windows, device='thunderbolt0'):
-    """Part Q: same-run normal irq/softirq/skb/wakeup sub-interval
+    """Same-run normal irq/softirq/skb/wakeup sub-interval
     distributions, computed from normal_windows -- a list of
     (window_start_s, window_end_s) pairs for NON-slow iterations on this
     same receiving host in this same run. Never uses another phase's
@@ -1058,12 +1058,12 @@ def receive_path_baseline(events, normal_windows, device='thunderbolt0'):
 
 
 def receive_path_report(app_trace, sched_result, slow_threshold_us=1000, normal_threshold_us=800):
-    """Part P: per-slow-iteration receive-path classification for one
+    """Per-slow-iteration receive-path classification for one
     receiving host, from its own application trace (recv_begin_ns/
     recv_end_ns bracket the blocking recv() call -- exactly the window a
     slow iteration's delay must fall within) and a
     capture_tb4_scheduler_trace.py --include-receive-events result.
-    Same-run baseline (Part Q) is computed from this run's own
+    Same-run baseline is computed from this run's own
     recv_us < normal_threshold_us iterations, never from another phase's
     historical numbers (item 65)."""
     events = parse_receive_path_trace((sched_result or {}).get('trace_text') or '')
@@ -1103,15 +1103,16 @@ def receive_path_report(app_trace, sched_result, slow_threshold_us=1000, normal_
     }
 
 
-# Phase 27 Part E/F/G/H: separate the aggregate irq_handler_entry cadence
-# (Phase 26 treated all `name=thunderbolt` IRQs as one stream) by MSI-X
-# vector (irq number), test whether each vector's own cadence is closer to
-# the driver's configured interrupt-moderation constant, and correlate
-# Thunderbolt control-plane (tb_tx/tb_rx/tb_event) and USB4NET data-plane
+# Separate the aggregate irq_handler_entry cadence (the receive-path
+# investigation work treated all `name=thunderbolt` IRQs as one stream) by
+# MSI-X vector (irq number), test whether each vector's own cadence is
+# closer to the driver's configured interrupt-moderation constant, and
+# correlate Thunderbolt control-plane (tb_tx/tb_rx/tb_event) and USB4NET
+# data-plane
 # (tbnet_tx_ip_frame/tbnet_rx_ip_frame/tbnet_tx_skb/tbnet_rx_skb) events
 # against the silence windows. thunderbolt:tb_tx/tb_rx/tb_event are
-# confirmed (via their own format files, Part G item 32-34) to reference
-# TB_CFG_PKG_* symbols (READ/WRITE/ERROR/NOTIFY_ACK/EVENT/XDOMAIN_REQ/
+# confirmed (via their own format files) to reference TB_CFG_PKG_* symbols
+# (READ/WRITE/ERROR/NOTIFY_ACK/EVENT/XDOMAIN_REQ/
 # XDOMAIN_RESP/OVERRIDE/RESET/ICM_EVENT/ICM_CMD/ICM_RESP on this kernel) --
 # Thunderbolt router configuration-space and ICM-firmware control traffic,
 # never USB4NET IP payload framing. tbnet_tx_ip_frame/tbnet_rx_ip_frame
@@ -1166,7 +1167,7 @@ def parse_tbnet_data_trace(trace_text):
 def per_vector_irq_gaps(events):
     """irq_cadence_gaps(), computed separately per MSI-X vector (irq
     number) instead of aggregated across all `name=thunderbolt` IRQs --
-    Phase 27's primary extension of Phase 26's single-stream analysis
+    the NHI ring-cadence work's primary extension of the receive-path investigation work's single-stream analysis
     (Part E item 21: 'do not aggregate all name=thunderbolt events into
     one sequence'). Returns {irq_number: [(start, end, gap_us), ...]}."""
     by_irq = {}
@@ -1184,7 +1185,7 @@ def per_vector_irq_gaps(events):
 
 def per_vector_cadence_baseline(per_vector_gaps, anomaly_threshold_us=500):
     """irq_cadence_baseline() applied independently to each vector's own
-    gap list -- tests Part F's 128us-per-vector hypothesis without
+    gap list -- tests the 128us-per-vector hypothesis without
     assuming it (item 28: 'do not fit the result to 128us by assumption')."""
     return {irq: irq_cadence_baseline(gaps, anomaly_threshold_us)
             for irq, gaps in per_vector_gaps.items()}
@@ -1194,7 +1195,7 @@ def simultaneous_vector_silence(window_start_s, window_end_s, per_vector_gaps,
                                  anomaly_threshold_us=500):
     """For every vector, the largest anomalous gap (if any) overlapping
     the window -- lets the caller determine whether multiple vectors go
-    silent together (Part F item 29-30) or only one does (Part S outcomes
+    silent together or only one does (Part S outcomes
     D/E). Returns {irq: gap_us_or_None}."""
     result = {}
     for irq, gaps in per_vector_gaps.items():
@@ -1207,7 +1208,7 @@ def events_near_window(events, window_start_s, window_end_s, before_us=500, afte
     """Every event (from parse_thunderbolt_control_trace or
     parse_tbnet_data_trace) within [window_start_s - before_us,
     window_end_s + after_us], each tagged with its position relative to
-    the window (Part K item 56): 'before' (strictly before window_start,
+    the window: 'before' (strictly before window_start,
     within before_us), 'inside' (within the window itself), or 'after'
     (strictly after window_end, within after_us)."""
     lo = window_start_s - before_us / 1e6
@@ -1228,10 +1229,10 @@ def events_near_window(events, window_start_s, window_end_s, before_us=500, afte
 
 def nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000,
                         normal_threshold_us=800, control_window_us=500):
-    """Part Q: ties per-vector cadence, the 128us hypothesis, and
+    """Ties per-vector cadence, the 128us hypothesis, and
     control/data-plane correlation together for every slow iteration.
     Requires a sched_result captured with --include-receive-events
-    --include-thunderbolt-events (Phase 27 Part G item 36)."""
+    --include-thunderbolt-events (the NHI ring-cadence work item 36)."""
     trace_text = (sched_result or {}).get('trace_text') or ''
     events = parse_receive_path_trace(trace_text)
     control_events = parse_thunderbolt_control_trace(trace_text)
@@ -1290,21 +1291,21 @@ def nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000,
     }
 
 
-# Phase 29 Part F/G/K/L: parse Tier-1 narrow function-trace output
+# Parse Tier-1 narrow function-trace output
 # (capture_tb4_scheduler_trace.py --include-nhi-functions) and use it to
 # (a) resolve TX/RX vector role by call-site (ring_msix on a TX-ring IRQ
 # leads to ring_work/process_one_work in a kworker thread; ring_msix on an
 # RX-ring IRQ leads to tb_ring_poll/tb_ring_poll_complete inside
 # tbnet_poll's NAPI softirq context -- confirmed from the exact v6.18.34
-# source, Phase 28/29's provenance: tb_ring_alloc_tx() always passes
-# start_poll=NULL, so TX servicing is unconditionally workqueue-based
-# while RX is unconditionally NAPI-based) and (b) count tb_ring_poll
-# "bursts" (consecutive calls with no large gap) as the safe, source-
-# grounded way to run the plan's completion-accumulation test (Part L)
-# without any dynamic probe: tbnet_poll() calls tb_ring_poll() once per
-# already-hardware-completed descriptor in a tight loop, so N consecutive
-# calls in one burst means N descriptors were already completed when that
-# NAPI cycle started servicing the ring.
+# source, the interrupt-throttling experiment work's provenance:
+# tb_ring_alloc_tx() always passes start_poll=NULL, so TX servicing is
+# unconditionally workqueue-based while RX is unconditionally NAPI-based)
+# and (b) count tb_ring_poll "bursts" (consecutive calls with no large
+# gap) as the safe, source- grounded way to run the plan's
+# completion-accumulation test without any dynamic probe: tbnet_poll()
+# calls tb_ring_poll() once per already-hardware-completed descriptor in a
+# tight loop, so N consecutive calls in one burst means N descriptors were
+# already completed when that NAPI cycle started servicing the ring.
 FTRACE_FUNCTION_LINE = re.compile(
     r'(?P<task>\S+)-\d+\s+\[(?P<cpu>\d+)\].*?(?P<ts>\d+\.\d+):\s*'
     r'(?P<func>\w+)\s*<-(?P<caller>\S+)')
@@ -1357,10 +1358,10 @@ def tb_ring_poll_bursts(function_events, max_gap_us=50):
     """Groups consecutive tb_ring_poll calls into bursts (a new burst
     starts when the gap since the previous tb_ring_poll exceeds
     max_gap_us). Each burst's size is the number of already-hardware-
-    completed descriptors tbnet_poll() drained in that NAPI cycle (Part L
+    completed descriptors tbnet_poll() drained in that NAPI cycle (
     item 58-59) -- the safe, tracepoint-only completion-accumulation
     signal, since no independent/periodic hardware-completion sampling
-    exists in this driver (Part E's architectural finding: completion
+    exists in this driver (the architectural finding: completion
     detection is 100% interrupt-gated, no polling thread). Returns a list
     of {start_ts, end_ts, count}."""
     polls = sorted(e['ts'] for e in function_events if e['func'] == 'tb_ring_poll')

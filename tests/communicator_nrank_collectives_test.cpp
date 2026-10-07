@@ -1,7 +1,7 @@
-// Phase 50: the reference N-rank collectives through the public Communicator, world_size 1..4 (loopback, dynamic ports): barrier, broadcast from every
-// root, all_gather (rank order), all_reduce SUM for Float32/Float64/Int32/Int64 (and Int8/UInt8 where the reference reducer supports them), in-place and
-// out-of-place, queued back to back; Float16/BFloat16 rejected for N>2; capability failures reported before any data moves; collective mismatches
-// (kind, root, count, dtype, byte count) failing every rank instead of hanging; and an oracle comparison against the older World API.
+// The reference N-rank collectives through the public Communicator, world_size 1..4 (loopback, dynamic ports): barrier, broadcast from every root,
+// all_gather (rank order), all_reduce SUM for Float32/Float64/Int32/Int64 (and Int8/UInt8 where the reference reducer supports them), in-place and
+// out-of-place, queued back to back; Float16/BFloat16 rejected for N>2; capability failures reported before any data moves; collective mismatches (kind,
+// root, count, dtype, byte count) failing every rank instead of hanging; and an oracle comparison against the older World API.
 
 #include "mesh_test_support.hpp"
 
@@ -183,7 +183,8 @@ namespace
         all_reduce_type<double>(world);
         all_reduce_type<std::int32_t>(world);
         all_reduce_type<std::int64_t>(world);
-        // Optional in Phase 50: modulo-256 SUM is associative, so it falls out of the same reducer.
+        // Optional in N-rank runtime: modulo-256 SUM is associative, so it falls out of the same
+        // reducer.
         all_reduce_type<std::int8_t>(world);
         all_reduce_type<std::uint8_t>(world);
         std::cout << "[PASS] all_reduce Float32/Float64/Int32/Int64/Int8/UInt8, in-place and out-of-place, world_size=" << world << "\n";
@@ -212,7 +213,8 @@ namespace
                 wait_ok(comm.barrier(), "barrier after the rejection");
             });
         }
-        // The two-operand semantics of Phase 49 are untouched.
+        // The two-operand semantics of the low-precision
+        // datatype work are untouched.
         run_world(2, [&](std::size_t rank, tbccl::Communicator &comm) {
             std::vector<std::uint16_t> half(8, rank == 0 ? 0x3c00 : 0x4000); // 1.0 + 2.0
             wait_ok(comm.all_reduce(view(half.data(), 16), view(half.data(), 16), 8, DataType::Float16, ReduceOp::Sum), "N=2 Float16");
@@ -431,7 +433,8 @@ int main()
         std::cerr << "[FAIL] watchdog: a collective test hung\n";
         std::_Exit(2);
     }).detach();
-    // This file is the Phase 50 REFERENCE-algorithm suite (rank-ordered fold, root fan-out): since Phase 51 the default selection picks other algorithms, so pin the reference.
+    // This file is the N-rank runtime REFERENCE-algorithm suite (rank-ordered fold, root fan-out): since N>2 collective-selection the default selection picks other algorithms,
+    // so pin the reference.
     setenv("TBCCL_ALLREDUCE_ALGORITHM", "reference", 1);
     setenv("TBCCL_BROADCAST_ALGORITHM", "reference", 1);
     setenv("TBCCL_ALLGATHER_ALGORITHM", "reference", 1);

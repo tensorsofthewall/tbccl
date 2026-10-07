@@ -1,5 +1,5 @@
-// Phase 50: the Communicator handshake and control frames over real loopback sockets (ports are allocated by the kernel).
-// Every rejection must surface as "protocol_mismatch: ..." on the accepting AND the dialing side, and a stranger that never
+// The Communicator handshake and control frames over real loopback sockets (ports are allocated by the kernel). Every
+// rejection must surface as "protocol_mismatch: ..." on the accepting AND the dialing side, and a stranger that never
 // completes a hello must not stall the acceptor past its io timeout.
 
 #include "wire_protocol.hpp"

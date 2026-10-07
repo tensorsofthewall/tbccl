@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 31 Part K-N/Z: training ON vs. OFF latency-distribution comparison.
+"""Training ON vs. OFF latency-distribution comparison.
 
 Standard-library only (no scipy) -- Fisher's exact test (two-sided, via
 the hypergeometric distribution and math.comb) and the Wilson score
 interval are both simple enough to implement directly rather than adding
-a dependency for this one phase (plan Part AA item 101/Part E item 28).
+a dependency for this one phase.
 
 Every function here takes plain lists of per-iteration latency samples in
 microseconds (as produced by parsing a TBCCL_DIAGNOSTIC transfer_trace,
@@ -38,7 +38,7 @@ def bin_label(lo, hi):
 def histogram(samples_us, bins=DEFAULT_BINS):
     """Counts (not fractions) per bin, left-inclusive/right-exclusive,
     identical bin edges must be used for both conditions being compared
-    (plan Part K item 46's explicit requirement)."""
+    (the explicit requirement)."""
     counts = {bin_label(lo, hi): 0 for lo, hi in bins}
     for value in samples_us:
         for lo, hi in bins:
@@ -49,7 +49,7 @@ def histogram(samples_us, bins=DEFAULT_BINS):
 
 
 def mode_fractions(samples_us, low_max=300, intermediate_max=500, high_max=800):
-    """Part M item 58: fraction <300us, 300-500us, 500-800us, >=800us.
+    """Fraction <300us, 300-500us, 500-800us, >=800us.
     Boundaries are the plan's own stated defaults, not fit to the data."""
     n = len(samples_us)
     if n == 0:
@@ -138,7 +138,7 @@ def fisher_exact_two_sided(table):
 
 
 def event_rate_comparison(on_events, on_n, off_events, off_n):
-    """Part L: absolute risk difference, event-rate ratio (with a
+    """Absolute risk difference, event-rate ratio (with a
     continuity-corrected variant clearly labeled when either count is
     zero, per item 55's explicit instruction), Fisher's exact test, and
     Wilson intervals for both proportions."""
@@ -159,7 +159,7 @@ def event_rate_comparison(on_events, on_n, off_events, off_n):
     elif off_events == 0 and on_rate:
         # Zero-event denominator: report a continuity-corrected ratio,
         # clearly labeled, rather than a literal division by zero or an
-        # unqualified "infinite" ratio (plan Part L item 55).
+        # unqualified "infinite" ratio.
         corrected_off_rate = 0.5 / off_n
         result["risk_ratio_on_over_off"] = on_rate / corrected_off_rate
         result["risk_ratio_continuity_corrected"] = True
@@ -172,7 +172,7 @@ def event_rate_comparison(on_events, on_n, off_events, off_n):
 def irq_cadence_table(baselines_by_condition):
     """baselines_by_condition: {condition_name: per_vector_baseline dict
     as produced by analyze_tb4_trace.nhi_cadence_report}. Returns a flat
-    comparison table, TX=177/RX=178 (Phase 29/30's confirmed roles on
+    comparison table, TX=177/RX=178 (the NHI DMA-ring work's confirmed roles on
     this boot -- not re-derived here)."""
     rows = []
     for condition, baseline in baselines_by_condition.items():
@@ -187,7 +187,7 @@ def irq_cadence_table(baselines_by_condition):
 
 
 def condition_table(conditions):
-    """conditions: {name: samples_us list}. Produces the Part Z item 100
+    """Conditions: {name: samples_us list}. Produces the
     summary table as a list of row dicts."""
     rows = []
     for name, samples in conditions.items():

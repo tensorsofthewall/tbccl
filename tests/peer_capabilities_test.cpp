@@ -139,7 +139,7 @@ namespace
 
     // Unsupported transport: peer only claims RDMA, which this build
     // does not implement -- negotiation must fail cleanly, not silently
-    // pick something unimplemented (Part D item 20 / Part Z item 100).
+    // pick something unimplemented.
     void test_negotiate_unsupported_transport()
     {
         tbccl::PeerCapabilities a;

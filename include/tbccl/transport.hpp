@@ -10,13 +10,13 @@
 namespace tbccl
 {
 
-// Phase 32 Part F: characteristics a Transport actually has, so higher
-// layers (the async tensor-transfer substrate) can make staging/chunking
-// decisions from *capabilities*, never from a transport's concrete type
-// (see transport_capabilities() below and Part F item 28's explicit
-// "if transport == TCP" anti-pattern). A future RDMA/native-Thunderbolt
-// transport reports different values here; nothing above this struct
-// should need to change.
+// Characteristics a Transport actually has, so higher layers (the async
+// tensor-transfer substrate) can make staging/chunking decisions from
+// *capabilities*, never from a transport's concrete type (see
+// transport_capabilities() below and the explicit "if transport == TCP"
+// anti-pattern). A future RDMA/native-Thunderbolt transport reports
+// different values here; nothing above this struct should need to
+// change.
 struct TransportCapabilities
 {
     // No silent drops/reordering/duplication at this layer.
@@ -68,8 +68,8 @@ public:
     // Human-readable "address:port" of the remote peer, for logging.
     virtual std::string peer_name() const = 0;
 
-    // Phase 50: a small header followed by the payload as ONE exchange. A byte-stream implementation can put both in a single
-    // syscall (sendmsg / recvmsg with two iovecs), so framing a message costs no extra system call. The default simply calls
+    // A small header followed by the payload as ONE exchange. A byte-stream implementation can put both in a single syscall
+    // (sendmsg / recvmsg with two iovecs), so framing a message costs no extra system call. The default simply calls
     // send()/recv() twice. recv_framed() fills `header`, calls `validate(header)` as soon as the header is complete and BEFORE
     // waiting for any more payload (a payload shorter than expected would otherwise block forever), then fills `data`. If
     // `validate` throws, the exception propagates and no further bytes are read. A read never exceeds `bytes` of payload.
@@ -86,16 +86,16 @@ public:
         recv(data, bytes);
     }
 
-    // Phase 45: destructive interrupt. Safe to call from any thread, any number of times, while other threads are
-    // blocked inside send()/recv(): those calls must wake and throw ("aborted: ..."), as must any later call. Does not
-    // release the underlying resource (the destructor does, once). Default: no-op (a Connection that cannot be
-    // interrupted keeps the old behavior).
+    // Destructive interrupt. Safe to call from any thread, any number of times, while other threads are blocked inside
+    // send()/recv(): those calls must wake and throw ("aborted: ..."), as must any later call. Does not release the
+    // underlying resource (the destructor does, once). Default: no-op (a Connection that cannot be interrupted keeps
+    // the old behavior).
     virtual void abort(const std::string & /*reason*/) {}
 
-    // Phase 50: bounds every later send()/recv() on this connection (0 = no bound, the default). A bounded call that
-    // expires throws a std::runtime_error whose message starts with "timeout:". Used only while bootstrapping, so a silent
-    // stranger on a listening port cannot stall a handshake past the bootstrap deadline; established data connections
-    // are never given a bound. Default: no-op.
+    // Bounds every later send()/recv() on this connection (0 = no bound, the default). A bounded call that expires throws
+    // a std::runtime_error whose message starts with "timeout:". Used only while bootstrapping, so a silent stranger on a
+    // listening port cannot stall a handshake past the bootstrap deadline; established data connections are never given a
+    // bound. Default: no-op.
     virtual void set_io_timeout(std::chrono::milliseconds /*timeout*/) {}
 
 protected:
@@ -120,15 +120,15 @@ public:
     virtual std::unique_ptr<Connection> accept_for(
         std::chrono::milliseconds timeout) = 0;
 
-    // Phase 50: the port this listener is actually bound to (it differs from the requested one when port 0 was asked for).
-    // Default 0 for a listener that has no port.
+    // The port this listener is actually bound to (it differs from the requested one when port 0 was asked for). Default 0
+    // for a listener that has no port.
     virtual std::uint16_t local_port() const { return 0; }
 
 protected:
     Listener() = default;
 };
 
-// Phase 32 Part E: the transport-abstraction boundary a future
+// The transport-abstraction boundary a future
 // TcpTransport/RdmaTransport/NativeTbTransport family lives behind, so
 // the async tensor-transfer substrate (TransferRequest/TransferWork/
 // TensorCommWorker/StagingPool/ChunkPlan, async_transfer.hpp) can move
@@ -140,7 +140,7 @@ protected:
 // reporting different capabilities() -- no caller above this class
 // needs to change.
 //
-// Phase 32 ships exactly one implementation: TcpTransport, adapting the
+// the async tensor-transfer work ships exactly one implementation: TcpTransport, adapting the
 // existing Connection this header already defines. No other transport
 // is implemented this phase (see docs/transport_architecture.md).
 class Transport
@@ -159,7 +159,7 @@ public:
     virtual void send(const void *data, std::size_t bytes) = 0;
     virtual void recv(void *data, std::size_t bytes) = 0;
 
-    // Phase 50: see Connection::send_framed(). Same exact-byte-count contract for header and payload.
+    // See Connection::send_framed(). Same exact-byte-count contract for header and payload.
     virtual void send_framed(const void *header, std::size_t header_bytes, const void *data, std::size_t bytes)
     {
         send(header, header_bytes);
@@ -177,7 +177,7 @@ public:
 
     virtual std::string peer_name() const = 0;
 
-    // Phase 45: see Connection::abort(). Never depends on peer cooperation.
+    // See Connection::abort(). Never depends on peer cooperation.
     virtual void abort(const std::string & /*reason*/) {}
 
 protected:
@@ -186,9 +186,9 @@ protected:
 
 // Adapts an existing Connection (TCP today; any future Connection
 // implementation) to the Transport interface. Takes ownership of the
-// Connection. This is intentionally a thin pass-through -- Phase 32
-// does not reimplement socket I/O, framing, or retry logic that
-// Connection/TcpConnection already provide correctly (Part E item 24).
+// Connection. This is intentionally a thin pass-through -- the async
+// tensor-transfer work does not reimplement socket I/O, framing, or
+// retry logic that Connection/TcpConnection already provide correctly.
 class TcpTransport final : public Transport
 {
 public:

@@ -1,4 +1,4 @@
-// Phase 50: multi-peer, full-duplex asynchronous point-to-point over the N-rank Communicator (world_size 2, 3 and 4, loopback, dynamic ports).
+// multi-peer, full-duplex asynchronous point-to-point over the N-rank Communicator (world_size 2, 3 and 4, loopback, dynamic ports).
 //
 // Large payloads (several MiB, far beyond the socket buffers) are the point: a send cannot complete until its receiver posts the matching
 // recv, so a ring only finishes if every rank can send to one peer and receive from another at the same time, and an exchange between

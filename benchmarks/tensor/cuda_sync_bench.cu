@@ -1,13 +1,13 @@
-// Phase 18 standalone CUDA diagnostic: isolates kernel-launch,
-// device-execution, and stream-synchronization costs (Part E), and
-// investigates the Phase 17 cuda-pinned H2D latency spikes (Part F).
+// the CUDA synchronization-audit work standalone CUDA diagnostic: isolates kernel-launch,
+// device-execution, and stream-synchronization costs, and
+// investigates the CUDA tensor-benchmark cuda-pinned H2D latency spikes.
 // No TBCCL networking or TensorBackend involvement -- this is a
 // direct CUDA-only microbenchmark, intentionally decoupled from
 // benchmarks/tensor/cuda_backend.cu so its timing can't be confused
 // with (or accidentally perturbed by) TensorBackend's own machinery.
 // fill_pattern_kernel is an intentional duplicate of cuda_backend.cu's
 // kernel of the same name, for the same reason tensor_backend.hpp's
-// pattern_byte() is duplicated there in the first place (Part D).
+// pattern_byte() is duplicated there in the first place.
 //
 // Every experiment's setup (context init, cudaMalloc, cudaHostAlloc,
 // stream/event creation, warmup) happens outside its timed loop
@@ -80,10 +80,11 @@ namespace
         // launch that does no work -- so a genuinely empty payload
         // must skip the launch entirely, matching how
         // benchmarks/tensor/cuda_backend.cu guards its own
-        // capacity_==0 case. This was previously untested: no
-        // Phase 18 experiment's hardcoded size list ever included 0,
-        // so the bug was latent until Phase 19's --sizes override
-        // made a 0-byte run possible.
+        // capacity_==0 case. This was previously untested: no the
+        // CUDA synchronization-audit work experiment's hardcoded size
+        // list ever included 0, so the bug was latent until the CUDA
+        // diagnostics work's --sizes override made a 0-byte run
+        // possible.
         if (count == 0)
         {
             return;
@@ -164,7 +165,7 @@ namespace
         return std::chrono::duration<double, std::micro>(end - start).count();
     }
 
-    // Part F item 30: the calling thread's own CPU consumption (Linux
+    // The calling thread's own CPU consumption (Linux
     // CLOCK_THREAD_CPUTIME_ID), distinct from wall-clock time --
     // distinguishes a thread that consumes CPU while polling from one
     // that spends wall time blocked/descheduled waiting for a
@@ -193,13 +194,14 @@ namespace
                "poll_iterations_median,fallback_count\n";
     }
 
-    // Phase 18's three experiments (kernel sweep, idle-interval, H2D
-    // comparison) call this with no sync-mode-specific data -- they
-    // all use blocking cudaStreamSynchronize()/cudaMemcpy(Async)+sync
-    // throughout (Part B item 8: their methodology is intentionally
-    // left unchanged from Phase 18 while reproducing the frozen
+    // The CUDA synchronization-audit work's three experiments (kernel
+    // sweep, idle-interval, H2D comparison) call this with no
+    // sync-mode-specific data -- they all use blocking
+    // cudaStreamSynchronize()/cudaMemcpy(Async)+sync throughout (Part
+    // B item 8: their methodology is intentionally left unchanged
+    // from CUDA synchronization-audit while reproducing the frozen
     // baseline), so their rows report sync_mode="stream" and "NA" for
-    // the Phase 19-only columns that don't apply to them.
+    // the CUDA diagnostics-only columns that don't apply to them.
     void print_stats_row(
         const std::string &experiment,
         const std::string &kind,
@@ -256,7 +258,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Part C: synchronization-strategy comparison.
+    // Synchronization-strategy comparison.
     //
     // Four ways to wait for the same GPU work, all given equivalent
     // completion semantics (Part 12): a single stop event is recorded
@@ -564,10 +566,10 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Part E: kernel launch / device-execution / stream-sync sweep.
+    // Kernel launch / device-execution / stream-sync sweep.
     //
     // Every iteration measures FOUR distinct quantities for the same
-    // kernel launch, never conflated (Part 19, Part D item 19):
+    // kernel launch, never conflated (Part 19):
     //   enqueue_us     -- CPU time to submit the launch + event records
     //                     (should be small; async launch is expected
     //                     to return quickly regardless of payload size)
@@ -674,7 +676,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Part E item 29: controlled idle-interval experiment. Tests the
+    // Controlled idle-interval experiment. Tests the
     // "GPU power-state transition" hypothesis directly by measuring
     // CPU-observed enqueue-to-completion latency after a deliberate
     // idle gap of varying length, at one representative size.
@@ -731,7 +733,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Part F: cuda-pageable vs cuda-pinned H2D comparison. Alternates
+    // Cuda-pageable vs cuda-pinned H2D comparison. Alternates
     // pageable/pinned across runs (item 35) rather than running one
     // kind entirely before the other, and retains every raw sample
     // (via compute_stats' gt_500us/gt_1000us counters and max_us) so a
@@ -759,10 +761,10 @@ namespace
             void *pinned_host = nullptr;
             TBCCL_CUDA_CHECK(cudaHostAlloc(&pinned_host, size, cudaHostAllocDefault));
 
-            // Part E item 27: real (non-zero) deterministic source
-            // content, so the correctness check below the run loop is
-            // meaningful -- a copy of all-zero bytes could silently
-            // "pass" even if the copy never actually ran.
+            // Real (non-zero) deterministic source content, so the
+            // correctness check below the run loop is meaningful -- a
+            // copy of all-zero bytes could silently "pass" even if
+            // the copy never actually ran.
             for (std::size_t i = 0; i < size; ++i)
             {
                 const std::uint64_t index = static_cast<std::uint64_t>(i);
@@ -859,8 +861,8 @@ namespace
                     compute_stats(pinned_total_samples));
             }
 
-            // Part E item 27: verify correctness once per size, after
-            // (never during) the timed loop.
+            // Verify correctness once per size, after (never during)
+            // the timed loop.
             {
                 std::vector<std::uint8_t> readback_pageable(size);
                 std::vector<std::uint8_t> readback_pinned(size);
@@ -911,7 +913,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Part E item 29: D2H control. Same structure as run_h2d_comparison
+    // D2H control. Same structure as run_h2d_comparison
     // (alternating pageable/pinned order across runs), transfer
     // direction reversed, at a smaller matching size subset -- exists
     // to answer one question: is the below-threshold latency spike
@@ -1018,9 +1020,9 @@ namespace
                     compute_stats(pinned_total_samples));
             }
 
-            // Part E item 27: verify correctness once per size, after
-            // (never during) the timed loop -- both destinations must
-            // still hold the source's actual pattern.
+            // Verify correctness once per size, after (never during)
+            // the timed loop -- both destinations must still hold the
+            // source's actual pattern.
             bool pageable_ok = true;
             bool pinned_ok = true;
 
@@ -1150,16 +1152,16 @@ int main(int argc, char **argv)
                 "since each experiment has its own natural size range");
         }
 
-        // Part G item 35: cudaSetDeviceFlags() must be called before
-        // any CUDA API call that establishes the device context --
-        // this is therefore the very first CUDA call in the process,
-        // ahead of even cudaSetDevice(). Opt-in only: with no
+        // CudaSetDeviceFlags() must be called before any CUDA API
+        // call that establishes the device context -- this is
+        // therefore the very first CUDA call in the process, ahead of
+        // even cudaSetDevice(). Opt-in only: with no
         // --device-schedule, this is skipped entirely, preserving the
         // CUDA runtime's own default (which is itself
         // cudaDeviceScheduleAuto, so skipping vs. explicitly passing
         // "auto" should be equivalent -- but only the "skip" path was
-        // Phase 18's actual, unmodified behavior, so it remains the
-        // default here too).
+        // the CUDA synchronization-audit work's actual, unmodified
+        // behavior, so it remains the default here too).
         if (!device_schedule.empty())
         {
             unsigned int flags = cudaDeviceScheduleAuto;
@@ -1219,12 +1221,12 @@ int main(int argc, char **argv)
             run_h2d_comparison(h2d_sizes, warmup, iterations, runs);
         }
 
-        // Part E items 24-25: a denser sweep specifically bracketing
-        // the two approximate crossover regions Phase 18 observed
-        // (~64KiB for pinned, ~256KiB for pageable) -- the union of
-        // the plan's two suggested size lists, so both thresholds are
-        // bracketed finely in one run using the same (pageable,
-        // pinned) comparison at every size.
+        // A denser sweep specifically bracketing the two approximate
+        // crossover regions the CUDA synchronization-audit work
+        // observed (~64KiB for pinned, ~256KiB for pageable) -- the
+        // union of the plan's two suggested size lists, so both
+        // thresholds are bracketed finely in one run using the same
+        // (pageable, pinned) comparison at every size.
         if (experiment == "h2d-dense" || experiment == "all")
         {
             const std::vector<std::size_t> dense_sizes = {
@@ -1235,7 +1237,7 @@ int main(int argc, char **argv)
             run_h2d_comparison(dense_sizes, warmup, iterations, runs);
         }
 
-        // Part E item 29: D2H control, at a smaller matching subset.
+        // D2H control, at a smaller matching subset.
         if (experiment == "d2h" || experiment == "all")
         {
             const std::vector<std::size_t> d2h_sizes =

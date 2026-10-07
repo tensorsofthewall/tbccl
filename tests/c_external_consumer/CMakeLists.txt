@@ -1,5 +1,5 @@
-# Phase 52: an out-of-tree PURE-C consumer of an INSTALLED TBCCL (C language only: no C++ compiler is enabled here, no -lstdc++/-lc++ is guessed, no source-tree
-# header is used). Built by scripts/check_c_external_consumer.sh.
+# An out-of-tree PURE-C consumer of an INSTALLED TBCCL (C language only: no C++ compiler is enabled here, no -lstdc++/-lc++ is guessed, no source-tree header is
+# used). Built by scripts/check_c_external_consumer.sh.
 cmake_minimum_required(VERSION 3.20)
 project(tbccl_c_external_consumer C)
 set(CMAKE_C_STANDARD 11)

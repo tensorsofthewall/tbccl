@@ -1,4 +1,4 @@
-// Phase 41 Part AW: proves a genuinely externally-owned, CPU-visible
+// Proves a genuinely externally-owned, CPU-visible
 // MTLBuffer (MTLResourceStorageModeShared) can participate in the
 // public Communicator API tagged as MemoryKind::MetalShared, with TBCCL
 // never allocating or freeing it -- the architecture doc's "Metal
@@ -191,7 +191,7 @@ void test_metal_all_reduce()
 }
 
 // 5x repeated reuse of the same MTLBuffer with distinct content each
-// round (Part AW item 224).
+// round.
 void test_metal_repeated_reuse()
 {
     const std::size_t count = 1024;

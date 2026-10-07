@@ -83,7 +83,7 @@ class AnalysisTests(unittest.TestCase):
 def sched_line(ts,kind,pid,comm='tbccl_tensor_tr',other_pid=999,state='S'):
     """Builds one synthetic ftrace text line matching this kernel's actual
     sched_switch/sched_wakeup format (verified against real captured
-    output in Phase 22's manual investigation)."""
+    output in the tail-latency root-cause work's manual investigation)."""
     if kind=='wakeup':
         return f'          <idle>-0       [000] dN.2. {ts:.6f}: sched_wakeup: comm={comm} pid={pid} prio=120 target_cpu=000'
     if kind=='sleep':
@@ -228,9 +228,9 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(extra,[])
 
     def test_trailing_ack_without_payload_is_unmatched(self):
-        # Matches the real Phase 23 shape: N acks/payloads alternating,
-        # then one final trailing ack (e.g. the destination's verify_ok)
-        # with no payload after it at all.
+        # Matches the real macOS sender-silence shape: N
+        # acks/payloads alternating, then one final trailing ack (e.g.
+        # the destination's verify_ok) with no payload after it at all.
         packets=self._packets((1.000,1),(1.000050,62636),(1.000300,1))
         intervals,unmatched,extra=analysis.ack_to_payload_intervals(packets)
         self.assertEqual(len(intervals),1)
@@ -360,8 +360,8 @@ class TriggerSweepRunnerTests(unittest.TestCase):
         order=sweep.rotate_conditions([0,10,100],repeats=3)
         self.assertEqual(len(order),9)
         # Not grouped: the first occurrence of each condition should all
-        # appear before the second occurrence of any condition (Part F
-        # item 25's explicit "rotate order" requirement).
+        # appear before the second occurrence of any condition (the
+        # explicit "rotate order" requirement).
         first_occurrence_positions=[order.index(c) for c in (0,10,100)]
         second_occurrence_positions=[order.index(c,3) for c in (0,10,100)]
         self.assertTrue(max(first_occurrence_positions)<min(second_occurrence_positions))
@@ -632,13 +632,14 @@ class ReceivePathClassificationTests(unittest.TestCase):
         self.assertIsNone(detail['irq_us'])
 
     def test_irq_gap_overlap_short_circuits_the_finer_decomposition(self):
-        # Phase 26's actual live-capture finding: even though a
-        # (irrelevant, earlier-cycle) irq/softirq/skb/wakeup quadruple is
-        # present in `found` (as would happen with the continuous
-        # background cadence), an anomalous gap overlapping the window
-        # must take priority and short-circuit the finer per-stage
-        # decomposition, which would otherwise misleadingly report
-        # "receiver path normal" using an unrelated earlier cycle.
+        # The receive-path investigation work's actual live-capture
+        # finding: even though a (irrelevant, earlier-cycle)
+        # irq/softirq/skb/wakeup quadruple is present in `found` (as
+        # would happen with the continuous background cadence), an
+        # anomalous gap overlapping the window must take priority and
+        # short-circuit the finer per-stage decomposition, which would
+        # otherwise misleadingly report "receiver path normal" using an
+        # unrelated earlier cycle.
         found = {'irq_handler_entry': 0.9999, 'softirq_entry': 0.99991,
                  'napi_gro_receive_entry': 0.99992, 'sk_data_ready': 0.99993}
         irq_gaps = [(0.9999, 2.001, 1002100.0)]  # huge gap spanning the window
@@ -743,9 +744,10 @@ class ReceivePathReportTests(unittest.TestCase):
         ]
         # A continuous ~100us-spaced background irq cadence spanning both
         # windows, mimicking the real driver's RX ring polling substrate
-        # (Phase 26 finding) -- no gap here reaches the 500us anomaly
-        # threshold, so classify_receive_path_event must fall through to
-        # the fine decomposition rather than reporting "upstream".
+        # (the receive-path investigation work finding) -- no gap here
+        # reaches the 500us anomaly threshold, so
+        # classify_receive_path_event must fall through to the fine
+        # decomposition rather than reporting "upstream".
         ts = 10.0005
         while ts < 10.0010:
             trace_lines.append(
@@ -777,12 +779,13 @@ class ReceivePathReportTests(unittest.TestCase):
                           'delayed before receiver kernel-observable ingress')
 
     def test_irq_silence_gap_overlapping_slow_window_is_flagged_upstream(self):
-        # Phase 26's live-capture central finding, reproduced as a fixture:
-        # a slow iteration whose window overlaps a real ~1ms gap in an
-        # otherwise-continuous irq cadence must be classified as delayed
-        # upstream of all traced receiver network processing -- even
-        # though softirq/napi/skb events DO eventually appear later in the
-        # window (just not promptly relative to where the cadence broke).
+        # The receive-path investigation work's live-capture central
+        # finding, reproduced as a fixture: a slow iteration whose window
+        # overlaps a real ~1ms gap in an otherwise-continuous irq cadence
+        # must be classified as delayed upstream of all traced receiver
+        # network processing -- even though softirq/napi/skb events DO
+        # eventually appear later in the window (just not promptly relative
+        # to where the cadence broke).
         app_trace = dict(entries=[
             dict(iteration_index=1, recv_begin_ns=10_000_000_000,
                  recv_end_ns=10_001_100_000),

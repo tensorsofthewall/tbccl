@@ -1,10 +1,10 @@
-// Phase 35: correctness tests for CudaChunkedAsyncBackend
+// Correctness tests for CudaChunkedAsyncBackend
 // (benchmarks/tensor/cuda_chunked_async_backend.{hpp,cu}), the new
 // true per-chunk CUDA D2H/H2D async staging backend. Only
 // built/run when TBCCL_ENABLE_CUDA is on and only meaningful with a
 // CUDA device actually present at runtime.
 //
-// Covers Part AI's development-order steps 1-3 in one file:
+// Covers the development-order steps 1-3 in one file:
 //   1. CUDA local per-chunk staging (round-trips through this
 //      backend's own stage_source_chunk/commit_destination_chunk
 //      directly, no network).
@@ -130,8 +130,8 @@ namespace
         std::cout << "[PASS] test_local_chunked_round_trip\n";
     }
 
-    // Odd-size chunk correctness (Part AC): chunk-1, chunk, chunk+1,
-    // 2 chunks + 1 byte, non-aligned final chunk.
+    // Odd-size chunk correctness: chunk-1, chunk, chunk+1, 2 chunks
+    // + 1 byte, non-aligned final chunk.
     void test_odd_size_chunking()
     {
         constexpr std::size_t kChunkBytes = 65536;
@@ -279,10 +279,10 @@ namespace
                    << ", chunk=" << chunk_bytes << ")\n";
     }
 
-    // Repeated transfers over the same persistent worker/backend (Part
-    // AD's "multiple outstanding" spirit, sequential here since
+    // Repeated transfers over the same persistent worker/backend (the
+    // "multiple outstanding" spirit, sequential here since
     // TensorCommWorker processes one request at a time in submission
-    // order -- Part AU). Each round uses a distinct seed, so stale
+    // order). Each round uses a distinct seed, so stale
     // pinned-scratch-buffer reuse or cross-round slot staleness would
     // produce a detectable mismatch.
     void test_repeated_transfers_same_backend(std::uint16_t port)

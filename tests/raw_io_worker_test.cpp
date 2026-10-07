@@ -1,9 +1,9 @@
-// Phase 34 Part AP: tests for RawIoWorker (benchmarks/tensor/raw_io_worker.hpp),
-// the minimal diagnostic-only background-thread control used to test
-// whether generic thread execution context (as opposed to anything
-// TensorCommWorker-specific) explains the Phase 33 async throughput
-// regression. Exercises RawIoWorker directly against a real loopback
-// TcpTransport -- no TensorCommWorker/StagingPool involved.
+// Tests for RawIoWorker (benchmarks/tensor/raw_io_worker.hpp), the minimal
+// diagnostic-only background-thread control used to test whether generic thread
+// execution context (as opposed to anything TensorCommWorker-specific) explains
+// the async fast-path async throughput regression. Exercises RawIoWorker
+// directly against a real loopback TcpTransport -- no
+// TensorCommWorker/StagingPool involved.
 
 #include "../benchmarks/tensor/raw_io_worker.hpp"
 

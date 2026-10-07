@@ -1,6 +1,6 @@
-// Phase 36 Part BQ: correctness tests for the deterministic CUDA
-// bucket-compute kernel (benchmarks/tensor/cuda_bucket_compute.{hpp,cu}).
-// Real RTX 3070 Ti hardware required.
+// Correctness tests for the deterministic CUDA bucket-compute kernel
+// (benchmarks/tensor/cuda_bucket_compute.{hpp,cu}). Real RTX 3070 Ti
+// hardware required.
 
 #include "tensor/cuda_bucket_compute.hpp"
 
@@ -78,7 +78,7 @@ namespace
     // Distinct seeds must produce distinct, non-trivial output (not a
     // correctness requirement in the strict sense, but catches a
     // kernel that's accidentally a no-op or ignores its seed
-    // parameter -- Part AV's "not trivially optimized away").
+    // parameter -- the "not trivially optimized away").
     void test_distinct_seeds_produce_distinct_output()
     {
         void *device_ptr = nullptr;
@@ -107,7 +107,7 @@ namespace
     }
 
     // More rounds must take measurably longer (monotonic compute cost
-    // -- what calibration, Part G, relies on).
+    // -- what calibration, relies on).
     void test_more_rounds_takes_longer()
     {
         void *device_ptr = nullptr;

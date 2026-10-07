@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 32 Part BB: analysis tool for the async tensor-transfer
+"""Analysis tool for the async tensor-transfer
 substrate's benchmark output (tbccl_async_transfer_bench JSON files,
 one per sender/receiver process per run, under results/phase32-local/).
 

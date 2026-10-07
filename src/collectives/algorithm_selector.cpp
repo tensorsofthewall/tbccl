@@ -44,21 +44,21 @@ namespace
         std::size_t threshold_bytes;
     };
 
-    // Algorithm Selection v2 (Phase 15). Phase 13's persistent ring
+    // Algorithm Selection v2 (Phase 15). The persistent ring-worker work's persistent ring
     // worker substantially cut ring's fixed per-invocation overhead,
-    // which made the original Phase 12 thresholds (kept in git history
-    // — see the Phase 12 and Phase 15 final reports) badly stale: most
+    // which made the original per-invocation-thread ring thresholds (kept in git history
+    // — see the per-invocation-thread ring and Phase 15 final reports) badly stale: most
     // crossover points had moved down by one to two orders of
     // magnitude. These v2 values come from a two-stage process, not a
-    // single sweep: a broad Phase 14 loopback A/B sweep (2 independent
+    // single sweep: a broad the loopback algorithm-sweep work loopback A/B sweep (2 independent
     // runs) identified rough crossover *neighborhoods*, then Phase 15
     // re-measured each neighborhood directly (3 independent runs,
     // checking both median AND p95, at the candidate size and its
-    // half/double neighbors) before adopting a value. Several Phase 14
+    // half/double neighbors) before adopting a value. Several the loopback algorithm-sweep work
     // candidates did not survive that re-check — see the Phase 15
     // final report for the full evidence trail — and were moved to a
     // larger, cleanly-supported size instead of being adopted as-is;
-    // AllReduce's Phase 14 candidates in particular turned out to be
+    // AllReduce's the loopback algorithm-sweep work candidates in particular turned out to be
     // computed against the wrong size unit (segment bytes instead of
     // the tensor bytes the selector and CLI actually use) and, once
     // corrected and re-measured, did not support lowering any of its
@@ -72,42 +72,45 @@ namespace
     // sizes.
 
     constexpr WorldSizeThreshold kAllGatherThresholds[] = {
-        // N=2 is a v2 policy change, not a threshold adjustment: Phase
-        // 12 always used Reference here (loopback and real-TB4 data
-        // conflicted at the time). Phase 15's dedicated N=2
-        // investigation — alternating (ABBA) real TB4 A/B runs at
-        // 64 B/4 KiB/64 KiB/1 MiB, both physical rank assignments, and
-        // both busy_poll settings — found Ring consistently faster
-        // (10-40% median improvement) with *better*, not worse, p95 at
-        // every tested size, unlike some of the small-message p95
-        // regressions seen for other collectives. 64 (bytes) is the
-        // smallest size actually tested; not extrapolated below it.
+        // N=2 is a v2 policy change, not a threshold adjustment: the
+        // per-invocation-thread ring work always used Reference here
+        // (loopback and real-TB4 data conflicted at the time). The
+        // dedicated N=2 investigation — alternating (ABBA) real
+        // TB4 A/B runs at 64 B/4 KiB/64 KiB/1 MiB, both physical rank
+        // assignments, and both busy_poll settings — found Ring
+        // consistently faster (10-40% median improvement) with
+        // *better*, not worse, p95 at every tested size, unlike some
+        // of the small-message p95 regressions seen for other
+        // collectives. 64 (bytes) is the smallest size actually
+        // tested; not extrapolated below it.
         {2, 64},
         {3, 64ull * 1024},
-        // N=4/N=8 candidates from Phase 14's raw crossover point (16
-        // KiB) did not hold up under Phase 15's 3-run re-check — Ring
-        // was still consistently worse at 16 KiB, only becoming
-        // cleanly and consistently favorable at 32 KiB — so the
-        // threshold was moved up to the larger, actually-supported
-        // size rather than adopted as originally proposed.
+        // N=4/N=8 candidates from the loopback algorithm-sweep work's
+        // raw crossover point (16 KiB) did not hold up under the
+        // 3-run re-check — Ring was still consistently worse at
+        // 16 KiB, only becoming cleanly and consistently favorable at
+        // 32 KiB — so the threshold was moved up to the larger,
+        // actually-supported size rather than adopted as originally
+        // proposed.
         {4, 32ull * 1024},
         {8, 32ull * 1024},
     };
 
     constexpr WorldSizeThreshold kReduceScatterThresholds[] = {
-        // N=2's Phase 14 candidate (64 KiB) was contradicted by a
-        // non-monotonic Phase 15 re-check: Ring lost consistently at
-        // 64 KiB across 3 reps despite winning at both the smaller
-        // (32 KiB) and larger (128 KiB) neighboring sizes tested.
-        // Moved up to 128 KiB, the smallest size where the win was
-        // clean and consistent across every rep.
+        // N=2's the loopback algorithm-sweep work candidate (64 KiB)
+        // was contradicted by a non-monotonic Phase 15 re-check:
+        // Ring lost consistently at 64 KiB across 3 reps despite
+        // winning at both the smaller (32 KiB) and larger (128 KiB)
+        // neighboring sizes tested. Moved up to 128 KiB, the
+        // smallest size where the win was clean and consistent
+        // across every rep.
         {2, 128ull * 1024},
         {3, 64ull * 1024},
-        // N=4/N=8: same pattern as AllGather — the Phase 14 raw
-        // crossover (16 KiB) did not survive re-measurement (Ring
-        // consistently worse at 16 KiB, sometimes still worse even at
-        // 32 KiB for N=4); moved to the smallest size with a clean,
-        // repeatable win in all 3 reps.
+        // N=4/N=8: same pattern as AllGather — the loopback
+        // algorithm-sweep raw crossover (16 KiB) did not survive
+        // re-measurement (Ring consistently worse at 16 KiB,
+        // sometimes still worse even at 32 KiB for N=4); moved to the
+        // smallest size with a clean, repeatable win in all 3 reps.
         {4, 64ull * 1024},
         {8, 32ull * 1024},
     };
@@ -116,8 +119,8 @@ namespace
         {4, 2ull * 1024 * 1024},
         {8, 512ull * 1024},
         // N=2 and N=3 deliberately absent, and N=4/N=8 deliberately
-        // UNCHANGED from Phase 12 — this is a real (evidence-based)
-        // finding, not an oversight. Phase 14's AllReduce candidates
+        // UNCHANGED from per-invocation-thread ring — this is a real (evidence-based)
+        // finding, not an oversight. The loopback algorithm-sweep work's AllReduce candidates
         // were computed against segment bytes but the selector
         // threshold (and the benchmark's --sizes) is total tensor
         // bytes per rank; once Phase 15 corrected that and
@@ -128,7 +131,7 @@ namespace
         // both the candidate size and 2x it); N=8's candidate (256
         // KiB tensor) was marginal/inconsistent, and the size where
         // Ring became a clean, repeatable win (512 KiB tensor) turned
-        // out to already match the existing Phase 12 threshold almost
+        // out to already match the existing per-invocation-thread ring threshold almost
         // exactly. AllReduce composes two ring phases (reduce-scatter
         // + all-gather) per call, roughly doubling the fixed cost
         // Ring must amortize versus AllGather/ReduceScatter alone,

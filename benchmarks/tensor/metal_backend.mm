@@ -23,12 +23,11 @@ namespace
 {
 
     // -----------------------------------------------------------------------------
-    // Device-side deterministic pattern generation, as a runtime-
-    // compiled MSL compute shader. Must produce exactly the same
-    // bytes as pattern_byte() in tensor_backend.hpp (Part D) -- kept
-    // as an intentional, independently-readable duplicate rather than
-    // shared code, since that header must stay includable by a plain
-    // (non-Objective-C++) C++ compiler. Mirrors cuda_backend.cu's
+    // Device-side deterministic pattern generation, as a runtime- compiled MSL
+    // compute shader. Must produce exactly the same bytes as pattern_byte() in
+    // tensor_backend.hpp -- kept as an intentional, independently-readable
+    // duplicate rather than shared code, since that header must stay includable by
+    // a plain (non-Objective-C++) C++ compiler. Mirrors cuda_backend.cu's
     // fill_pattern_kernel exactly, translated to MSL.
     // -----------------------------------------------------------------------------
 

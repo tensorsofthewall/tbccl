@@ -1,8 +1,8 @@
-// Phase 39: the central experiment -- real CUDA compute(bucket N+1)
+// The central experiment -- real CUDA compute(bucket N+1)
 // overlapping a real heterogeneous N=2 SUM AllReduce(bucket N), over the
-// real Linux<->Mac TB4 link. Reuses, unchanged: Phase 36's
-// cuda_bucket_compute kernel, Phase 35's CudaChunkedAsyncBackend, and
-// Phase 38's n2_all_reduce_tensor() -- the only new scheduling component
+// real Linux<->Mac TB4 link. Reuses, unchanged: the CUDA compute-overlap work's
+// cuda_bucket_compute kernel, the CUDA/Metal device-pipeline work's CudaChunkedAsyncBackend, and
+// the heterogeneous all-reduce work's n2_all_reduce_tensor() -- the only new scheduling component
 // is BucketAllReduceWorker (bucket_allreduce_worker.hpp), which guarantees
 // exactly one AllReduce protocol is ever in flight on the wire while
 // letting the CUDA rank's compute run ahead (Part 3/4 of the plan).
@@ -12,11 +12,11 @@
 // (a hash-mix avalanche transform), which this benchmark reinterprets as
 // a buffer of int32 words for the AllReduce SUM -- integer wraparound is
 // well-defined two's-complement arithmetic (host_reduce_backend.hpp/
-// cuda_reduce_backend.cu's wrapping-add fix, Phase 39), so exact-equality
-// verification (Part AD) holds regardless of how the compute kernel's
+// cuda_reduce_backend.cu's wrapping-add fix, the bucketed all-reduce overlap work), so exact-equality
+// verification holds regardless of how the compute kernel's
 // output happens to be distributed, unlike reinterpreting arbitrary bytes
 // as Float32 (NaN/Inf hazard). This is a deliberate adaptation documented
-// in docs/phase39_report.md, not an accidental scope creep.
+//.md, not an accidental scope creep.
 
 #include <tbccl/collectives.hpp>
 #include <tbccl/hetero_allreduce.hpp>
@@ -33,14 +33,15 @@
 #include "tensor/tensor_backend_async_adapter.hpp"
 
 // cuda_bucket_compute.hpp's expected_bucket_byte() is portable, CUDA-type-
-// free C++ (Phase 36's own design: "critical for the receiver role, which
-// commonly runs on a non-CUDA machine but still needs to verify
-// CUDA-computed bytes it received") -- included unconditionally so the
-// Mac (non-CUDA) rank can compute the correct expected value for its own
-// verification. Only launch_bucket_compute()/launch_bucket_fill_input()
-// (the actual kernel launches, implemented in the .cu) require
-// TBCCL_ENABLE_CUDA, and those are never called outside that guard below
-// -- matching cuda_overlap_bench.cpp's identical precedent.
+// free C++ (the CUDA compute-overlap work's own design: "critical for the
+// receiver role, which commonly runs on a non-CUDA machine but still needs
+// to verify CUDA-computed bytes it received") -- included unconditionally
+// so the Mac (non-CUDA) rank can compute the correct expected value for
+// its own verification. Only
+// launch_bucket_compute()/launch_bucket_fill_input() (the actual kernel
+// launches, implemented in the .cu) require TBCCL_ENABLE_CUDA, and those
+// are never called outside that guard below -- matching
+// cuda_overlap_bench.cpp's identical precedent.
 #include "tensor/cuda_bucket_compute.hpp"
 
 #if defined(TBCCL_ENABLE_CUDA)
@@ -326,7 +327,7 @@ int main(int argc, char **argv)
         const std::size_t chunk_count = chunk_plan.empty() ? 1 : chunk_plan.size();
 
         // ---- Backend setup: one persistent set of buffers per bucket,
-        // allocated once before the measured loop (Part BM/V/W). ----
+        // allocated once before the measured loop. ----
         std::vector<tbccl::AsyncMemoryBackend *> recv_backends(options.bucket_count);
         std::vector<tbccl::AsyncMemoryBackend *> send_backends(options.bucket_count);
         std::vector<tbccl::LocalReduceBackend *> reduce_backends(options.bucket_count, nullptr);
@@ -445,9 +446,9 @@ int main(int argc, char **argv)
             };
 
             // Mac rank's own deterministic local input (prepared before
-            // any timed submission, matching Part AB's "input prep
-            // outside the collective timer" -- here it's outside the
-            // compute timer too, since Mac never computes).
+            // any timed submission, matching the "input prep outside
+            // the collective timer" -- here it's outside the compute
+            // timer too, since Mac never computes).
             if (!is_cuda_rank)
             {
                 for (std::size_t b = 0; b < options.bucket_count; ++b)
@@ -461,10 +462,11 @@ int main(int argc, char **argv)
                     else metal_adapters[b]->begin_transfer(chunk_count);
                     if (is_root)
                     {
-                        // Root's send-back wrapper must also reset per
-                        // Phase 32 convention even though HostAsyncBackend
-                        // itself has no begin_transfer bookkeeping -- N/A
-                        // here, intentionally omitted (no-op by design).
+                        // Root's send-back wrapper must also reset per the
+                        // async tensor-transfer work convention even
+                        // though HostAsyncBackend itself has no
+                        // begin_transfer bookkeeping -- N/A here,
+                        // intentionally omitted (no-op by design).
                     }
                 }
             }
@@ -557,7 +559,7 @@ int main(int argc, char **argv)
             }
         }
 
-        // One untimed, fully-verified round (Part AD) -- always runs
+        // One untimed, fully-verified round -- always runs
         // compute+collective regardless of --schedule, so correctness is
         // checked for the real end-to-end path.
         {

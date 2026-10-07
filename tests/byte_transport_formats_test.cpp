@@ -1,4 +1,4 @@
-// Phase 49: libtbccl moves OPAQUE bytes. Quantized and low-precision payloads that the runtime cannot (and must not) reduce -- FP8 E4M3/E5M2 words, 16-bit
+// Libtbccl moves OPAQUE bytes. Quantized and low-precision payloads that the runtime cannot (and must not) reduce -- FP8 E4M3/E5M2 words, 16-bit
 // float and int8 buffers, a packed 4-bit weight bundle with its scales and zero-points, and arbitrary random bytes that belong to no dtype at all --
 // must cross send/recv, broadcast and all_gather bit-exactly, in odd sizes, between Host and (when built) CUDA memory.
 //

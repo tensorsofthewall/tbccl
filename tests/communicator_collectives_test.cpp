@@ -1,4 +1,4 @@
-// Phase 43: Host-memory correctness tests for the byte-generic public Communicator::broadcast() and
+// Host-memory correctness tests for the byte-generic public Communicator::broadcast() and
 // Communicator::all_gather() (roots 0 and 1, odd sizes, repeated rounds, FIFO ordering against
 // all_reduce, capability queries, argument errors). CUDA coverage is in
 // communicator_collectives_cuda_test.cpp.

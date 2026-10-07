@@ -1,15 +1,15 @@
 #pragma once
 
-// Phase 39 Part R/S/T: a minimal persistent collective progress worker,
-// benchmark-support code (not a core library/public API -- Part S: Phase
-// 39 asks whether async collective submission is useful, it does not yet
+// A minimal persistent collective progress worker,
+// benchmark-support code (not a core library/public API -- the bucketed all-reduce
+// overlap experiment asks whether async collective submission is useful, it does not yet
 // prove a stable public collective API). Lets a producer (CUDA compute)
 // submit bucket AllReduce jobs without blocking on each one's completion,
 // while guaranteeing only ONE n2_all_reduce_tensor() call is ever
 // in-flight at a time (Part 3/BC: no wire-level AllReduce multiplexing
 // this phase). This is purely a FIFO queue + one thread driving the
 // EXISTING, unmodified n2_all_reduce_tensor() -- it is not a second
-// network/transport implementation (Part R item 65).
+// network/transport implementation.
 //
 // Header-only (all methods inline in-class), matching this being
 // benchmark/test-shared support code rather than a library target.
@@ -59,11 +59,12 @@ public:
         return state_->error_message;
     }
 
-    // Phase 39 Part AG/AH timeline capture: when the worker thread
-    // finished this job (ok or error), as measured on the worker
-    // thread itself -- valid only once is_completed() is true. Lets a
-    // benchmark compute, e.g., "bucket N's collective completed after
-    // bucket N+1's compute had already started" without polling.
+    // The bucketed all-reduce overlap work timeline capture: when the
+    // worker thread finished this job (ok or error), as measured on
+    // the worker thread itself -- valid only once is_completed() is
+    // true. Lets a benchmark compute, e.g., "bucket N's collective
+    // completed after bucket N+1's compute had already started"
+    // without polling.
     std::chrono::steady_clock::time_point completed_at() const
     {
         std::lock_guard<std::mutex> lock(state_->mutex);
@@ -86,11 +87,11 @@ private:
 };
 
 // One job: everything n2_all_reduce_tensor() needs, plus a bucket index
-// for diagnostic logging (Part X item 83). Non-owning pointers -- all
-// referenced objects (transport, worker, backends) must outlive the job's
-// execution, exactly matching TransferRequest's own buffer-lifetime
-// contract (Part V/W: one persistent tensor/backend per bucket makes this
-// trivial for the benchmark).
+// for diagnostic logging. Non-owning pointers -- all referenced objects
+// (transport, worker, backends) must outlive the job's execution, exactly
+// matching TransferRequest's own buffer-lifetime contract (Part V/W: one
+// persistent tensor/backend per bucket makes this trivial for the
+// benchmark).
 struct BucketAllReduceJob
 {
     tbccl::Transport *transport = nullptr;
@@ -108,14 +109,13 @@ struct BucketAllReduceJob
 };
 
 // One persistent thread, a bounded FIFO queue, exactly one
-// n2_all_reduce_tensor() call executing at a time (Part R item 64).
-// Part BJ's failure policy: on the first job that throws, that job's
-// Work reports the error, the worker aborts (stops pulling further jobs
-// and fails every already-queued or future job immediately with a
-// "worker aborted" error) rather than attempting to continue -- the wire
-// protocol state after a failed AllReduce leg cannot be assumed
-// recoverable, so continuing risks a cross-rank deadlock, not just a
-// local error.
+// n2_all_reduce_tensor() call executing at a time. the failure policy:
+// on the first job that throws, that job's Work reports the error, the
+// worker aborts (stops pulling further jobs and fails every
+// already-queued or future job immediately with a "worker aborted"
+// error) rather than attempting to continue -- the wire protocol state
+// after a failed AllReduce leg cannot be assumed recoverable, so
+// continuing risks a cross-rank deadlock, not just a local error.
 class BucketAllReduceWorker
 {
 public:
@@ -138,11 +138,10 @@ public:
     BucketAllReduceWorker(const BucketAllReduceWorker &) = delete;
     BucketAllReduceWorker &operator=(const BucketAllReduceWorker &) = delete;
 
-    // Blocks only on queue capacity (Part V/U item 73-76), never on the
-    // job's own collective completion -- matching TensorCommWorker's own
-    // enqueue() contract. Returns immediately with a live
-    // BucketAllReduceWork once queued (or immediately-failed, if the
-    // worker has already aborted).
+    // Blocks only on queue capacity, never on the job's own collective
+    // completion -- matching TensorCommWorker's own enqueue() contract.
+    // Returns immediately with a live BucketAllReduceWork once queued
+    // (or immediately-failed, if the worker has already aborted).
     BucketAllReduceWork enqueue(BucketAllReduceJob job)
     {
         BucketAllReduceWork work;
@@ -249,7 +248,7 @@ private:
                 std::lock_guard<std::mutex> lock(mutex_);
                 aborted_ = true;
                 // Drain and fail every job already queued behind this one
-                // -- do not attempt to execute them (Part BJ).
+                // -- do not attempt to execute them.
                 while (!queue_.empty())
                 {
                     complete_state_error(queue_.front().state,

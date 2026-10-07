@@ -1,6 +1,6 @@
-// Phase 50: the N-rank full mesh. world_size 1..4 initialize through the same Communicator::create() with explicit control/data endpoints,
-// keep a per-rank capability table, close every socket exactly once across repeated create/destroy loops, and reject a bad handshake
-// (world-size mismatch, wrong communicator id, duplicate rank) instead of hanging. Dynamic ports only.
+// The N-rank full mesh. world_size 1..4 initialize through the same Communicator::create() with explicit control/data endpoints, keep a
+// per-rank capability table, close every socket exactly once across repeated create/destroy loops, and reject a bad handshake (world-size
+// mismatch, wrong communicator id, duplicate rank) instead of hanging. Dynamic ports only.
 
 #include "mesh_test_support.hpp"
 
@@ -122,7 +122,8 @@ namespace
 
     void test_legacy_peers_still_work_for_two()
     {
-        // The pre-Phase-50 `peers` list: control = peers[r], data = peers[0].port + 1000. Ports probed free, then released.
+        // The pre-N-rank-runtime `peers` list: control = peers[r], data = peers[0].port + 1000. Ports probed free, then
+        // released.
         auto probe = [] {
             for (std::uint16_t p = 21000; p < 21900; p += 7)
             {

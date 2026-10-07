@@ -1,9 +1,9 @@
 #pragma once
 
-// Phase 38: an experimental N=2 SUM AllReduce built directly on the Phase
-// 32 async tensor-transfer substrate (async_transfer.hpp), rather than on
+// An experimental N=2 SUM AllReduce built directly on the
+// async tensor-transfer substrate (async_transfer.hpp), rather than on
 // World::send()/recv() like the existing reduce()/broadcast()/all_reduce()
-// in collectives.hpp. See docs/phase38_collective_design.md for the full
+// in collectives.hpp.
 // rationale.
 //
 // This is additive and explicit-opt-in only: tbccl::all_reduce() and its
@@ -30,7 +30,7 @@ namespace tbccl
 // source/destination pointers to operate on and where to leave the
 // result -- this interface itself never sees a pointer, matching
 // AsyncMemoryBackend's own "generic TBCCL never sees device types"
-// boundary (Part N/BO of the Phase 38 plan).
+// boundary.
 class LocalReduceBackend
 {
 public:
@@ -52,12 +52,12 @@ public:
 // flight) for the duration of this call -- this function enqueues exactly
 // two sequential TransferRequests (never both outstanding at once) and
 // waits for each in turn, so at most one AllReduce-related transfer is
-// ever in flight (Part BC).
+// ever in flight.
 //
 // Two separate AsyncMemoryBackend references are taken rather than one,
 // because a receive leg and a send leg naturally want different roles on
 // some backends (e.g. a Metal-shared TensorBackend's source buffer is
-// read-only by contract once prepared; see docs/phase38_collective_design.md
+// read-only by contract once prepared
 // Part 5 for why this is NOT just "two pointers into one buffer" for every
 // backend). For a backend where source and destination really are two
 // independently-addressable, fully-mutable buffers under the caller's
@@ -82,7 +82,7 @@ public:
 // Throws std::runtime_error if `root >= 2`, or if either TransferWork
 // completes with an error (the error message is propagated, not
 // swallowed) -- this function never blocks forever on a failed transfer
-// (Part AN of the Phase 38 plan).
+//.
 void n2_all_reduce_tensor(
     Transport &transport,
     TensorCommWorker &worker,

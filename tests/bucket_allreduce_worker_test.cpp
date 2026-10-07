@@ -1,4 +1,4 @@
-// Phase 39 Part BH/BI/BJ: tests for BucketAllReduceWorker
+// Tests for BucketAllReduceWorker
 // (benchmarks/bucket_allreduce_worker.hpp), the benchmark-support
 // persistent collective progress worker. Host-only, real TCP loopback,
 // same pattern as tests/hetero_allreduce_test.cpp.
@@ -178,7 +178,7 @@ namespace
                 job.bucket_index = b;
 
                 // Submitting bucket b+1 here, BEFORE waiting on bucket b,
-                // is exactly the "producer runs ahead" pattern Part R
+                // is exactly the "producer runs ahead" pattern
                 // exists to support -- this is the FIFO-order assertion
                 // under test, not an afterthought.
                 works.push_back(worker.enqueue(job));
@@ -214,7 +214,7 @@ namespace
     // A job whose backend always throws on commit; verifies the worker
     // reports the error on that job's Work, drains/fails subsequent
     // queued jobs rather than executing them, and shutdown still
-    // completes cleanly (Part BJ).
+    // completes cleanly.
     class ThrowingBackend final : public tbccl::AsyncMemoryBackend
     {
     public:
@@ -329,11 +329,11 @@ namespace
         // Rank 0 and rank 1 both loop back to the SAME process via two
         // real TCP endpoints is not meaningful for an N=2 protocol (each
         // side needs its own peer) -- reuse the FIFO test's shape but
-        // with more rounds and alternating roots, covering Part BK's
-        // "repeated application iterations, no stale data / no Work
-        // leakage" at the worker level specifically (not just the
-        // underlying collective, already covered by
-        // hetero_allreduce_test's own repeated-call test).
+        // with more rounds and alternating roots, covering the "repeated
+        // application iterations, no stale data / no Work leakage" at
+        // the worker level specifically (not just the underlying
+        // collective, already covered by hetero_allreduce_test's own
+        // repeated-call test).
         constexpr std::size_t kRounds = 20;
         constexpr std::size_t kCount = 256;
         constexpr std::size_t kBytes = kCount * sizeof(float);

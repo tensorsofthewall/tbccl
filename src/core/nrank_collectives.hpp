@@ -1,7 +1,7 @@
 #pragma once
 
-// Phase 50: the conservative REFERENCE collectives of the N-rank Communicator, private to libtbccl. They exist for correctness and for the
-// runtime structure (peer channels, collective sequencing, abort, capabilities), not for speed: Phase 51 owns optimized algorithms.
+// The conservative REFERENCE collectives of the N-rank Communicator, private to libtbccl. They exist for correctness and for the
+// runtime structure (peer channels, collective sequencing, abort, capabilities), not for speed: the N>2 collective-selection work owns optimized algorithms.
 //
 //   barrier     descriptor exchange only (every rank -> rank 0, verdict back)
 //   broadcast   root -> every other rank, sequential fan-out
@@ -74,7 +74,7 @@ CommAlgorithm run_descriptor_exchange(const CollectiveRun &run, const Collective
 
 void reference_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
 
-// Phase 51: execute the data phase of a collective with the algorithm rank 0 chose (the same on every rank). world_size > 2 only; an algorithm that is not
+// Execute the data phase of a collective with the algorithm rank 0 chose (the same on every rank). world_size > 2 only; an algorithm that is not
 // implemented for the collective is an internal_error (the planner never returns one).
 void tree_broadcast(const CollectiveRun &run, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
 void ring_all_gather(
@@ -84,9 +84,9 @@ void ring_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider,
 void recursive_doubling_all_reduce(const CollectiveRun &run, ExternalMemoryProvider &provider, std::size_t total_bytes, std::size_t count, DataType datatype);
 void run_barrier(const CollectiveRun &run, CommAlgorithm algorithm);
 
-// The dissemination barrier (Phase 51): ceil(log2 N) rounds, each rank sends a token to (rank + 2^k) mod N and receives one from (rank - 2^k) mod N. There is no
-// coordinator round trip: every rank hands its descriptor to rank 0 on the control plane without waiting for a verdict, rank 0 validates them as they arrive, and
-// tokens carry (sequence, kind) which each receiver checks. Throws CollectiveMismatch on any disagreement.
+// The dissemination barrier (the N>2 collective-selection work): ceil(log2 N) rounds, each rank sends a token to (rank + 2^k) mod N and receives one from (rank -
+// 2^k) mod N. There is no coordinator round trip: every rank hands its descriptor to rank 0 on the control plane without waiting for a verdict, rank 0 validates
+// them as they arrive, and tokens carry (sequence, kind) which each receiver checks. Throws CollectiveMismatch on any disagreement.
 void run_dissemination_barrier(const CollectiveRun &run, const CollectiveDescriptor &mine);
 void run_broadcast(const CollectiveRun &run, CommAlgorithm algorithm, ExternalMemoryProvider *provider, std::size_t bytes, std::size_t root);
 void run_all_gather(

@@ -2,13 +2,13 @@
 // built/run when TBCCL_ENABLE_METAL is on (see CMakeLists.txt, Apple
 // platforms only) and only meaningful with a Metal device actually
 // available at runtime -- make_backend() throws a clear, distinct
-// error otherwise (Part C, requirement 10), which main() below
+// error otherwise (, requirement 10), which main() below
 // classifies as a skip rather than a test failure.
 //
 // Everything here goes through the plain C++ TensorBackend interface
 // (benchmarks/tensor/tensor_backend.hpp) -- no Metal/Foundation type
 // is named in this file -- so despite the .mm extension (kept for
-// naming consistency with metal_backend.mm and Part B's suggested
+// naming consistency with metal_backend.mm and the suggested
 // layout) it is ordinary Objective-C++-compiled C++.
 
 #include "tensor/tensor_backend.hpp"

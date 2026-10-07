@@ -1,7 +1,7 @@
 #pragma once
 
-// Phase 50: the built-in host-pointer AsyncMemoryBackend, shared by the Host/MetalShared provider and the N-rank collective control
-// messages (descriptors, verdicts). Direct transport access: the transport reads/writes the buffer in place, no staging.
+// The built-in host-pointer AsyncMemoryBackend, shared by the Host/MetalShared provider and the N-rank collective control messages
+// (descriptors, verdicts). Direct transport access: the transport reads/writes the buffer in place, no staging.
 
 #include <tbccl/async_transfer.hpp>
 

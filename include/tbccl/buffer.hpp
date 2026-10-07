@@ -1,8 +1,8 @@
 #pragma once
 
-// Phase 41 Part E/F: the non-owning external buffer descriptor. A
-// BufferView never owns the memory it points to (Part 23/24) -- the
-// caller guarantees it remains valid until the Work referencing it
+// The non-owning external buffer descriptor. A BufferView never
+// owns the memory it points to (Part 23/24) -- the caller
+// guarantees it remains valid until the Work referencing it
 // completes, exactly the same contract TransferRequest's backend/
 // transport pointers already carry (async_transfer.hpp).
 

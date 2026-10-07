@@ -1,4 +1,4 @@
-# Phase 52: the exported C symbols of the shim are exactly the v1 list, unmangled. Usage: cmake -DNM=<nm> -DLIB=<libtbccl_c.a> -DGOLDEN=<file> -P check_symbols.cmake
+# The exported C symbols of the shim are exactly the v1 list, unmangled. Usage: cmake -DNM=<nm> -DLIB=<libtbccl_c.a> -DGOLDEN=<file> -P check_symbols.cmake
 execute_process(COMMAND ${NM} -g --defined-only ${LIB} OUTPUT_VARIABLE out RESULT_VARIABLE rc ERROR_QUIET)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "nm failed on ${LIB}")

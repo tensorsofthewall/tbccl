@@ -1,6 +1,7 @@
-// Phase 49 external-consumer check: uses ONLY the installed public headers (<tbccl/...>) and the installed TBCCL::tbccl[_cuda] targets.
-// Two Communicator ranks on loopback (threads) run N=2 SUM all_reduce for every Phase 49 reduction type on host memory; with CONSUMER_WITH_CUDA, rank 0
-// also holds BFloat16 / Float16 data on the device (register_cuda_support), and the arithmetic is checked bit for bit against a self-contained reference.
+// The low-precision datatype work external-consumer check: uses ONLY the installed public headers (<tbccl/...>) and the installed TBCCL::tbccl[_cuda]
+// targets. Two Communicator ranks on loopback (threads) run N=2 SUM all_reduce for every the low-precision datatype work reduction type on host memory;
+// with CONSUMER_WITH_CUDA, rank 0 also holds BFloat16 / Float16 data on the device (register_cuda_support), and the arithmetic is checked bit for bit
+// against a self-contained reference.
 #include <tbccl/communicator.hpp>
 #include <tbccl/reduction.hpp>
 #ifdef CONSUMER_WITH_CUDA
@@ -127,7 +128,7 @@ namespace
         for (std::size_t i = 0; i < n; ++i) expect(r0[i] == std::uint8_t(a[i] + b[i]) && r1[i] == r0[i], "8-bit sum mismatch at " + std::to_string(i));
     }
 
-    // Phase 50: the installed headers expose the N-rank API (rank directory, communicator id, pre-bound listeners, barrier). Three ranks on loopback with
+    // The installed headers expose the N-rank API (rank directory, communicator id, pre-bound listeners, barrier). Three ranks on loopback with
     // kernel-assigned ports; all_reduce Float32 SUM of 1+2+3, plus a rejected Float16 reduction (N>2 semantics are not defined).
     void three_ranks()
     {
@@ -187,7 +188,8 @@ int main()
 {
     try
     {
-        // the installed headers expose the Phase 49 types and the single support predicate
+        // the installed headers expose the low-precision datatype types and the single
+        // support predicate
         expect(static_cast<int>(tbccl::DataType::BFloat16) == 7 && static_cast<int>(tbccl::DataType::Float32) == 2, "installed enum values");
         expect(tbccl::datatype_size(tbccl::DataType::Float16) == 2 && tbccl::datatype_size(tbccl::DataType::UInt8) == 1, "installed datatype_size");
         expect(tbccl::reduction_supported(tbccl::DataType::BFloat16, tbccl::ReduceOp::Sum) && !tbccl::reduction_supported(tbccl::DataType::BFloat16, tbccl::ReduceOp::Max), "support matrix");

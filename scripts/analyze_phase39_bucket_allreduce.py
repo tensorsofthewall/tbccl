@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 39: summarize tbccl_bucketed_allreduce_bench JSON output.
+"""Summarize tbccl_bucketed_allreduce_bench JSON output.
 
 Usage:
     analyze_phase39_bucket_allreduce.py file1.json file2.json [...]

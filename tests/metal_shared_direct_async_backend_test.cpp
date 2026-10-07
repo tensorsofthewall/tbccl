@@ -1,10 +1,10 @@
-// Phase 40: correctness tests for MetalSharedDirectAsyncBackend.
+// Correctness tests for MetalSharedDirectAsyncBackend.
 //
 // Two kinds of coverage:
 //  - Portable tests (build on any platform): constructor rejects a
 //    non-MetalShared backend; a generic asymmetric chunk-plan proof using
 //    HostAsyncBackend (sender explicitly chunked, receiver full-buffer
-//    direct) that validates Part K/L's wire-compatibility claim without
+//    direct) that validates the wire-compatibility claim without
 //    requiring real Metal hardware.
 //  - TBCCL_ENABLE_METAL-only tests: real MetalShared roundtrips over TCP
 //    loopback, direct pointer identity, odd sizes, repeated reuse.
@@ -68,12 +68,12 @@ void test_wrong_kind_throws()
 }
 
 // ---------------------------------------------------------------------
-// Portable: asymmetric chunk-plan proof (Part K/L), using HostAsyncBackend
-// on both ends since both support direct access -- sender explicitly
-// requests chunk_hint=65536 (genuinely chunked/pipelined on its side),
-// receiver requests chunk_hint=0 (single whole-buffer direct recv). Proves
-// a sender's local chunking decision is invisible to -- and does not need
-// to match -- the receiver's, over a real TCP connection.
+// Portable: asymmetric chunk-plan proof, using HostAsyncBackend on both
+// ends since both support direct access -- sender explicitly requests
+// chunk_hint=65536 (genuinely chunked/pipelined on its side), receiver
+// requests chunk_hint=0 (single whole-buffer direct recv). Proves a
+// sender's local chunking decision is invisible to -- and does not need to
+// match -- the receiver's, over a real TCP connection.
 // ---------------------------------------------------------------------
 void test_asymmetric_chunk_plan()
 {
@@ -154,7 +154,7 @@ void run_metal_direct_roundtrip(std::uint16_t port, std::size_t bytes, std::uint
     MetalSharedDirectAsyncBackend source_direct(*source_backend);
     MetalSharedDirectAsyncBackend destination_direct(*destination_backend);
 
-    // Direct pointer identity (Part R item 77): direct_source_data()/
+    // Direct pointer identity: direct_source_data()/
     // direct_destination_data() must return exactly what the underlying
     // TensorBackend already exposes as its staging/contents pointer.
     expect(source_direct.direct_source_data() == source_backend->source_staging_data(),

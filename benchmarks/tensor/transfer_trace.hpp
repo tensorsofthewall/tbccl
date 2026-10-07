@@ -174,10 +174,11 @@ public:
                << ",\"process_id\":" << process_id_
                << ",\"thread_id\":" << thread_id_
                // Always null: no local socket fd/port is obtainable here
-               // without touching tbccl::World's API, which Phase 22
-               // explicitly avoids. PID+TID is sufficient to correlate
-               // against scheduler/packet evidence for this benchmark,
-               // since it is single-threaded and each run uses one process.
+               // without touching tbccl::World's API, which the
+               // tail-latency root-cause work explicitly avoids. PID+TID is
+               // sufficient to correlate against scheduler/packet evidence
+               // for this benchmark, since it is single-threaded and each
+               // run uses one process.
                << ",\"socket_identifier\":null"
                << ",\"capacity\":" << capacity_ << ",\"entries\":[";
         for (std::size_t index = 0; index < entries_.size(); ++index)

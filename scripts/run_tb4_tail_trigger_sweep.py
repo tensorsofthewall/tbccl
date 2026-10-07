@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Phase 24: bounded trigger-characterization sweep for the intermittent
-~1.1-1.4ms Mac->Linux tail-latency mode (Phase 22/23).
+"""Bounded trigger-characterization sweep for the intermittent
+~1.1-1.4ms Mac->Linux tail-latency mode (the tail-latency root-cause work).
 
 Runs many short Mac->Linux host/64KiB/poll-0 bursts, varying the idle
 duration between bursts (rotated order, not grouped) and recording session
@@ -12,7 +12,7 @@ control, analyzed post-hoc by iteration-index range rather than needing
 special runner support).
 
 A small, focused wrapper rather than an extension of
-run_tb4_busy_poll_sweep.py (Part D item 17's explicit alternative) --
+run_tb4_busy_poll_sweep.py (the explicit alternative) --
 that script's SSH-worker-heartbeat protocol is built for a different
 shape of experiment (mid-sweep health guards across a large parameter
 matrix); this one needs simple bounded local+SSH subprocess bursts with
@@ -126,7 +126,7 @@ def classify_thresholds(samples_us, thresholds=(500, 800, 1000)):
 
 
 def rotate_conditions(idle_list_ms, repeats):
-    """Round-robin across conditions, not grouped by condition (Part F
+    """Round-robin across conditions, not grouped by condition (
     item 25's explicit requirement)."""
     order = []
     for _ in range(repeats):

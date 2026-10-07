@@ -310,9 +310,9 @@ NegotiationResult negotiate(
     }
 
     // Only ever select a transport this build actually implements
-    // (Phase 32 Part Z item 99/100) -- never a capability either peer
-    // merely claims to support in the wire format's forward-looking
-    // enum.
+    // (the async tensor-transfer work item 99/100) -- never a
+    // capability either peer merely claims to support in the wire
+    // format's forward-looking enum.
     const std::vector<TransportKind> implemented = {TransportKind::Tcp};
 
     bool selected = false;

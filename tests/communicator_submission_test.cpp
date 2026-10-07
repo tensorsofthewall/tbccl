@@ -1,7 +1,7 @@
-// Phase 52 Part A: submission is nonblocking. A send/recv/collective call returns a Work without waiting for socket progress, a matching operation on the
-// peer, staging, or a bounded lane. These tests do NOT rely on timing: transport progress is gated explicitly (debug_set_progress_paused), every submission
-// call must return while the gate is closed, and only after every rank has signalled ALL_POSTED is progress released. Before Phase 52 the 10th large send
-// to one peer blocked the caller inside TensorCommWorker::enqueue, so each of these tests would have hung at the post (the watchdog reports that).
+// Submission is nonblocking. A send/recv/collective call returns a Work without waiting for socket progress, a matching operation on the peer, staging, or
+// a bounded lane. These tests do NOT rely on timing: transport progress is gated explicitly (debug_set_progress_paused), every submission call must return
+// while the gate is closed, and only after every rank has signalled ALL_POSTED is progress released. Before the C ABI v1 work the 10th large send to one
+// peer blocked the caller inside TensorCommWorker::enqueue, so each of these tests would have hung at the post (the watchdog reports that).
 
 #include "mesh_test_support.hpp"
 

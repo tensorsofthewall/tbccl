@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 50: collective sequencing and descriptor validation, private to libtbccl.
+// Collective sequencing and descriptor validation, private to libtbccl.
 //
 // Every Communicator keeps a collective sequence number (0, 1, 2, ... in the order collectives run) and, for the N-rank
 // reference algorithms, begins every collective with a descriptor exchange: each non-coordinator rank sends a fixed-size
@@ -55,7 +55,7 @@ struct CollectiveDescriptor
     // 0 = this rank can run the collective; 1 = it cannot, and `note` says why.
     std::uint32_t local_status = 0;
     std::string note;
-    // Phase 51: the algorithm this rank's debug override forces (a CommAlgorithm value; 0 = no override). Ranks that force different algorithms are a mismatch.
+    // The algorithm this rank's debug override forces (a CommAlgorithm value; 0 = no override). Ranks that force different algorithms are a mismatch.
     std::uint32_t forced_algorithm = 0;
 };
 
@@ -78,7 +78,7 @@ struct CollectiveVerdict
     VerdictStatus status = VerdictStatus::Ok;
     std::uint64_t sequence = 0;
     std::string text;
-    // Phase 51: the algorithm every rank must execute (a CommAlgorithm value), chosen once by rank 0. Meaningful when status == Ok.
+    // The algorithm every rank must execute (a CommAlgorithm value), chosen once by rank 0. Meaningful when status == Ok.
     std::uint32_t algorithm = 0;
 };
 

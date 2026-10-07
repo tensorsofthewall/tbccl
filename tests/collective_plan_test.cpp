@@ -1,4 +1,4 @@
-// Phase 51: the internal CollectivePlanner and the algorithm id carried in the verdict. Pure: no sockets.
+// The internal CollectivePlanner and the algorithm id carried in the verdict. Pure: no sockets.
 
 #include "collective_plan.hpp"
 

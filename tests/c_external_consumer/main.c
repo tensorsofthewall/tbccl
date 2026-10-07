@@ -1,4 +1,4 @@
-/* Phase 52: pure-C consumer of the INSTALLED C ABI (include/tbccl/tbccl.h + TBCCL::tbccl_c). Real processes: a parent generates the unique id, forks one child per rank,
+/* pure-C consumer of the INSTALLED C ABI (include/tbccl/tbccl.h + TBCCL::tbccl_c). Real processes: a parent generates the unique id, forks one child per rank,
  * and ferries the opaque endpoint blobs between them over pipes: a test-only stand-in for "the application all-gathers the blobs" (MPI, a launcher, files...).
  * libtbccl contains no bootstrap service. N = 1..4. Built with CONSUMER_WITH_CUDA it also exercises CUDA buffers (the CUDA runtime is included HERE; tbccl.h is CUDA-free). */
 

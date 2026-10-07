@@ -21,7 +21,7 @@ namespace
 
     // Same shared pattern formula as tensor_backend.hpp::pattern_byte(),
     // duplicated per this codebase's established convention for
-    // CUDA-only translation units (Part D of the Phase 17 plan).
+    // CUDA-only translation units.
     __device__ __host__ std::uint8_t pattern_byte_device(std::size_t i, std::uint32_t seed)
     {
         const std::uint64_t index = static_cast<std::uint64_t>(i);
@@ -37,13 +37,13 @@ namespace
         data[i] = pattern_byte_device(i, seed);
     }
 
-    // Deterministic per-byte hash-mix: `rounds` iterations of a
-    // 32-bit integer avalanche mix (a Murmur3-style finalizer),
-    // seeded by the input byte, seed, and byte index -- genuinely
-    // depends on real input data (not trivially hoistable/eliminated),
-    // uses only integer arithmetic (Part AV: no float determinism/
-    // denormal concerns), and its cost scales linearly and
-    // predictably with `rounds` for calibration (Part G).
+    // Deterministic per-byte hash-mix: `rounds` iterations of a 32-bit
+    // integer avalanche mix (a Murmur3-style finalizer), seeded by the
+    // input byte, seed, and byte index -- genuinely depends on real
+    // input data (not trivially hoistable/eliminated), uses only
+    // integer arithmetic (Part AV: no float determinism/ denormal
+    // concerns), and its cost scales linearly and predictably with
+    // `rounds` for calibration.
     __device__ __host__ std::uint8_t bucket_transform(
         std::uint8_t input, std::size_t i, std::uint32_t seed, int rounds)
     {

@@ -1,5 +1,5 @@
-// Phase 45: communicator-wide abort. Every scenario has a live-but-silent (or dead) peer, and an in-process
-// deadline: if abort/destruction does not return, the test aborts the process (outer ctest TIMEOUT is the second net).
+// communicator-wide abort. Every scenario has a live-but-silent (or dead) peer, and an in-process deadline: if
+// abort/destruction does not return, the test aborts the process (outer ctest TIMEOUT is the second net).
 
 #include <tbccl/communicator.hpp>
 
@@ -264,7 +264,7 @@ void test_peer_death_and_remote_abort_observed()
         try { ar(*p.c0, a); } catch (const std::exception &) { threw = true; }
         expect(threw, "later submission rejected");
     }
-    { // remote abort (Phase 50): the abort frame reaches the peer's control watcher, which poisons it without any I/O of its own
+    { // remote abort (the N-rank runtime work): the abort frame reaches the peer's control watcher, which poisons it without any I/O of its own
         Pair p; healthy_allreduce(p);
         p.c0->abort("remote");
         bounded("remote-abort propagation", milliseconds(5000), [&] { while (!p.c1->aborted()) std::this_thread::sleep_for(milliseconds(2)); return 0; });

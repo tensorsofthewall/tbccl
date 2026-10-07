@@ -1,7 +1,8 @@
 #pragma once
 
-// Phase 50/51: forked-process rank harness for failure tests. One child process per rank (the sockets of an abruptly dying rank are closed by the kernel, with no Goodbye);
-// the parent pre-binds every rank's listeners so ports stay dynamic. A child returns normally -> exit 0; a thrown exception -> exit 1 (message on stderr); the body may _exit().
+// The N-rank runtime work: forked-process rank harness for failure tests. One child process per rank (the sockets of an abruptly dying rank are closed by the kernel, with no
+// Goodbye); the parent pre-binds every rank's listeners so ports stay dynamic. A child returns normally -> exit 0; a thrown exception -> exit 1 (message on stderr); the body
+// may _exit().
 
 #include "mesh_test_support.hpp"
 

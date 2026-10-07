@@ -24,36 +24,35 @@ namespace tbccl
 namespace
 {
 
-    // Phase 33 Part F: optional per-stage timing, disabled by default
-    // (a single getenv() at first use, cached -- Part F item 27's
-    // "disabled by default or compiled/activated only under benchmark
-    // flag" requirement). Prints directly to stderr rather than
-    // threading a diagnostic return value through TransferWork's public
-    // API, since this is a one-sided producer of timing data for
-    // humans/scripts reading a captured log, not a value any caller
-    // consumes programmatically.
+    // Optional per-stage timing, disabled by default (a single getenv()
+    // at first use, cached -- the "disabled by default or
+    // compiled/activated only under benchmark flag" requirement).
+    // Prints directly to stderr rather than threading a diagnostic
+    // return value through TransferWork's public API, since this is a
+    // one-sided producer of timing data for humans/scripts reading a
+    // captured log, not a value any caller consumes programmatically.
     bool timing_enabled()
     {
         static const bool enabled = (std::getenv("TBCCL_ASYNC_TIMING") != nullptr);
         return enabled;
     }
 
-    // Phase 34 Part X: diagnostic-only control to test the "idle
-    // staging-thread affects network-thread scheduling" hypothesis.
-    // When set, Impl skips creating staging_thread entirely -- ONLY
-    // safe for workloads that exclusively use the direct path (Part H:
-    // chunk_hint==0 && backend->supports_direct_transport_access()),
-    // since the staged path's submit_job()/wait_job() would otherwise
-    // block forever with no staging thread to service it. Not part of
-    // the public API; gated off by default, for a controlled A/B only
-    // (Part AT: no production topology change without justification).
+    // diagnostic-only control to test the "idle staging-thread affects
+    // network-thread scheduling" hypothesis. When set, Impl skips
+    // creating staging_thread entirely -- ONLY safe for workloads that
+    // exclusively use the direct path (Part H: chunk_hint==0 &&
+    // backend->supports_direct_transport_access()), since the staged
+    // path's submit_job()/wait_job() would otherwise block forever
+    // with no staging thread to service it. Not part of the public
+    // API; gated off by default, for a controlled A/B only (Part AT:
+    // no production topology change without justification).
     bool no_staging_thread_enabled()
     {
         static const bool enabled = (std::getenv("TBCCL_ASYNC_NO_STAGING_THREAD") != nullptr);
         return enabled;
     }
 
-    // Phase 50: framed transfers (TransferRequest::framed). 16 bytes: u32 magic, u32 reserved (0), u64 payload length, big endian.
+    // Framed transfers (TransferRequest::framed). 16 bytes: u32 magic, u32 reserved (0), u64 payload length, big endian.
     constexpr std::uint32_t kFrameMagic = 0x54424D50U; // "TBMP"
     constexpr std::size_t kFrameHeaderBytes = 16;
 
@@ -100,12 +99,12 @@ struct TransferWork::State
     bool error_flag = false;
     ErrorCode error_code = ErrorCode::Success;
     std::string error_message;
-    std::uint64_t lat_id = 0; // Phase 55 trace id (0 = untraced)
+    std::uint64_t lat_id = 0; // the latency-audit work trace id (0 = untraced)
 };
 
 TransferWork::TransferWork() : state_(std::make_shared<State>())
 {
-    state_->lat_id = std::exchange(detail::tl_lat_next_work_id, 0); // Phase 56: a collective Work is traced under the id its submitter reserved
+    state_->lat_id = std::exchange(detail::tl_lat_next_work_id, 0); // A collective Work is traced under the id its submitter reserved
 }
 
 void TransferWork::wait()
@@ -195,8 +194,8 @@ namespace
     // call's submit_job()/wait_job() pair brackets their concurrent
     // work, so it never outlives the call that owns it (same lifetime
     // discipline as RingExecutor's RingSession, independently
-    // implemented -- see docs/phase32_report.md's RingExecutor-reuse
-    // decision for why this isn't literal code sharing).
+    // implemented --.md's RingExecutor-reuse decision for why this
+    // isn't literal code sharing).
     struct ChunkProgress
     {
         explicit ChunkProgress(std::size_t chunk_count)
@@ -230,7 +229,7 @@ namespace
     // Staging thread's role for a Send request: acquire a slot, ask the
     // backend to fill it from the source tensor, publish it as ready.
     //
-    // Phase 35 Part S: optional per-chunk timeline timing (same
+    // Optional per-chunk timeline timing (same
     // TBCCL_ASYNC_TIMING gate as the direct path's instrumentation) --
     // this is what lets a benchmark prove device-copy/network overlap
     // from something other than aggregate throughput, per Part S item
@@ -479,14 +478,14 @@ struct TensorCommWorker::Impl
     std::atomic<bool> stopping{false};
     bool paused = false; // guarded by queue_mutex (test hook)
 
-    // Phase 50 (duplex routing): requests queued or running on this lane, per direction (0 = Send, 1 = Recv). Incremented by enqueue(), decremented
-    // right BEFORE a request's Work becomes terminal, so a caller that waited for a request sees its lane as free again.
+    // Requests queued or running on this lane, per direction (0 = Send, 1 = Recv). Incremented by enqueue(), decremented right BEFORE a request's
+    // Work becomes terminal, so a caller that waited for a request sees its lane as free again.
     std::atomic<int> inflight[2] = {{0}, {0}};
     static int dir_index(TransferDirection d) { return d == TransferDirection::Send ? 0 : 1; }
     void retire(TransferDirection d) { inflight[dir_index(d)].fetch_sub(1, std::memory_order_acq_rel); }
 
-    // Phase 45: terminal abort. Written once under queue_mutex (so enqueue/dequeue observe it consistently), then
-    // read lock-free. `active` is true while the network thread owns a dequeued request.
+    // Terminal abort. Written once under queue_mutex (so enqueue/dequeue observe it consistently), then read
+    // lock-free. `active` is true while the network thread owns a dequeued request.
     std::atomic<bool> aborted{false};
     std::string abort_reason;
     bool active = false;
@@ -495,13 +494,11 @@ struct TensorCommWorker::Impl
     std::mutex stats_mutex;
     TensorCommWorker::Stats stats;
 
-    // Phase 33 Part O/P: a fresh StagingPool per request was measured
-    // to cost an order of magnitude more than a reused one for large
-    // buffers -- first-touch page faults on freshly allocated memory,
-    // not the memcpy bandwidth itself (see docs/phase33_report.md:
-    // ~14ms fresh-alloc+memcpy vs. ~4.5ms reused, for a 64MiB buffer,
-    // on the Linux test machine). Only network_loop's single thread
-    // (via process_request) ever touches this cache, so it needs no
+    // A fresh StagingPool per request was measured to cost an order of
+    // magnitude more than a reused one for large buffers --
+    // first-touch page faults on freshly allocated memory, not the
+    // memcpy bandwidth itself. Only network_loop's single thread (via
+    // process_request) ever touches this cache, so it needs no
     // separate lock -- it is not shared with staging_loop/job_ handoff
     // state. A request whose (chunk_capacity, depth) doesn't match the
     // cached pool still pays a fresh allocation (unavoidable -- the
@@ -521,7 +518,7 @@ struct TensorCommWorker::Impl
     std::thread staging_thread;
     std::thread network_thread;
 
-    // Phase 50: the staging thread is created on the first request that needs the staged path (never for a Host-only
+    // The staging thread is created on the first request that needs the staged path (never for a Host-only
     // communicator, which is always direct), so an N-rank communicator with two lanes per peer does not pay for threads
     // it never uses. Only the network thread creates it, and ~Impl reads it after joining the network thread.
     const bool staging_allowed = !no_staging_thread_enabled();
@@ -596,7 +593,7 @@ struct TensorCommWorker::Impl
     // finished -- same single-job-at-a-time submit/wait discipline as
     // RingExecutor::submit()/wait_for_job(), reimplemented here rather
     // than shared because RingExecutor is scoped to src/collectives and
-    // tied to ring-collective tracing (see docs/phase32_report.md).
+    // tied to ring-collective tracing.
     void submit_job(std::function<void()> staging_job)
     {
         {
@@ -662,7 +659,7 @@ struct TensorCommWorker::Impl
                 {
                     // stopping with the queue fully drained -- only
                     // path that exits this thread. A pending queue is
-                    // always drained first, even mid-shutdown (Part AW
+                    // always drained first, even mid-shutdown (
                     // item 173: shutdown must not deadlock, but it also
                     // must not silently drop already-enqueued work).
                     return;
@@ -705,12 +702,12 @@ struct TensorCommWorker::Impl
         }
     }
 
-    // Phase 33 Part H/N/U: the direct path. Runs entirely on the
-    // network thread (the caller of process_request, i.e.
-    // network_loop) -- no staging thread involvement, no StagingPool,
-    // no TBCCL-owned memcpy. Measured to remove the two-thread
-    // handoff/synchronization cost that dominated the staged path's
-    // regression for host<->host transfers (docs/phase33_report.md).
+    // The direct path. Runs entirely on the network thread (the
+    // caller of process_request, i.e. network_loop) -- no staging
+    // thread involvement, no StagingPool, no TBCCL-owned memcpy.
+    // Measured to remove the two-thread handoff/synchronization cost
+    // that dominated the staged path's regression for host<->host
+    // transfers.
     void process_request_direct(
         const TransferRequest &request,
         const std::shared_ptr<TransferWork::State> &state)
@@ -786,8 +783,8 @@ struct TensorCommWorker::Impl
         // A caller that explicitly sets chunk_hint (wanting pipelined
         // overlap even for host memory, e.g. to hide compute behind
         // transfer -- see async_overlap_bench.cpp) still gets the
-        // staged path, matching Phase 32's existing chunk/depth
-        // semantics exactly.
+        // staged path, matching the async tensor-transfer work's
+        // existing chunk/depth semantics exactly.
         if (request.chunk_hint == 0 && request.backend->supports_direct_transport_access())
         {
             process_request_direct(request, state);
@@ -927,10 +924,10 @@ TensorCommWorker::~TensorCommWorker() = default;
 
 TransferWork TensorCommWorker::enqueue(TransferRequest request)
 {
-    // Duplex routing (Phase 50). Each direction stays FIFO because all of its outstanding requests share one lane, and a lane never serves both
-    // directions at once, so a receive waiting for data never delays a send (and vice versa). When only one direction is in flight (the common,
-    // sequential case) everything runs on the first lane, exactly as the single-lane worker did; the second lane (and its thread) is woken only for
-    // genuine send/recv concurrency.
+    // Duplex routing (the N-rank runtime work). Each direction stays FIFO because all of its outstanding requests share one lane, and a lane never
+    // serves both directions at once, so a receive waiting for data never delays a send (and vice versa). When only one direction is in flight (the
+    // common, sequential case) everything runs on the first lane, exactly as the single-lane worker did; the second lane (and its thread) is woken
+    // only for genuine send/recv concurrency.
     std::unique_lock<std::mutex> route_lock(route_mutex_, std::defer_lock);
     Impl *chosen = impl_.get();
     if (recv_impl_ && !request.shared_lane)

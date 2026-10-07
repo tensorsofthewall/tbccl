@@ -1,12 +1,12 @@
 #pragma once
 
-// Phase 51: the internal collective planner. Communicator::all_reduce()/broadcast()/all_gather()/barrier() keep their Phase 50 semantics; BEHIND them rank 0
+// The internal collective planner. Communicator::all_reduce()/broadcast()/all_gather()/barrier() keep their the N-rank runtime work semantics; BEHIND them rank 0
 // maps {collective kind, world size, payload bytes, datatype, op} to a CollectivePlan, and the verdict carries the chosen algorithm id to every rank, so all
 // ranks execute exactly the same plan regardless of rank-local environment. Private to libtbccl: nothing here is public API, and it contains no framework,
 // model or device knowledge.
 //
-// world_size 1 is Local and world_size 2 is the N2FastPath (the Phase 41-50 specialised engine, never routed through the generic algorithms). For world_size > 2
-// the Phase 50 root-based algorithms stay available as `Reference` (correctness fallback, oracle, benchmark baseline).
+// world_size 1 is Local and world_size 2 is the N2FastPath (the framework-independent runtime-50 specialised engine, never routed through the generic algorithms). For world_size > 2
+// the N-rank runtime root-based algorithms stay available as `Reference` (correctness fallback, oracle, benchmark baseline).
 //
 // A rank may carry a debug override (TBCCL_BARRIER_ALGORITHM / TBCCL_BROADCAST_ALGORITHM / TBCCL_ALLGATHER_ALGORITHM / TBCCL_ALLREDUCE_ALGORITHM =
 // reference | tree | recursive | ring | dissemination). Overrides exist to A/B algorithms and force regression paths, are not a stable interface, and are
@@ -40,8 +40,8 @@ struct CollectivePlan
     CommAlgorithm algorithm = CommAlgorithm::Reference;
 };
 
-// Selection thresholds. Generic LOCAL LOOPBACK heuristics measured in Phase 51 (docs/phase51_results.md, docs/data/phase51/algo_sweep_raw.jsonl at N=3, 4, 8), NOT
-// Thunderbolt-tuned constants; a future topology / autotuning layer may replace them. The planner is a pure function of (kind, world_size, bytes) and these values.
+// Selection thresholds. Generic LOCAL LOOPBACK heuristics measured in N>2 collective-selection, NOT Thunderbolt-tuned constants; a future topology / autotuning
+// layer may replace them. The planner is a pure function of (kind, world_size, bytes) and these values.
 struct PlannerThresholds
 {
     // all_reduce, world_size > 2: ring when bytes >= all_reduce_ring_bytes_per_extra_rank * (world_size - 2), otherwise a latency algorithm. A ring costs 2(N-1)
@@ -50,8 +50,8 @@ struct PlannerThresholds
     // all_reduce latency algorithm: recursive doubling for power-of-two worlds up to this size (it beat the tree at N=4 by 5-25% between 256 B and 128 KiB and lost to it at
     // N=8 by 7-13%), the binomial tree otherwise.
     std::size_t recursive_doubling_max_world = 4;
-    // barrier: dissemination from this world size on. At N <= 8 (the largest world TBCCL accepts) the control-plane gather/release (the Phase 50 reference, now only two
-    // control hops) measured FASTER than the log N data rounds of the dissemination barrier (1.3-2.2x), so it is not selected by default below this size.
+    // barrier: dissemination from this world size on. At N <= 8 (the largest world TBCCL accepts) the control-plane gather/release (the N-rank runtime reference, now
+    // only two control hops) measured FASTER than the log N data rounds of the dissemination barrier (1.3-2.2x), so it is not selected by default below this size.
     std::size_t barrier_dissemination_min_world = 9;
 };
 

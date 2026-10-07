@@ -183,15 +183,16 @@ std::unique_ptr<ExternalMemoryProvider> make_provider(
 
 // ---------------------------------------------------------------------
 // Collective executor: a generalized, promoted BucketAllReduceWorker
-// (Phase 39) -- one persistent thread driving n2_all_reduce_tensor()
-// jobs one at a time (matching that function's own "at most one
-// AllReduce-related transfer in flight" contract), returning a Work per
-// job immediately. Unlike BucketAllReduceWorker, a job failure does NOT
-// poison all subsequently queued jobs -- each job's failure is isolated
-// to its own Work (Part Q: communicator-owned Work semantics should not
-// silently wedge unrelated future operations). A communicator-level
-// transport/protocol failure is still tracked separately (failed_) and
-// does deliberately fail all future operations (Part BJ).
+// (the bucketed all-reduce overlap work) -- one persistent thread
+// driving n2_all_reduce_tensor() jobs one at a time (matching that
+// function's own "at most one AllReduce-related transfer in flight"
+// contract), returning a Work per job immediately. Unlike
+// BucketAllReduceWorker, a job failure does NOT poison all subsequently
+// queued jobs -- each job's failure is isolated to its own Work (Part
+// Q: communicator-owned Work semantics should not silently wedge
+// unrelated future operations). A communicator-level transport/protocol
+// failure is still tracked separately (failed_) and does deliberately
+// fail all future operations.
 // ---------------------------------------------------------------------
 
 struct CollectiveJob
@@ -204,7 +205,7 @@ struct CollectiveJob
     // via state_of() used inline as a function-call argument (see run()
     // below), never stored in a variable with an explicit type.
     Work work;
-    std::uint64_t lat_id = 0; // Phase 56 trace id of the collective's Work (0 = untraced)
+    std::uint64_t lat_id = 0; // the cold-progress work trace id of the collective's Work (0 = untraced)
 };
 
 class CollectiveExecutor
@@ -225,8 +226,8 @@ public:
     CollectiveExecutor(const CollectiveExecutor &) = delete;
     CollectiveExecutor &operator=(const CollectiveExecutor &) = delete;
 
-    // Phase 45: terminal and idempotent. Queued jobs never started, so they fail without touching user memory; the
-    // active job (if any) unwinds when the Transport is interrupted and its Work fails after it returns.
+    // Terminal and idempotent. Queued jobs never started, so they fail without touching user memory; the active
+    // job (if any) unwinds when the Transport is interrupted and its Work fails after it returns.
     void abort(const std::string &reason)
     {
         std::deque<CollectiveJob> doomed;
@@ -446,8 +447,8 @@ struct Communicator::Impl
         throw Error(ErrorCode::InternalError, "internal_error: sole_channel() on a communicator without peers");
     }
 
-    // Phase 45: Running -> AbortRequested -> Aborted. The first transition's reason wins. Lock order: nothing is
-    // held across calls out of request_abort() (it only takes each component's own short mutex, one at a time).
+    // Running -> AbortRequested -> Aborted. The first transition's reason wins. Lock order: nothing is held
+    // across calls out of request_abort() (it only takes each component's own short mutex, one at a time).
     enum class State : int { Running = 0, AbortRequested = 1, Aborted = 2 };
     std::atomic<int> state{0};
     std::mutex reason_mutex;
@@ -491,8 +492,8 @@ struct Communicator::Impl
     // ExternalMemoryProvider (which owns the AsyncMemoryBackend those
     // calls run against) must therefore outlive completion, not just the
     // call to send()/recv() itself -- tracked here and pruned lazily
-    // (amortized, no per-call thread, matching Part BB/BC) rather than
-    // spawning a dedicated thread per operation just to keep it alive.
+    // (amortized, no per-call thread, matching) rather than spawning a
+    // dedicated thread per operation just to keep it alive.
     std::atomic<int> debug_fail_admission{0}; // test hook: the next N P2P admissions fail as if out of memory
     std::mutex outstanding_mutex;
     std::vector<std::pair<Work, std::shared_ptr<ExternalMemoryProvider>>> outstanding;
@@ -632,8 +633,8 @@ void require_not_failed(const Communicator &comm)
 namespace
 {
 
-// Phase 52: P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the
-// peer's persistent progress thread picks up in FIFO order. An allocation failure while admitting is reported at once as ResourceExhausted; nothing was
+// P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the peer's
+// persistent progress thread picks up in FIFO order. An allocation failure while admitting is reported at once as ResourceExhausted; nothing was
 // accepted, so the communicator stays usable. Any other failure after admission began poisons the communicator, as before. (A template only because
 // Communicator::Impl is private to the class.)
 template <typename ImplT>
@@ -819,10 +820,11 @@ Work Communicator::all_reduce(
     if (send_buf.data != recv_buf.data && count > 0 && local_error.empty())
     {
         // Out-of-place: stage send_buf's content into recv_buf's location before the collective, so both root and non-root logic can
-        // uniformly treat recv_buf as "holds the local input, ends up holding the result" (Part AB). Host-only memcpy is correct
-        // here because MemoryKind::MetalShared's data is CPU-visible by contract and MemoryKind::Cuda providers are expected to
-        // perform device-side copies before returning from their own factory if they need this -- Phase 41 does not implement an
-        // out-of-place external-CUDA AllReduce; call with send_buf.data == recv_buf.data (in-place) for Cuda buffers.
+        // uniformly treat recv_buf as "holds the local input, ends up holding the result". Host-only memcpy is correct here because
+        // MemoryKind::MetalShared's data is CPU-visible by contract and MemoryKind::Cuda providers are expected to perform
+        // device-side copies before returning from their own factory if they need this -- the framework-independent runtime work
+        // does not implement an out-of-place external-CUDA AllReduce; call with send_buf.data == recv_buf.data (in-place) for Cuda
+        // buffers.
         if (recv_buf.memory_kind == MemoryKind::Cuda)
         {
             throw Error(ErrorCode::Unsupported, 
@@ -842,7 +844,7 @@ Work Communicator::all_reduce(
         if (world == 2)
         {
             // The N=2 fast path: no descriptor exchange, the specialised heterogeneous engine unchanged (Part 55).
-            constexpr std::size_t kRoot = 0; // Part X: fixed internal policy, never exposed.
+            constexpr std::size_t kRoot = 0; // Fixed internal policy, never exposed.
             detail::PeerChannel &sole = impl->sole_channel();
             AsyncMemoryBackend &primary = provider->primary_backend();
             if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_reduce n2 fast path bytes=" + std::to_string(total_bytes) +

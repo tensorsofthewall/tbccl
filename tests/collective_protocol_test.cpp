@@ -1,4 +1,4 @@
-// Phase 50: collective descriptor / verdict encoding and the coordinator's judgement. Pure: no sockets.
+// Collective descriptor / verdict encoding and the coordinator's judgement. Pure: no sockets.
 
 #include "collective_protocol.hpp"
 

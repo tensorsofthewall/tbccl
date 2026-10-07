@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 55: internal per-operation latency trace for small-message investigation. Off by default and free when off (one cached bool test per
+// Internal per-operation latency trace for small-message investigation. Off by default and free when off (one cached bool test per
 // site). With TBCCL_LATENCY_TRACE=<path> every point-to-point operation records monotonic-nanosecond events into a preallocated ring and the
 // process writes `<path>.<pid>` (CSV: ns,id,site,aux) at exit. No public API, no wire change: an operation is identified by a process-local id
 // assigned at admission; correlating a send in one process with the receive in another is done offline by FIFO order per direction (loopback
@@ -9,7 +9,7 @@
 // Sites (the plan's T0..T10): 0 submit entered, 1 admission enqueued, 2 worker dequeued, 3 send syscall entered, 4 send syscall returned,
 // 5 receive syscall returned (first bytes), 6 frame header validated, 7 destination ready (payload complete), 8 Work terminal,
 // 9 waiter awakened, 10 wait returned.
-// Phase 56 adds the collective-executor sites (the id is the PARENT collective Work's; aux of 14/15 is the child transfer's id, so parent and child
+// the cold-progress work adds the collective-executor sites (the id is the PARENT collective Work's; aux of 14/15 is the child transfer's id, so parent and child
 // events correlate offline): 11 collective submitted (caller thread, entry of submit), 12 executor notified (caller, after the notify), 13 executor
 // thread woke and took the job, 14 child transfer posted by the executor, 15 executor observed the child terminal (its wait returned).
 // A collective's terminal (8) and waiter wake (9, 10) reuse the point-to-point sites with the parent id.
@@ -119,7 +119,7 @@ inline bool lat_on() noexcept
 // socket-level sites need no knowledge of the transfer machinery above.
 inline thread_local std::uint64_t tl_lat_current_id = 0;
 inline thread_local std::int64_t tl_lat_submit_ns = 0;
-// Phase 56: the collective the executor thread is running (0 = none), the id the next TransferWork constructed on this thread takes (set by
+// The collective the executor thread is running (0 = none), the id the next TransferWork constructed on this thread takes (set by
 // CollectiveExecutor::submit around make()), and the id of the last transfer enqueued by this thread (read by run_transfer for correlation).
 inline thread_local std::uint64_t tl_lat_parent_id = 0;
 inline thread_local std::uint64_t tl_lat_next_work_id = 0;

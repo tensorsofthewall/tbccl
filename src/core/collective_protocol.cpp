@@ -1,4 +1,4 @@
-// Phase 50: collective descriptor / verdict encoding and the coordinator's judgement (collective_protocol.hpp).
+// Collective descriptor / verdict encoding and the coordinator's judgement (collective_protocol.hpp).
 
 #include "collective_protocol.hpp"
 

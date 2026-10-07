@@ -1,4 +1,4 @@
-// Phase 50: full-mesh establishment and PeerChannel ownership (connection_manager.hpp).
+// full-mesh establishment and PeerChannel ownership (connection_manager.hpp).
 
 #include <tbccl/error.hpp>
 #include "connection_manager.hpp"
@@ -40,10 +40,10 @@ namespace detail
 std::unique_ptr<Listener> ListenersAccess::take_control(CommunicatorListeners &l) { return std::move(l.impl_->control); }
 std::unique_ptr<Listener> ListenersAccess::take_data(CommunicatorListeners &l) { return std::move(l.impl_->data); }
 
-// Phase 51: a data transport that connects on first use. The HIGHER rank of a pair dials the lower rank's data listener (the Phase 50 rule); the lower rank waits
-// for its acceptor thread to install the incoming connection. Both happen on the lane worker thread, never on the caller's thread, so send()/recv() on the
-// Communicator stay non-blocking. Waiting for the peer to dial is unbounded (like any receive) and is ended by abort(). Exactly one connection can ever exist: only
-// one side dials, and the acceptor rejects a second connection for the same rank.
+// A data transport that connects on first use. The HIGHER rank of a pair dials the lower rank's data listener (the N-rank runtime rule); the lower rank waits for
+// its acceptor thread to install the incoming connection. Both happen on the lane worker thread, never on the caller's thread, so send()/recv() on the Communicator
+// stay non-blocking. Waiting for the peer to dial is unbounded (like any receive) and is ended by abort(). Exactly one connection can ever exist: only one side
+// dials, and the acceptor rejects a second connection for the same rank.
 struct DialSpec
 {
     bool enabled = false; // false on the accepting (lower-rank) side

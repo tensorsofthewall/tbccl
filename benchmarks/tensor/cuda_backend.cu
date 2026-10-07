@@ -191,8 +191,8 @@ namespace
     // Pageable: an ordinary heap allocation, reallocated by allocate().
     // Pinned: cudaHostAlloc()'d page-locked memory, released via
     // cudaFreeHost() -- required for cudaMemcpyAsync() to actually
-    // behave asynchronously (Part F, requirement 21's caution: plain
-    // pageable memory gives no such guarantee).
+    // behave asynchronously (, requirement 21's caution: plain pageable
+    // memory gives no such guarantee).
     class HostStagingBuffer
     {
     public:
@@ -288,8 +288,8 @@ namespace
     //
     // Every stage method's completion guarantee (Part 8) is upheld by
     // synchronizing the stream (or using a synchronous cudaMemcpy)
-    // before that method returns -- Phase 17 does not attempt any
-    // cross-stage overlap/double-buffering (Part R).
+    // before that method returns -- the CUDA tensor-benchmark work does not attempt any
+    // cross-stage overlap/double-buffering.
     // -----------------------------------------------------------------------------
 
     class CudaBackend final : public TensorBackend

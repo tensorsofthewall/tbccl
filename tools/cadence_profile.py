@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 56: communication-gap statistics and replay profiles from the call-timestamp dumps of exo-tbccl's benchmarks/cadence_recorder.py.
+"""Communication-gap statistics and replay profiles from the call-timestamp dumps of exo-tbccl's benchmarks/cadence_recorder.py.
 
     cadence_profile.py --out DIR --tag TAG rank0.json rank1.json ...
 

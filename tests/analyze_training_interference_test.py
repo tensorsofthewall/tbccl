@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for analyze_training_interference.py (Phase 31 Part K-N/AA)."""
+"""Tests for analyze_training_interference.py (the training-interference work)."""
 from pathlib import Path
 import sys
 import unittest
@@ -86,7 +86,8 @@ class FisherExactTests(unittest.TestCase):
         self.assertGreater(p, 0.9)
 
     def test_strong_difference_low_p_value(self):
-        # 9/1000 vs 0/1200 -- Phase 30/31's actual headline comparison shape.
+        # 9/1000 vs 0/1200 -- the sustained-session reproduction work's
+        # actual headline comparison shape.
         table = [[9, 991], [0, 1200]]
         p = ati.fisher_exact_two_sided(table)
         self.assertLess(p, 0.01)

@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 49: the one place the CUDA reduction backends define how two elements are summed, shared by cuda_reduce_backend.cu and
+// The one place the CUDA reduction backends define how two elements are summed, shared by cuda_reduce_backend.cu and
 // cuda_external_async_backend.cu (device code lives under benchmarks/tensor only; the core library never sees CUDA headers).
 //
 // Float16 / BFloat16 follow the documented host semantics (src/collectives/low_precision.hpp): widen both operands to float32, ONE float32

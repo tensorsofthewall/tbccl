@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Tests for capture_tb4_scheduler_trace.py's TraceSession restoration
-logic, extended in Phase 26 Part G with receive-path events (irq/softirq/
+logic, extended in receive-path investigation with receive-path events (irq/softirq/
 napi/net/sock). Runs entirely against a fake tracefs tree under a temp
 directory -- no root privileges, no real /sys/kernel/tracing access --
 since the real path requires sudo and this module's own TRACEFS constant
-is monkeypatched per test (Phase 26 Part V item 87/89)."""
+is monkeypatched per test (the receive-path investigation work item 87/89)."""
 import json
 from pathlib import Path
 import sys
@@ -107,11 +107,12 @@ class TraceSessionRestorationTests(unittest.TestCase):
     def test_skips_restoring_filter_that_was_originally_empty(self):
         # Regression test: writing "0" back to an originally-empty filter
         # file for irq/napi/net/sock events raised EINVAL on the real
-        # kernel (confirmed via a Phase 26 live smoke test against
-        # thunderbolt0 traffic) -- these event groups' field sets don't
-        # accept a bare "0" operand the way sched_switch/sched_wakeup's
-        # pid fields do. The fix: never write back an originally-empty
-        # filter at all, since empty is already the default state.
+        # kernel (confirmed via a receive-path investigation live smoke
+        # test against thunderbolt0 traffic) -- these event groups' field
+        # sets don't accept a bare "0" operand the way
+        # sched_switch/sched_wakeup's pid fields do. The fix: never write
+        # back an originally-empty filter at all, since empty is already
+        # the default state.
         events = ["napi/napi_poll"]
         make_fake_tracefs(self.root, events)
         napi_filter = self.root / "events/napi/napi_poll/filter"
@@ -125,10 +126,10 @@ class TraceSessionRestorationTests(unittest.TestCase):
         # Regression test: writing "-1" (or the real readback "no pid")
         # back to set_ftrace_pid verbatim raised EINVAL on the real kernel.
         # The clear operation this kernel actually accepts is writing a
-        # single space (confirmed empirically in Phase 26) -- __exit__
-        # must use that, not the literal original readback text, and must
-        # not skip clearing altogether (that would leak the session's pid
-        # into whatever runs next).
+        # single space (confirmed empirically in receive-path
+        # investigation) -- __exit__ must use that, not the literal
+        # original readback text, and must not skip clearing altogether
+        # (that would leak the session's pid into whatever runs next).
         events = ["sched/sched_switch"]
         make_fake_tracefs(self.root, events, set_ftrace_pid="-1")
         set_ftrace_pid_path = self.root / "set_ftrace_pid"
@@ -152,9 +153,9 @@ class TraceSessionRestorationTests(unittest.TestCase):
 
     def test_clears_set_ftrace_pid_when_readback_is_no_pid(self):
         # This kernel's actual readback for "unset" is the string "no pid"
-        # (confirmed via a real /sys/kernel/tracing read in Phase 26),
-        # not "-1" -- both must be treated as the unset default and
-        # cleared with a space rather than restored verbatim.
+        # (confirmed via a real /sys/kernel/tracing read in receive-path
+        # investigation), not "-1" -- both must be treated as the unset
+        # default and cleared with a space rather than restored verbatim.
         events = ["sched/sched_switch"]
         make_fake_tracefs(self.root, events, set_ftrace_pid="no pid")
         set_ftrace_pid_path = self.root / "set_ftrace_pid"
@@ -198,9 +199,10 @@ class FilterExpressionClassificationTests(unittest.TestCase):
         # Regression test: a real /sys/kernel/tracing filter file, once an
         # invalid expression has ever been written to it, permanently
         # echoes this banner on read even after writing "" -- confirmed via
-        # a live Phase 26 capture. It must never be treated as a filter
-        # expression to restore (attempting to write it back verbatim
-        # always fails with EINVAL, since it isn't valid filter syntax).
+        # a live the receive-path investigation work capture. It must never
+        # be treated as a filter expression to restore (attempting to write
+        # it back verbatim always fails with EINVAL, since it isn't valid
+        # filter syntax).
         banner = ("none\n    ^\nparse_error: Field not found\n     ^\n"
                   "parse_error: Field not found")
         self.assertFalse(cap.looks_like_real_filter_expression(banner))
@@ -219,9 +221,10 @@ class ReceiveEventDiscoveryTests(unittest.TestCase):
     def test_receive_events_are_all_marked_system_wide(self):
         # RECEIVE_EVENTS has no PID-filterable member -- every one of them
         # must appear in SYSTEM_WIDE_EVENTS, or the capture tool would
-        # silently under-report which events are unscoped (Phase 26 Part G
-        # item 26: "Do not pretend system-wide events belong uniquely to
-        # TBCCL without additional correlation").
+        # silently under-report which events are unscoped (the
+        # receive-path investigation work item 26: "Do not pretend
+        # system-wide events belong uniquely to TBCCL without additional
+        # correlation").
         for event in cap.RECEIVE_EVENTS:
             self.assertIn(event, cap.SYSTEM_WIDE_EVENTS)
 
@@ -245,7 +248,7 @@ class ReceiveEventDiscoveryTests(unittest.TestCase):
 
 
 class FunctionTracingTests(unittest.TestCase):
-    """Phase 29 Part G: Tier-1 narrow function tracing (--include-nhi-
+    """Tier-1 narrow function tracing (--include-nhi-
     functions) -- current_tracer/set_ftrace_filter save/restore, and the
     real bug this phase found: set_ftrace_pid must NOT be written when a
     function_filter is active, since ring_msix/ring_work/tb_ring_poll run
@@ -313,10 +316,11 @@ class FunctionTracingTests(unittest.TestCase):
         self.assertEqual((self.root / "set_ftrace_filter").read_text(), "some_other_func")
 
     def test_set_pid_filter_does_not_write_set_ftrace_pid_when_function_filter_active(self):
-        # The real Phase 29 bug: NHI functions run in interrupt/workqueue
-        # context, not the benchmark's own PID -- set_ftrace_pid must stay
-        # untouched (system-wide function tracing) or every NHI function
-        # trace line is silently filtered away.
+        # The real the NHI DMA-ring work bug: NHI functions run in
+        # interrupt/workqueue context, not the benchmark's own PID --
+        # set_ftrace_pid must stay untouched (system-wide function
+        # tracing) or every NHI function trace line is silently filtered
+        # away.
         events = ["sched/sched_switch"]
         make_fake_tracefs(self.root, events, set_ftrace_pid="no pid")
         cap.TRACEFS = self.root

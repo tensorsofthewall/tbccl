@@ -1,7 +1,7 @@
-// Phase 38 Part Q/BZ: hardware correctness tests for CudaReduceBackend
+// Hardware correctness tests for CudaReduceBackend
 // (benchmarks/tensor/cuda_reduce_backend.{hpp,cu}) on a real CUDA device.
 // No networking involved -- this isolates the local SUM kernel itself,
-// matching Part AJ's correctness-ladder step 2 (before any heterogeneous
+// matching the correctness-ladder step 2 (before any heterogeneous
 // cross-machine transfer is attempted).
 
 #include "tensor/cuda_chunked_async_backend.hpp"
@@ -135,7 +135,7 @@ namespace
         // Genuine second kernel, independent of the reduction kernel,
         // reading the AllReduce-equivalent result directly from device
         // memory -- proves the result is truly GPU-resident/consumable,
-        // not merely correct via host readback (Part BR).
+        // not merely correct via host readback.
         tbccl_bench::tensor::cuda_launch_consumer_double_f32(
             backend.source_device_ptr(), backend.destination_device_ptr(),
             kCount, nullptr);

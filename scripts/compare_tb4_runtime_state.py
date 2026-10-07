@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Structured diff of two capture_tb4_runtime_state.py JSON snapshots.
 
-Phase 30 Part D. Read-only, does not mutate either input. Every leaf field
+The sustained-session reproduction work. Read-only, does not mutate either input. Every leaf field
 found in either snapshot is classified into exactly one of:
 
   changed     -- present in both, with a different value
@@ -10,9 +10,9 @@ found in either snapshot is classified into exactly one of:
                  real comparison is possible
 
 A field must never be silently treated as "changed" just because it is
-missing from one side (e.g. a historical Phase 27 snapshot that predates
+missing from one side (e.g. a historical the NHI ring-cadence work snapshot that predates
 a field this tool now captures) -- that would fabricate a difference that
-was never actually observed. See Part D item 19/99 in the Phase 30 plan.
+was never actually observed. See Part D item 19/99 in the sustained-session reproduction plan.
 
 List-valued fields (e.g. pci_devices) are flattened by positional index.
 capture_tb4_runtime_state.py sorts every list it produces by a stable key

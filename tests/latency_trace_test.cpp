@@ -1,6 +1,6 @@
-// Phase 55: the internal per-operation latency trace. With TBCCL_LATENCY_TRACE set before first use, every point-to-point operation records ordered
-// events (submit, admission, worker dequeue, terminal, waiter wake, wait return, plus the socket-level sites for send and receive). Run with the
-// argument `off` the trace must record nothing (the negative control for the gate: a trace that is not off by default would fail it).
+// The internal per-operation latency trace. With TBCCL_LATENCY_TRACE set before first use, every point-to-point operation records ordered events
+// (submit, admission, worker dequeue, terminal, waiter wake, wait return, plus the socket-level sites for send and receive). Run with the argument
+// `off` the trace must record nothing (the negative control for the gate: a trace that is not off by default would fail it).
 
 #include <tbccl/communicator.hpp>
 
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
             }
         }
         expect(sends == 5 && recvs == 5, "five sends and five receives");
-        // Phase 56: the collective executor sites. Each all_gather (2 ranks x 3) is one parent with two child transfers; the parent's events and its
+        // The collective executor sites. Each all_gather (2 ranks x 3) is one parent with two child transfers; the parent's events and its
         // children's events must correlate through the aux field and be ordered.
         std::map<std::uint64_t, std::map<std::uint32_t, std::int64_t>> all;
         std::map<std::uint64_t, std::vector<std::uint64_t>> posted, observed;

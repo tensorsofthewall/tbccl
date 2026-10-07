@@ -1,6 +1,6 @@
-// Phase 50: local (loopback, one process, one thread per rank) diagnostic of the REFERENCE N-rank collectives: communicator initialization time and
-// per-collective latency for world_size 2, 3 and 4. Diagnostic only: the reference algorithms are not optimized (Phase 51) and nothing here is a
-// network measurement. Usage: communicator_nrank_bench [iters]
+// Local (loopback, one process, one thread per rank) diagnostic of the REFERENCE N-rank collectives: communicator initialization time and
+// per-collective latency for world_size 2, 3 and 4. Diagnostic only: the reference algorithms are not optimized (the N>2 collective-selection work)
+// and nothing here is a network measurement. Usage: communicator_nrank_bench [iters]
 
 #include <tbccl/communicator.hpp>
 

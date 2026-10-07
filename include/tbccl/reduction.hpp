@@ -10,7 +10,7 @@ namespace tbccl
 // 4-bit weights are deliberately NOT members (they are transported, not reduced).
 //
 // Numeric values are fixed (an installed consumer may store them): Int32..Float64 are the original Phase 1 set;
-// Int8, UInt8, Float16 and BFloat16 were appended in Phase 49. Never reorder or reuse a value.
+// Int8, UInt8, Float16 and BFloat16 were appended in low-precision datatype. Never reorder or reuse a value.
 enum class DataType
 {
     Int32 = 0,

@@ -1,7 +1,7 @@
-// Phase 50: a heterogeneous N-rank world on one machine: exactly ONE rank owns CUDA buffers (the single GPU is never shared between ranks), the others
-// use Host memory. world_size 3 and 4, the CUDA rank at rank 0 (the reference root) and at the last rank (a non-root contributor). Float32 / Int32 /
-// Int8 all_reduce, broadcast from a CUDA and from a Host root, all_gather with device input and outputs. The producer work is ordered on a user stream
-// with no host synchronization before submission, as in the N=2 CUDA tests.
+// A heterogeneous N-rank world on one machine: exactly ONE rank owns CUDA buffers (the single GPU is never shared between ranks), the others use Host
+// memory. world_size 3 and 4, the CUDA rank at rank 0 (the reference root) and at the last rank (a non-root contributor). Float32 / Int32 / Int8
+// all_reduce, broadcast from a CUDA and from a Host root, all_gather with device input and outputs. The producer work is ordered on a user stream with
+// no host synchronization before submission, as in the N=2 CUDA tests.
 
 #include "mesh_test_support.hpp"
 
@@ -179,8 +179,8 @@ namespace
         ~ForceEnv() { unsetenv(var.c_str()); }
     };
 
-    // Phase 51: every optimized algorithm with the single CUDA rank at rank 0 (the reduction root), in the middle and last. Arithmetic runs through the existing CUDA reduce backend
-    // (whole buffer for tree / recursive doubling, a byte range for the ring's chunks); chunks arriving at a CUDA rank use the existing provider staging.
+    // Every optimized algorithm with the single CUDA rank at rank 0 (the reduction root), in the middle and last. Arithmetic runs through the existing CUDA reduce backend (whole
+    // buffer for tree / recursive doubling, a byte range for the ring's chunks); chunks arriving at a CUDA rank use the existing provider staging.
     void test_optimized_algorithms()
     {
         struct Case { const char *algorithm; std::size_t world; };

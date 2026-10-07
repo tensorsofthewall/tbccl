@@ -1,12 +1,12 @@
-// Phase 34 Part F/AP: RawIoWorker, extracted from
-// async_raw_transport_bench.cpp into its own header so it can be unit
-// tested directly (tests/raw_io_worker_test.cpp) as well as used by the
-// benchmark. Diagnostic/benchmark-only code -- NOT part of the async
-// substrate's public library surface, and deliberately does NOT use
+// RawIoWorker, extracted from async_raw_transport_bench.cpp into its
+// own header so it can be unit tested directly
+// (tests/raw_io_worker_test.cpp) as well as used by the benchmark.
+// Diagnostic/benchmark-only code -- NOT part of the async substrate's
+// public library surface, and deliberately does NOT use
 // TensorCommWorker/StagingPool/AsyncMemoryBackend/ChunkPlan/
 // TransferWork. It exists purely to answer "does moving a Transport
 // call onto a minimal persistent background std::thread reproduce the
-// Phase 33 regression on its own?"
+// async fast-path regression on its own?"
 #pragma once
 
 #include <tbccl/transport.hpp>

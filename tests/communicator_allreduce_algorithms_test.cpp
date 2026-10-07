@@ -1,4 +1,4 @@
-// Phase 51: N>2 all_reduce algorithms, one forced algorithm per run (argv[1] = reference | tree | recursive | ring), Host loopback, world_size 3, 4, 5, 8 (recursive: 4, 8).
+// N>2 all_reduce algorithms, one forced algorithm per run (argv[1] = reference | tree | recursive | ring), Host loopback, world_size 3, 4, 5, 8 (recursive: 4, 8).
 //
 // Numerics follow docs/numerical_reduction_semantics.md. Float32/Float64: every rank must receive IDENTICAL bits (NaN lanes compared as "is NaN"), the result must be
 // deterministic across repeated runs of the same algorithm, and it must agree with a high-precision reference (compensated summation in double) within

@@ -16,13 +16,13 @@ namespace
 
     // Centralized (star) barrier: rank 0 is the coordinator.
     //
-    // Phase 1 (gather): every non-root rank sends a 1-byte ARRIVED
+    // Every non-root rank sends a 1-byte ARRIVED
     // token to rank 0. Rank 0 receives one from every peer, in rank
     // order — if a higher-ranked peer's token arrives first, it simply
     // sits in that peer's own TCP receive buffer until rank 0 gets
     // around to it; this is correct, just not maximally prompt.
     //
-    // Phase 2 (release): only after every ARRIVED token has been
+    // Only after every ARRIVED token has been
     // received does rank 0 send a RELEASE token to every peer. These
     // phases must not be interleaved per peer (receive-then-immediately
     // -release for that one peer) — that would let a rank leave the

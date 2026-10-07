@@ -1,4 +1,4 @@
-/* Phase 52 (Part D through the C ABI): submission is nonblocking. tbccl_test_pause_progress (test-only) holds all transport progress; every submission call must
+/* Submission is nonblocking. tbccl_test_pause_progress (test-only) holds all transport progress; every submission call must
  * return while it is held, and only after every rank has signalled ALL_POSTED is progress released. Also: WaitFor without cancelling, Work handles destroyed
  * early while the buffers stay alive, concurrent submitters, concurrent Work queries, and an abort from another thread with hundreds of operations queued. */
 

@@ -1,8 +1,8 @@
-// Phase 41 Part J/K/L/M/AS/AT/AU/AV: correctness tests for the external
-// CUDA memory provider (benchmarks/tensor/cuda_external_async_backend.{hpp,cu},
-// registered via benchmarks/tensor/cuda_memory_provider.{hpp,cu}) behind
-// the public tbccl::Communicator API. Only built/run when
-// TBCCL_ENABLE_CUDA is on and only meaningful with a real CUDA device.
+// Correctness tests for the external CUDA memory provider
+// (benchmarks/tensor/cuda_external_async_backend.{hpp,cu}, registered via
+// benchmarks/tensor/cuda_memory_provider.{hpp,cu}) behind the public
+// tbccl::Communicator API. Only built/run when TBCCL_ENABLE_CUDA is on and only
+// meaningful with a real CUDA device.
 
 #include "tensor/cuda_external_async_backend.hpp"
 #include "tensor/cuda_reduce_backend.hpp" // cuda_copy_host_to_device/device_to_host helpers
@@ -79,7 +79,7 @@ void run_pair(
 }
 
 // ---------------------------------------------------------------------
-// Part J: external CUDA pointer ownership + correctness.
+// External CUDA pointer ownership + correctness.
 // ---------------------------------------------------------------------
 
 void test_external_cuda_pointer_ownership_and_roundtrip()
@@ -139,8 +139,8 @@ void test_external_cuda_pointer_ownership_and_roundtrip()
         tbccl_bench::tensor::cuda_copy_device_to_host(device_ptr, host_dst.data(), bytes);
         expect(std::memcmp(host_src2.data(), host_dst.data(), bytes) == 0, "host -> CUDA external must reproduce exact bytes (GPU readback)");
 
-        // Part AV: GPU consumer kernel directly over the received device
-        // buffer, proving genuine GPU visibility (not merely host-readback
+        // GPU consumer kernel directly over the received device buffer,
+        // proving genuine GPU visibility (not merely host-readback
         // correctness).
         void *consumer_out = nullptr;
         check_cuda(cudaMalloc(&consumer_out, bytes), "cudaMalloc (consumer output)");
@@ -163,7 +163,7 @@ void test_external_cuda_pointer_ownership_and_roundtrip()
 }
 
 // ---------------------------------------------------------------------
-// Part AT/AU: delayed-producer CUDA stream dependency correctness.
+// Delayed-producer CUDA stream dependency correctness.
 // ---------------------------------------------------------------------
 
 void test_delayed_producer_stream_dependency()
@@ -218,7 +218,7 @@ void test_delayed_producer_stream_dependency()
 }
 
 // ---------------------------------------------------------------------
-// Part AS/AR: CUDA<->Host AllReduce through the public API.
+// CUDA<->Host AllReduce through the public API.
 // ---------------------------------------------------------------------
 
 void test_cuda_host_all_reduce()

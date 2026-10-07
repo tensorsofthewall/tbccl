@@ -1,11 +1,11 @@
-// Phase 34 Part W/X: tests for the TBCCL_ASYNC_NO_STAGING_THREAD
+// Tests for the TBCCL_ASYNC_NO_STAGING_THREAD
 // diagnostic control (src/core/tensor_comm_worker.cpp), which skips
 // creating TensorCommWorker's staging thread entirely -- used to test
 // the "idle staging thread affects network-thread scheduling"
 // hypothesis (found NOT to matter: the no-staging-thread direct-path
 // transfer measured the same as the two-thread configuration; the
-// actual Phase 33 "unexplained" gap turned out to be a benchmark
-// methodology artifact, documented in docs/phase34_report.md).
+// actual async fast-path "unexplained" gap turned out to be a benchmark
+// methodology artifact.md).
 //
 // This is its own test BINARY, not folded into async_transfer_test.cpp,
 // because no_staging_thread_enabled() in tensor_comm_worker.cpp caches

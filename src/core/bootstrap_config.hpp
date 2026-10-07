@@ -1,7 +1,7 @@
 #pragma once
 
-// Phase 50: turns CommunicatorOptions (explicit rank directory, or the legacy N=2 `peers` list) into one validated,
-// explicit description of the world. Pure: no sockets. Private to libtbccl.
+// Turns CommunicatorOptions (explicit rank directory, or the legacy N=2 `peers` list) into one validated, explicit
+// description of the world. Pure: no sockets. Private to libtbccl.
 
 #include <tbccl/communicator.hpp>
 

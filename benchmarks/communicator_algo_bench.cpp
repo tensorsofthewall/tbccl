@@ -1,4 +1,4 @@
-// Phase 51: local (loopback, one process, one thread per rank) A/B benchmark of the N>2 collective algorithms, forced one at a time through the TBCCL_*_ALGORITHM
+// Local (loopback, one process, one thread per rank) A/B benchmark of the N>2 collective algorithms, forced one at a time through the TBCCL_*_ALGORITHM
 // debug overrides. Diagnostic only: loopback numbers drive a generic selector heuristic, they are NOT Thunderbolt measurements.
 //
 // Method: ranks are threads released together by a spinning barrier before every iteration (so start times are aligned and the iteration latency is the MAX over ranks of

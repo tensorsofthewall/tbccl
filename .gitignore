@@ -42,7 +42,8 @@ _deps/
 __pycache__/
 *.pyc
 
-# Local Phase 20 health/benchmark artifacts (machine-specific, untracked).
+# Local the TB4 latency work health/benchmark artifacts (machine-specific,
+# untracked).
 /results/phase20-local/
 /results/phase21-local/
 /results/phase22-local/

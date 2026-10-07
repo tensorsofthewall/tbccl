@@ -2,14 +2,14 @@
 
 #include <functional>
 
-// Phase 32 Part I-M: the portable async tensor-transfer substrate.
+// The portable async tensor-transfer substrate.
 // Everything in this header is transport- and memory-backend-agnostic
 // -- it references only tbccl::Transport (transport.hpp) and the small
 // AsyncMemoryBackend interface below, never CUDA/Metal types (those
 // stay in benchmarks/tensor/, matching this library's existing
 // boundary).
 //
-// Design summary (see docs/phase32_report.md for the full rationale):
+// Design summary:
 //   ChunkPlan       -- pure function: (total bytes, chunk hint,
 //                       alignment) -> chunk offsets/sizes. No I/O.
 //   StagingPool     -- fixed-depth, preallocated, reusable host-visible
@@ -27,13 +27,13 @@
 //   TensorCommWorker -- one persistent worker per communication
 //                       context, processing a bounded FIFO queue of
 //                       TransferRequests. Requests are processed one at
-//                       a time and in submission order (Part AU) --
+//                       a time and in submission order --
 //                       chunks within ONE request may pipeline across
 //                       two persistent internal threads (a "staging"
 //                       thread and a "network" thread) for depth > 1,
 //                       but distinct requests are never interleaved on
-//                       the wire, since Phase 32 reuses one persistent
-//                       TCP connection (Part AF item 118) and
+//                       the wire, since async tensor-transfer reuses one persistent
+//                       TCP connection and
 //                       interleaving would corrupt framing.
 
 #include <chrono>
@@ -68,7 +68,7 @@ struct Chunk
 };
 
 // Splits `total_bytes` into chunks of (up to) `chunk_hint` bytes each,
-// aligned to `alignment` where possible. Part O item 62's required
+// aligned to `alignment` where possible. the required
 // cases are all handled explicitly:
 //   - chunk_hint == 0 or chunk_hint >= total_bytes: one chunk, the
 //     whole payload (also the tiny-payload / "full buffer" case).
@@ -100,7 +100,7 @@ enum class StagingSlotState
 // A fixed-depth set of preallocated, reusable host-visible buffers,
 // each `slot_bytes` bytes. Race-safe acquire()/release() (Part M item
 // 54) -- acquire() blocks (via condition_variable, never spins,
-// Part AG item 121) until a slot is Free, and marks it in use;
+//) until a slot is Free, and marks it in use;
 // release() returns it to Free and wakes one waiter.
 class StagingPool
 {
@@ -119,8 +119,7 @@ public:
 
     // `data()`'s validity is tied to the pool's own lifetime, not to
     // any particular acquire()/release() cycle -- buffers are
-    // preallocated once at construction and never reallocated (Part M
-    // item 52).
+    // preallocated once at construction and never reallocated.
     void *data(std::size_t slot_index) noexcept;
     const void *data(std::size_t slot_index) const noexcept;
 
@@ -147,11 +146,11 @@ private:
 // What a memory backend (host, CUDA, Metal -- implementations live
 // outside this library, see benchmarks/tensor/) must provide to move
 // one chunk into or out of a staging buffer it does not own. Called
-// only from a TensorCommWorker's internal threads (Part H item 35-37):
-// a backend whose real work is asynchronous on-device (a CUDA event, a
-// Metal shared event) is free to block *this* call until that
-// on-device work completes, since blocking here never blocks the
-// caller that enqueued the transfer.
+// only from a TensorCommWorker's internal threads: a backend whose
+// real work is asynchronous on-device (a CUDA event, a Metal shared
+// event) is free to block *this* call until that on-device work
+// completes, since blocking here never blocks the caller that enqueued
+// the transfer.
 class AsyncMemoryBackend
 {
 public:
@@ -174,18 +173,18 @@ public:
         const Chunk &chunk,
         const void *staging) = 0;
 
-    // Phase 33 Part G-J/AM: capability, not type check. A backend whose
-    // tensor memory is ALREADY directly readable/writable by a
-    // Transport (plain host CPU memory over TCP, this phase's only such
-    // case) can report true here to let TensorCommWorker skip the
-    // StagingPool entirely for this transfer -- no TBCCL-owned memcpy,
-    // no staging thread. A backend that must stage through host-visible
-    // memory to move data at all (CUDA, Metal-private-staged) leaves
-    // this false (the default) and keeps using stage_source_chunk()/
+    // Capability, not type check. A backend whose tensor memory is
+    // ALREADY directly readable/writable by a Transport (plain host CPU
+    // memory over TCP, this phase's only such case) can report true
+    // here to let TensorCommWorker skip the StagingPool entirely for
+    // this transfer -- no TBCCL-owned memcpy, no staging thread. A
+    // backend that must stage through host-visible memory to move data
+    // at all (CUDA, Metal-private-staged) leaves this false (the
+    // default) and keeps using stage_source_chunk()/
     // commit_destination_chunk() as before. This does NOT mean
     // kernel-level zero-copy (TCP still copies through the kernel
-    // normally, Part J item 42-43) -- it means zero *additional*
-    // TBCCL-owned copies on top of that.
+    // normally) -- it means zero *additional* TBCCL-owned copies on top
+    // of that.
     virtual bool supports_direct_transport_access() const noexcept { return false; }
 
     // Valid only when supports_direct_transport_access() is true.
@@ -210,12 +209,11 @@ enum class TransferDirection
     Recv,
 };
 
-// Lightweight completion handle (Part J). Constructing/copying/holding
-// one never touches a device, calls cudaStreamSynchronize, enumerates
+// Lightweight completion handle. Constructing/copying/holding one
+// never touches a device, calls cudaStreamSynchronize, enumerates
 // devices, or allocates meaningfully more than the handle itself.
 // "Completed" means the destination side's commit_destination_chunk
-// has returned for every chunk (Part J item 43) -- not merely that
-// bytes left a socket.
+// has returned for every chunk -- not merely that bytes left a socket.
 class TransferWork
 {
 public:
@@ -223,9 +221,9 @@ public:
     bool is_completed() const;
     bool has_error() const;
     std::string error() const;
-    // Phase 52: the structured terminal result, independent of error()'s text. Success until the Work is terminal; Success after a successful completion.
+    // The structured terminal result, independent of error()'s text. Success until the Work is terminal; Success after a successful completion.
     ErrorCode error_code() const;
-    // Phase 52: waits at most `timeout` for the terminal state; returns whether the Work is terminal. Neither cancels nor changes the operation.
+    // Waits at most `timeout` for the terminal state; returns whether the Work is terminal. Neither cancels nor changes the operation.
     bool wait_for(std::chrono::milliseconds timeout);
 
 private:
@@ -261,8 +259,8 @@ public:
         ErrorCode code,
         const std::string &message);
 
-    // Phase 41: constructs a fresh, live TransferWork whose state is not
-    // tied to any TensorCommWorker request -- used by the Communicator's
+    // Constructs a fresh, live TransferWork whose state is not tied to
+    // any TensorCommWorker request -- used by the Communicator's
     // collective executor (which drives n2_all_reduce_tensor() on its
     // own background thread, not via TensorCommWorker::enqueue) to
     // return a standalone Work handle for an AllReduce. The returned
@@ -278,12 +276,12 @@ public:
 // TransferRequest
 // ---------------------------------------------------------------------
 
-// Buffer lifetime contract (Part AJ item 137-139): whatever memory
-// `backend` reads from or writes to on this request's behalf --
-// whether via stage_source_chunk()/commit_destination_chunk() (staged
-// path) or direct_source_data()/direct_destination_data() (direct
-// path, backend->supports_direct_transport_access()==true) -- must
-// remain valid for as long as this request's TransferWork has not yet
+// Buffer lifetime contract: whatever memory `backend` reads from or
+// writes to on this request's behalf -- whether via
+// stage_source_chunk()/commit_destination_chunk() (staged path) or
+// direct_source_data()/direct_destination_data() (direct path,
+// backend->supports_direct_transport_access()==true) -- must remain
+// valid for as long as this request's TransferWork has not yet
 // completed (i.e. until wait()/is_completed()==true). This is true of
 // the staged path too, not a new restriction the direct path
 // introduces; the direct path just makes it more consequential, since
@@ -291,7 +289,7 @@ public:
 // reads/writes directly, with no TBCCL-owned copy in between to fall
 // back on. TBCCL never makes a hidden defensive copy to relax this --
 // doing so would silently reintroduce the staging cost the direct path
-// exists to avoid (Part AJ item 138).
+// exists to avoid.
 struct TransferRequest
 {
     std::uint64_t transfer_id = 0;
@@ -303,21 +301,20 @@ struct TransferRequest
 
     std::size_t total_bytes = 0;
     // 0 means "one chunk, the whole payload" (see plan_chunks()).
-    // Ignored on the direct path (Part T item 82-84): a direct-capable
-    // backend always transfers the whole buffer in one Transport call,
-    // regardless of chunk_hint, since there is no staging slot size to
-    // bound.
+    // Ignored on the direct path: a direct-capable backend always
+    // transfers the whole buffer in one Transport call, regardless of
+    // chunk_hint, since there is no staging slot size to bound.
     std::size_t chunk_hint = 0;
     std::size_t alignment = 1;
 
-    // Phase 50: carry a 16-byte length header ({magic, reserved, u64 length}) in front of the payload. The receiving worker
-    // checks the length against `total_bytes` before it trusts the stream and fails with "protocol_mismatch: ..." on any
-    // disagreement, so a send/recv byte-count mismatch is reported instead of hanging or desynchronizing the stream (a recv
-    // never reads more than `total_bytes`, so it can never overrun its buffer). Both sides of a transfer must agree on the flag.
-    // On the direct path the header and payload share one system call (Transport::send_framed/recv_framed).
+    // Carry a 16-byte length header ({magic, reserved, u64 length}) in front of the payload. The receiving worker checks the
+    // length against `total_bytes` before it trusts the stream and fails with "protocol_mismatch: ..." on any disagreement, so a
+    // send/recv byte-count mismatch is reported instead of hanging or desynchronizing the stream (a recv never reads more than
+    // `total_bytes`, so it can never overrun its buffer). Both sides of a transfer must agree on the flag. On the direct path
+    // the header and payload share one system call (Transport::send_framed/recv_framed).
     bool framed = false;
 
-    // Phase 50: in a duplex worker, queue this Recv on the same FIFO lane as the sends instead of the independent receive lane. The N=2
+    // In a duplex worker, queue this Recv on the same FIFO lane as the sends instead of the independent receive lane. The N=2
     // specialised engines (all_reduce / broadcast / all_gather) issue strictly sequential transfers and keep exactly the single-lane
     // behaviour (and cost) they had before duplex lanes existed. Ignored by a single-lane worker.
     bool shared_lane = false;
@@ -329,33 +326,26 @@ struct TransferRequest
 
 // One persistent communication context. Owns a bounded FIFO request
 // queue and exactly two persistent threads (a staging thread and a
-// network thread, Part K item 44's "not thread per transfer/chunk")
-// used to pipeline chunks *within* one request when `pipeline_depth` >
-// 1; distinct requests are always fully processed in submission order,
-// never interleaved on the wire (Part AU).
+// network thread, the "not thread per transfer/chunk") used to
+// pipeline chunks *within* one request when `pipeline_depth` > 1;
+// distinct requests are always fully processed in submission order,
+// never interleaved on the wire.
 class TensorCommWorker
 {
 public:
-    // `pipeline_depth` sizes the internal StagingPool used for every
-    // enqueued request's chunks. The pool is cached and reused across
-    // requests whose (chunk_capacity, depth) match the previous request
-    // -- Phase 33 Part O/P measured that a fresh allocation per request
-    // costs an order of magnitude more than a reused one for large
-    // buffers (first-touch page faults, not memcpy bandwidth). A
-    // request with a different chunk size does still pay a fresh
-    // allocation (the pool's buffers are sized to a specific
-    // chunk_capacity; a single fixed-size pool across heterogeneous
-    // requests would either waste memory or reject valid requests) --
-    // see the .cpp for the caching logic. `queue_depth` bounds how many
-    // TransferRequests may be waiting; enqueue() blocks (Part AG) once
-    // full rather than growing unbounded.
-    // Phase 50: `duplex` adds a second lane (queue, network thread, lazily created staging thread). A lane serves one direction at a time and a
-    // direction keeps its FIFO order on one lane, so a pending send never delays a receive on the same transport and vice versa; with a single
-    // direction in flight everything runs on the first lane, as in the single-lane worker.
-    // The default (false) keeps the single FIFO lane every pre-Phase-50 user relies on. `queue_depth` applies per lane.
-    // Phase 52: `queue_depth == kUnboundedAdmission (0)` makes enqueue() NEVER wait for capacity: the request joins a growing queue of lightweight
-    // descriptors (FIFO per lane) and the lane's persistent network thread moves it to the bounded active/staging resources when its turn comes. The
-    // Communicator uses this for every peer lane; a non-zero depth keeps the pre-Phase-52 blocking backpressure for standalone users.
+    // `pipeline_depth` sizes the internal StagingPool used for every enqueued request's chunks. The pool is cached and reused across requests whose
+    // (chunk_capacity, depth) match the previous request -- the async fast-path work measured that a fresh allocation per request costs an order of
+    // magnitude more than a reused one for large buffers (first-touch page faults, not memcpy bandwidth). A request with a different chunk size does
+    // still pay a fresh allocation (the pool's buffers are sized to a specific chunk_capacity; a single fixed-size pool across heterogeneous
+    // requests would either waste memory or reject valid requests) -- see the .cpp for the caching logic. `queue_depth` bounds how many
+    // TransferRequests may be waiting; enqueue() blocks once full rather than growing unbounded. The N-rank runtime work: `duplex` adds a second
+    // lane (queue, network thread, lazily created staging thread). A lane serves one direction at a time and a direction keeps its FIFO order on one
+    // lane, so a pending send never delays a receive on the same transport and vice versa; with a single direction in flight everything runs on the
+    // first lane, as in the single-lane worker. The default (false) keeps the single FIFO lane every pre-N-rank-runtime user relies on.
+    // `queue_depth` applies per lane. the C ABI v1 work: `queue_depth == kUnboundedAdmission (0)` makes enqueue() NEVER wait for capacity: the
+    // request joins a growing queue of lightweight descriptors (FIFO per lane) and the lane's persistent network thread moves it to the bounded
+    // active/staging resources when its turn comes. The Communicator uses this for every peer lane; a non-zero depth keeps the pre-Phase-52 blocking
+    // backpressure for standalone users.
     static constexpr std::size_t kUnboundedAdmission = 0;
 
     explicit TensorCommWorker(
@@ -368,10 +358,9 @@ public:
     TensorCommWorker(const TensorCommWorker &) = delete;
     TensorCommWorker &operator=(const TensorCommWorker &) = delete;
 
-    // Phase 45: terminal, idempotent, non-blocking. Rejects new enqueue() calls, fails every queued request without
-    // executing it, and makes a not-yet-started dequeue fail. The active request is unwound by interrupting its
-    // Transport (done by the owner); it becomes terminal only after the staging/network threads have stopped touching
-    // its buffers.
+    // Terminal, idempotent, non-blocking. Rejects new enqueue() calls, fails every queued request without executing
+    // it, and makes a not-yet-started dequeue fail. The active request is unwound by interrupting its Transport (done
+    // by the owner); it becomes terminal only after the staging/network threads have stopped touching its buffers.
     void abort(const std::string &reason);
 
     // Test/diagnostic hook (private use): while paused, no lane starts a queued request (the network threads idle); enqueue() still admits. Lets a test
@@ -388,8 +377,8 @@ public:
     void set_fatal_handler(std::function<void(const std::string &)> handler);
 
     // Never blocks on backend/transport/device work -- only on queue
-    // capacity (Part AG). Returns immediately with a live TransferWork
-    // once the request is queued.
+    // capacity. Returns immediately with a live TransferWork once the
+    // request is queued.
     TransferWork enqueue(TransferRequest request);
 
     struct Stats

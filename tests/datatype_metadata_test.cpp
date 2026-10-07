@@ -1,6 +1,6 @@
-// Phase 49: reduction datatype metadata. The numeric enum values are fixed (appended-only), datatype_size() is the single size
-// table, reduction_supported()/validate_reduction() are the single support predicate, and an unsupported (dtype, op) pair is
-// rejected before ANY communication on every public reducing entry point (a world whose send/recv throw proves it).
+// Reduction datatype metadata. The numeric enum values are fixed (appended-only), datatype_size() is the single size table,
+// reduction_supported()/validate_reduction() are the single support predicate, and an unsupported (dtype, op) pair is rejected
+// before ANY communication on every public reducing entry point (a world whose send/recv throw proves it).
 
 #include <tbccl/collectives.hpp>
 #include <tbccl/reduction.hpp>

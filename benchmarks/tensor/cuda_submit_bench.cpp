@@ -1,7 +1,8 @@
-// Phase 44 microbenchmark: Communicator::all_reduce call-return ("submit"), wait remainder and total, for a
-// CUDA rank 0 against a Host rank 1 (in-process loopback). Per size: one COLD operation (may allocate/grow
-// staging) then --warm WARM operations. If the cuda_alloc_interpose shim is preloaded, per-phase
-// cudaMallocHost/cudaFreeHost/cudaMalloc/cudaFree counts are printed too. Never averages cold with warm.
+// The persistent CUDA staging work microbenchmark: Communicator::all_reduce call-return ("submit"), wait
+// remainder and total, for a CUDA rank 0 against a Host rank 1 (in-process loopback). Per size: one COLD
+// operation (may allocate/grow staging) then --warm WARM operations. If the cuda_alloc_interpose shim is
+// preloaded, per-phase cudaMallocHost/cudaFreeHost/cudaMalloc/cudaFree counts are printed too. Never
+// averages cold with warm.
 #include <tbccl/communicator.hpp>
 #include <tbccl/cuda_support.hpp>
 

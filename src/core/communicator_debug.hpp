@@ -1,6 +1,6 @@
 #pragma once
 
-// Phase 51: test/diagnostic accessors into a Communicator's runtime, private to libtbccl (NOT installed, not public API).
+// Test/diagnostic accessors into a Communicator's runtime, private to libtbccl (NOT installed, not public API).
 
 #include <tbccl/communicator.hpp>
 

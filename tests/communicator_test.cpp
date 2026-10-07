@@ -1,8 +1,8 @@
-// Phase 41: correctness tests for the public tbccl::Communicator API,
-// using Host-memory BufferViews only (MemoryKind::MetalShared reuses
-// the exact same code path -- see docs/framework_integration_architecture.md
-// Section 5 -- so these tests also exercise that path by construction).
-// Real TB4/CUDA/Metal coverage lives in separate test files.
+// Correctness tests for the public tbccl::Communicator API, using
+// Host-memory BufferViews only (MemoryKind::MetalShared reuses the exact
+// same code path -- see docs/framework_integration_architecture.md Section 5
+// -- so these tests also exercise that path by construction). Real
+// TB4/CUDA/Metal coverage lives in separate test files.
 
 #include <tbccl/communicator.hpp>
 #include <tbccl/tcp.hpp>
@@ -77,7 +77,7 @@ std::vector<std::uint8_t> pattern(std::size_t bytes, std::uint8_t seed)
 }
 
 // ---------------------------------------------------------------------
-// P2P correctness (Part AQ)
+// P2P correctness
 // ---------------------------------------------------------------------
 
 // DataType has no 1-byte element type, so byte-exact coverage uses
@@ -195,7 +195,7 @@ void test_p2p_multiple_outstanding()
 }
 
 // ---------------------------------------------------------------------
-// Host N=2 AllReduce (Part AR)
+// Host N=2 AllReduce
 // ---------------------------------------------------------------------
 
 void test_all_reduce_float32()
@@ -267,7 +267,7 @@ void test_all_reduce_repeated_rounds()
 }
 
 // ---------------------------------------------------------------------
-// Error tests (Part BH)
+// Error tests
 // ---------------------------------------------------------------------
 
 void test_errors_invalid_buffer()
@@ -317,7 +317,7 @@ void test_errors_invalid_buffer()
 
 void test_errors_unsupported_world_size()
 {
-    // Phase 50: world_size 1 is a real world (and opens no socket); a world beyond the full-mesh limit is refused up front.
+    // world_size 1 is a real world (and opens no socket); a world beyond the full-mesh limit is refused up front.
     tbccl::CommunicatorOptions opts;
     opts.rank = 0;
     opts.peers = {{"127.0.0.1", kBasePort + 500}};
@@ -366,7 +366,7 @@ void test_errors_unsupported_reduce_op()
 }
 
 // ---------------------------------------------------------------------
-// Communicator lifecycle (Part AC/AD)
+// Communicator lifecycle
 // ---------------------------------------------------------------------
 
 void test_communicator_zero_operations()

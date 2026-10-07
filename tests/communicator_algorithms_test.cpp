@@ -1,5 +1,5 @@
-// Phase 51: the optimized N>2 collective algorithms, FORCED one at a time (TBCCL_*_ALGORITHM) on Host loopback at world_size 2..8, plus the default selection.
-// Sections are added commit by commit with the algorithm they test. Every rank is a thread of this process; ports are kernel-assigned.
+// The optimized N>2 collective algorithms, FORCED one at a time (TBCCL_*_ALGORITHM) on Host loopback at world_size 2..8, plus the default selection. Sections
+// are added commit by commit with the algorithm they test. Every rank is a thread of this process; ports are kernel-assigned.
 
 #include "mesh_test_support.hpp"
 
