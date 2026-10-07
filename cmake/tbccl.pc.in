@@ -1,0 +1,10 @@
+prefix=${pcfiledir}/../..
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/include
+
+Name: tbccl
+Description: Thunderbolt Collective Communication Library (static C++ runtime and stable C ABI)
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -ltbccl_c @TBCCL_PC_CUDA_LIBS@-ltbccl
+Libs.private: -lpthread

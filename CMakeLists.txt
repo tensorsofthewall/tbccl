@@ -129,6 +129,12 @@ option(
 )
 
 option(
+    TBCCL_CUDA_STATIC_RUNTIME
+    "Link the installable CUDA component against the static CUDA runtime (CUDA::cudart_static) instead of libcudart.so, so a program or wheel that uses it has no libcudart.so dependency. Off by default; release archives turn it on."
+    OFF
+)
+
+option(
     TBCCL_ENABLE_METAL
     "Build the Metal shared/private-staged tensor-transfer backend (Apple platforms only). Off by default."
     OFF
@@ -175,7 +181,7 @@ if(TBCCL_ENABLE_CUDA)
     )
     target_link_libraries(tbccl_cuda
         PUBLIC tbccl
-        PRIVATE CUDA::cudart
+        PRIVATE $<IF:$<BOOL:${TBCCL_CUDA_STATIC_RUNTIME}>,CUDA::cudart_static,CUDA::cudart>
     )
     set_target_properties(tbccl_cuda PROPERTIES
         CUDA_STANDARD 17
@@ -211,6 +217,17 @@ target_include_directories(tbccl_c
         ${CMAKE_CURRENT_SOURCE_DIR}/src/c_api
 )
 target_link_libraries(tbccl_c PUBLIC tbccl Threads::Threads)
+
+# tbccl-info: a tiny read-only tool that prints the installed version, C ABI, wire protocol, platform and memory providers.
+add_executable(tbccl_info tools/tbccl_info.cpp)
+set_target_properties(tbccl_info PROPERTIES OUTPUT_NAME tbccl-info)
+target_link_libraries(tbccl_info PRIVATE tbccl_c)
+if(TBCCL_ENABLE_CUDA)
+    target_compile_definitions(tbccl_info PRIVATE TBCCL_INFO_CUDA)
+endif()
+if(TBCCL_ENABLE_METAL)
+    target_compile_definitions(tbccl_info PRIVATE TBCCL_INFO_METAL)
+endif()
 target_compile_definitions(tbccl_c PRIVATE
     TBCCL_PACKAGE_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     TBCCL_PACKAGE_VERSION_MINOR=${PROJECT_VERSION_MINOR}
@@ -229,13 +246,15 @@ foreach(_lib IN LISTS CMAKE_CXX_IMPLICIT_LINK_LIBRARIES)
         list(APPEND TBCCL_CXX_RUNTIME_LIBS ${_lib})
     endif()
 endforeach()
-if(TBCCL_CXX_RUNTIME_LIBS)
-    # install-only: in the build tree CMake already links in-tree C targets with the C++ driver
-    target_link_libraries(tbccl_c INTERFACE "$<INSTALL_INTERFACE:${TBCCL_CXX_RUNTIME_LIBS}>")
-endif()
 if(TBCCL_ENABLE_CUDA)
     target_compile_definitions(tbccl_c PRIVATE TBCCL_C_WITH_CUDA)
     target_link_libraries(tbccl_c PUBLIC tbccl_cuda)
+endif()
+# Declared after every static dependency: the C++ runtime must follow the archives that need it (a toolchain whose libstdc++.so is a linker script over
+# libstdc++_nonshared.a, such as the manylinux gcc toolsets, resolves archive members only for symbols already undefined at that point).
+if(TBCCL_CXX_RUNTIME_LIBS)
+    # install-only: in the build tree CMake already links in-tree C targets with the C++ driver
+    target_link_libraries(tbccl_c INTERFACE "$<INSTALL_INTERFACE:${TBCCL_CXX_RUNTIME_LIBS}>")
 endif()
 
 # benchmarks/ (not benchmarks/tensor/) is the public include root, so
@@ -1128,6 +1147,11 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME communicator_mesh_test COMMAND communicator_mesh_test)
     list(APPEND tbccl_dynamic_port_tests communicator_mesh_test)
+
+    # tbccl-info reads the installed version and capabilities and opens no socket.
+    add_test(NAME tbccl_info_test COMMAND tbccl_info --json)
+    set_tests_properties(tbccl_info_test PROPERTIES PASS_REGULAR_EXPRESSION "\"c_abi\": 1, \"wire_protocol\": 4")
+    list(APPEND tbccl_dynamic_port_tests tbccl_info_test)
 
     add_executable(mesh_world_test
         tests/mesh_world_test.cpp
@@ -2392,5 +2416,15 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/TBCCLConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TBCCL
 )
+
+install(TARGETS tbccl_info RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# pkg-config metadata for build systems that do not use CMake. The prefix is derived from the file's own location, so a relocated prefix works.
+set(TBCCL_PC_CUDA_LIBS "")
+if(TBCCL_ENABLE_CUDA)
+    set(TBCCL_PC_CUDA_LIBS "-ltbccl_cuda ")
+endif()
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tbccl.pc.in ${CMAKE_CURRENT_BINARY_DIR}/tbccl.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/tbccl.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/tbccl)

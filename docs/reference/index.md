@@ -18,5 +18,6 @@ configuration
 wire-protocol
 collective-algorithms
 numerical-semantics
+tbccl-info
 licensing
 ```
