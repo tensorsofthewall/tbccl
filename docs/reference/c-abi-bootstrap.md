@@ -43,7 +43,7 @@ Which ranks bind: only a rank that accepts connections (every rank except the la
 
 ## Thread safety
 
-One bootstrap handle is single-threaded. Different handles are independent (`docs/c_api_thread_safety.md`).
+One bootstrap handle is single-threaded. Different handles are independent ([C API thread safety](c-abi-thread-safety.md)).
 
 ## Running ranks on other machines (operator notes)
 

@@ -18,11 +18,7 @@ extensions = ["myst_parser", "sphinx_copybutton", "breathe"]
 root_doc = "index"
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 
-# Existing flat documents are migrated into the structure below incrementally; until a document is
-# migrated it is not part of the build.
-exclude_patterns = ["_build", "data", "spikes", "Thumbs.db", ".DS_Store"] + [
-    p.name for p in HERE.glob("*.md") if p.name != "index.md"
-]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = ["colon_fence", "deflist"]
 myst_heading_anchors = 3

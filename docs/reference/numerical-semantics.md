@@ -1,8 +1,8 @@
-# Numerical contract for N>2 reductions (Phase 51)
+# Numerical contract for N>2 reductions
 
 ## Why a contract is needed
 
-Floating-point addition is not associative: `(a + b) + c` and `a + (b + c)` can differ in the last bits. Phase 50's reference all_reduce folds the ranks in a fixed order on rank 0, so its bits are
+Floating-point addition is not associative: `(a + b) + c` and `a + (b + c)` can differ in the last bits. The reference all_reduce folds the ranks in a fixed order on rank 0, so its bits are
 reproducible but arbitrary. A ring, a binomial tree and recursive doubling each combine the rank values in a *different* order, so they cannot, and need not, reproduce the reference bits.
 
 ## Guarantees (world_size > 2)

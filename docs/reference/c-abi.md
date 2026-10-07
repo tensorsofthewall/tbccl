@@ -11,8 +11,8 @@ C / Rust / Swift / future bindings -> libtbccl_c (stable C ABI shim) -> libtbccl
 | what | value | meaning |
 |---|---|---|
 | `TBCCL_C_ABI_VERSION` | **1** | this document; changes only if the ABI is broken (never planned) |
-| package version | 0.5.0 | `tbcclGetPackageVersion`; informational |
-| wire protocol | 3 | rank-to-rank, internal; never visible through the C API |
+| package version | 0.5.1 (development) | `tbcclGetPackageVersion`; informational |
+| wire protocol | 4 | rank-to-rank, internal; never visible through the C API |
 | endpoint blob format | **1** | `tbcclEndpointBlob.format_version`; independent of the three above |
 
 ## 2. Rules that never change in v1
@@ -118,7 +118,7 @@ tbcclResult_t tbcclGetAbiVersion(uint32_t *abi_version);
 tbcclResult_t tbcclGetPackageVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
 const char   *tbcclGetResultString(tbcclResult_t result);              /* static text, never NULL */
 
-/* bootstrap: caller-supplied exchange of opaque endpoint blobs (docs/c_api_bootstrap.md) */
+/* bootstrap: caller-supplied exchange of opaque endpoint blobs (see the C API bootstrap page) */
 tbcclResult_t tbcclGetUniqueId(tbcclUniqueId *id);
 tbcclResult_t tbcclBootstrapBegin(uint32_t rank, uint32_t world_size, const tbcclUniqueId *id,
                                   const tbcclBootstrapOptions *options /* nullable */, tbcclBootstrap_t *bootstrap);
@@ -166,7 +166,7 @@ tbcclResult_t tbcclRegisterCudaSupport(void);                           /* idemp
 
 **P2P is byte-based.** `buffer->bytes` is the payload size; a send and its receive must use the same byte count (a different size fails with `PROTOCOL_MISMATCH`). `peer` must be in range and not the caller. **Zero bytes** is a legal asynchronous no-op: it completes successfully without communicating and does not synchronize (`data` may be NULL).
 
-**Collectives.** `tbcclBarrier` has no payload. `tbcclBroadcast` is byte-generic and in place on every rank (same `bytes` everywhere). `tbcclAllGather` is byte-generic: `recv->bytes` must equal `send->bytes * world_size` (overflow-checked); rank r's contribution lands at byte offset `r * send->bytes`. `tbcclAllReduce` is typed: `count` elements of `dtype`, `send->bytes` and `recv->bytes` at least `count * sizeof(dtype)` (overflow-checked); FP16/BF16 only at world size 2; float N>2 results follow `docs/numerical_reduction_semantics.md`. Algorithm selection is internal and not exposed. All ranks must submit collectives in the same logical order (`docs/c_api_thread_safety.md`).
+**Collectives.** `tbcclBarrier` has no payload. `tbcclBroadcast` is byte-generic and in place on every rank (same `bytes` everywhere). `tbcclAllGather` is byte-generic: `recv->bytes` must equal `send->bytes * world_size` (overflow-checked); rank r's contribution lands at byte offset `r * send->bytes`. `tbcclAllReduce` is typed: `count` elements of `dtype`, `send->bytes` and `recv->bytes` at least `count * sizeof(dtype)` (overflow-checked); FP16/BF16 only at world size 2; float N>2 results follow [Numerical semantics](numerical-semantics.md). Algorithm selection is internal and not exposed. All ranks must submit collectives in the same logical order ([C API thread safety](c-abi-thread-safety.md)).
 
 **Execution context.** `ctx == NULL` is the default context for the buffer's memory provider. For a non-default CUDA stream pass `{struct_size, TBCCL_EXEC_CUDA_STREAM, (void *)cudaStream}`; the stream must stay valid until the Work is done.
 
@@ -184,4 +184,4 @@ tbcclResult_t tbcclRegisterCudaSupport(void);                           /* idemp
 
 ## 8. Not in v1
 
-Hidden rendezvous bootstrap, `GroupStart`/`GroupEnd` (`grouped_operations_audit.md`), algorithm or topology controls, user tags, communicator split/shrink/grow, fault recovery, FP8/INT4 reductions, FP16/BF16 reduction at N>2, custom provider callbacks, Python/Rust/Swift bindings, and any non-IPv4 endpoint (the transport is IPv4 numeric in this release).
+Hidden rendezvous bootstrap, `GroupStart`/`GroupEnd` ([ADR 0008](../adr/0008-nonblocking-submission-without-group-calls.md)), algorithm or topology controls, user tags, communicator split/shrink/grow, fault recovery, FP8/INT4 reductions, FP16/BF16 reduction at N>2, custom provider callbacks, Python/Rust/Swift bindings, and any non-IPv4 endpoint (the transport is IPv4 numeric in this release).

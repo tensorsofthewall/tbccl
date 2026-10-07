@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Technical guidance for contributors and coding agents working in this repository. User-facing documentation is in `README.md`; the public C++ API is in `docs/public_api.md` and the C ABI in `docs/c_abi_v1.md`. Contribution workflow is in `CONTRIBUTING.md`.
+Technical guidance for contributors and coding agents working in this repository. User-facing documentation is in `README.md`; the public C++ API is in `docs/reference/cpp-api-overview.md` and the C ABI in `docs/reference/c-abi.md`. Contribution workflow is in `CONTRIBUTING.md`.
 
 ## Purpose
 
@@ -48,8 +48,8 @@ cmake --build build-release -j
 - Run the full suite after any change to the core, transport, collectives or C API, on every platform the change touches.
 - Concurrency and lifetime changes should also pass under AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer. New concurrency gates need a negative control (the test fails when the old behavior is restored). Use explicit progress barriers rather than timing.
 - Tests that need real CUDA, Metal or a Thunderbolt link are opt-in and are never required for ordinary changes. On macOS, run suites serially and use `TBCCL_TEST_WORLD_PACE_MS` to avoid ephemeral-port exhaustion.
-- Benchmarks must not verify correctness inside a timed loop (`docs/benchmark_methodology.md`).
-- Hardware safety: never mask hardware errors to make a test pass. Read `docs/mac_thunderbolt_access.md` before running anything on a real link.
+- Benchmarks must not verify correctness inside a timed loop (`docs/development/benchmark-methodology.md`).
+- Hardware safety: never mask hardware errors to make a test pass. Read `docs/guides/thunderbolt-link.md` before running anything on a real link.
 
 ## Code ownership expectations
 
