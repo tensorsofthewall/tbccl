@@ -41,9 +41,9 @@ public:
 #if defined(__APPLE__)
     // requested_qos, when set, is applied via
     // pthread_set_qos_class_self_np() from inside the worker's own
-    // thread body before it processes any request (Part Q: a
-    // controlled Mac QoS A/B). Default-constructed (nullopt) means
-    // "leave the new thread at whatever QoS pthread_create gives it."
+    // thread body before it processes any request (a controlled Mac
+    // QoS A/B). Default-constructed (nullopt) means "leave the new
+    // thread at whatever QoS pthread_create gives it."
     explicit RawIoWorker(tbccl::Transport *transport,
                           std::optional<qos_class_t> requested_qos = std::nullopt)
         : transport_(transport), requested_qos_(requested_qos)

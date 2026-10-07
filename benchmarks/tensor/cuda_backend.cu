@@ -43,7 +43,7 @@ namespace
     // -----------------------------------------------------------------------------
     // Device-side deterministic pattern generation. Must produce
     // exactly the same bytes as pattern_byte() in tensor_backend.hpp
-    // (Part D requires one shared cross-platform pattern) -- kept as
+    // (the benchmark design requires one shared cross-platform pattern) -- kept as
     // an intentional, small, independently-readable duplicate rather
     // than sharing code with the host header, since that header must
     // stay includable by a plain (non-CUDA) C++ compiler.

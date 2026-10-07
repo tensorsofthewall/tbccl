@@ -1,6 +1,6 @@
 // A dedicated Metal-shared local-reduction correctness
 // test, real Mac hardware only. Verifies HostReduceBackend (reused
-// unchanged for Metal-shared per Part R -- Metal-shared memory is already
+// unchanged for Metal-shared -- Metal-shared memory is already
 // CPU-addressable, so no separate GPU-side Metal reduction kernel is
 // needed) against TWO real Metal-shared allocations' own CPU-visible
 // memory -- not a plain host std::vector standing in for it.

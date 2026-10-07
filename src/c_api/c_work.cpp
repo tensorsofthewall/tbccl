@@ -1,4 +1,4 @@
-// TBCCL C ABI v1: Work queries. The API return value is the status of the QUERY; the operation's own terminal result is an out-parameter. See docs/c_abi_v1.md.
+// TBCCL C ABI v1: Work queries. The API return value is the status of the QUERY; the operation's own terminal result is an out-parameter. See docs/reference/c-abi.md.
 
 #include "c_internal.hpp"
 

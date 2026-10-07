@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analysis tool for the async tensor-transfer
 substrate's benchmark output (tbccl_async_transfer_bench JSON files,
-one per sender/receiver process per run, under results/phase32-local/).
+one per sender/receiver process per run, under results/async-transport-local/).
 
 Produces the four Markdown tables the plan asks for (transport
 baseline, chunk sweep, device staging, async/overlap) from whichever
@@ -88,7 +88,7 @@ def overlap_table(overlap_rows):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-glob", default="results/phase32-local/*.json",
+    parser.add_argument("--results-glob", default="results/async-transport-local/*.json",
                          help="glob for tbccl_async_transfer_bench sender JSON files")
     parser.add_argument("--table", choices=["chunk-sweep", "async-overhead"],
                          default="chunk-sweep")

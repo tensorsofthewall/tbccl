@@ -582,8 +582,8 @@ namespace
         std::string allocation_type = "NA";
         AllocationStats alloc_stats;
 
-        // The CUDA synchronization-audit work, Part C/D: which of the
-        // two disjoint timing boundaries
+        // The CUDA synchronization-audit work, which of the two
+        // disjoint timing boundaries
         // `stats`/`completion_confirmed_us` describes -- "ready"
         // (producer excluded, the CUDA tensor-benchmark work's only
         // behavior) or "produce" (producer included). "NA" for
@@ -591,10 +591,9 @@ namespace
         // (staging-only/network-only/ latency-floor).
         // producer_enqueue_us is the CPU time to *submit* the
         // producer's GPU work, kept separate from source_sync_us (the
-        // time spent *waiting* for it, via prepare_source()) per Part
-        // D item 19 -- these answered very differently in the CUDA
-        // synchronization-audit CUDA audit (enqueue ~4us, sync
-        // ~1.3-1.9ms).
+        // time spent *waiting* for it, via prepare_source()) these
+        // answered very differently in the CUDA synchronization-audit
+        // CUDA audit (enqueue ~4us, sync ~1.3-1.9ms).
         std::string timing_scope = "NA";
         double producer_enqueue_us = kNA;
     };
@@ -672,7 +671,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Part I control protocol: before any timed end-to-end/ack-
+    // Control protocol: before any timed end-to-end/ack-
     // calibration transfer, both ranks exchange and validate a small
     // fixed-width control message so a configuration mismatch
     // (different --sizes/--iterations/--warmup between the two
@@ -1317,7 +1316,7 @@ namespace
                     if (i == options.warmup) cpu.begin();
                     const std::uint32_t seed = static_cast<std::uint32_t>(0x3000 + i);
 
-                    // the CUDA synchronization-audit work, Part C: this is the ONLY difference
+                    // the CUDA synchronization-audit work, this is the ONLY difference
                     // between the two timing scopes -- where
                     // `interval_start` (the primary timer's start) is
                     // captured relative to the producer's work.

@@ -10,7 +10,7 @@
 // the buffer), not a CUDA/Metal kernel -- building and validating a new
 // GPU compute kernel was out of scope for the time this benchmark could
 // receive this phase. This still tests the real architectural claim
-// (Part AM item 139-142: does asynchronous transfer hide otherwise-
+// (does asynchronous transfer hide otherwise-
 // serial work), just with host-side compute standing in for
 // device-side compute. It does NOT claim to demonstrate GPU
 // compute/network overlap specifically -- only CPU compute/network

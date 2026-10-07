@@ -171,7 +171,7 @@ def main():
     parser.add_argument("--payload-bytes", type=int, default=65536)
     parser.add_argument("--base-port", type=int, default=35000)
     parser.add_argument("--include-nhi-functions", action="store_true")
-    parser.add_argument("--out-dir", type=Path, default=ROOT / "results" / "phase30-local")
+    parser.add_argument("--out-dir", type=Path, default=ROOT / "results" / "sustained-session-local")
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

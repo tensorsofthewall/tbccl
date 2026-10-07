@@ -184,7 +184,7 @@ namespace
         return s;
     }
 
-    // Mac-side per-byte local pattern (no compute -- Part J: Metal rank
+    // Mac-side per-byte local pattern (no compute -- Metal rank
     // participates only in AllReduce). Same pattern_byte() formula used
     // throughout the codebase.
     std::uint8_t mac_pattern_byte(std::size_t i, std::uint32_t seed)
@@ -298,7 +298,7 @@ int main(int argc, char **argv)
         [[maybe_unused]] const bool do_compute = (options.schedule != "collective-only");
         const bool do_collective = (options.schedule != "compute-only");
 
-        // World: readiness barrier only (Part CA -- no sleep-only
+        // World: readiness barrier only (no sleep-only
         // coordination), matching tbccl_hetero_allreduce_bench.cpp's
         // established pattern.
         tbccl::TcpWorldOptions world_opts;

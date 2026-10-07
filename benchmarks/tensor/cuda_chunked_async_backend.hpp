@@ -31,14 +31,13 @@ public:
     CudaChunkedAsyncBackend();
 
     // For the bucket-overlap benchmark, which needs ONE shared copy
-    // stream across N bucket backends (Part AX: "keep streams
-    // minimal... do NOT add stream per bucket"), rather than one
-    // stream per instance. `shared_copy_stream` must be a cudaStream_t
-    // cast to void*, and must outlive this instance; this instance
-    // will NOT destroy it (ownership stays with the caller). Passing
-    // nullptr (or using the default constructor) preserves the
-    // CUDA/Metal device-pipeline work's original behavior: create and
-    // own a private stream.
+    // stream across N bucket backends ("keep streams minimal... do NOT
+    // add stream per bucket"), rather than one stream per instance.
+    // `shared_copy_stream` must be a cudaStream_t cast to void*, and
+    // must outlive this instance; this instance will NOT destroy it
+    // (ownership stays with the caller). Passing nullptr (or using the
+    // default constructor) preserves the CUDA/Metal device-pipeline
+    // work's original behavior: create and own a private stream.
     explicit CudaChunkedAsyncBackend(void *shared_copy_stream);
 
     ~CudaChunkedAsyncBackend() override;
@@ -86,8 +85,8 @@ public:
     // compute step (if ever added) could read the destination buffer.
     // Not used by TensorCommWorker or any generic code --
     // AsyncMemoryBackend's interface never exposes a raw device
-    // pointer (Part AN: generic TBCCL understands ready/ not-ready,
-    // never CUDA types).
+    // pointer (generic TBCCL understands ready/ not-ready, never CUDA
+    // types).
     void *source_device_ptr() noexcept;
     void *destination_device_ptr() noexcept;
 

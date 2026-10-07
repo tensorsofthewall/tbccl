@@ -1,6 +1,6 @@
 // single-domain loopback medians (Host buffers, W2) for the before/after A/B: P2P ping-pong round trip and all_reduce at 4 KiB / 1 MiB / 16 MiB.
 // Not a benchmark campaign: a handful of warm-up rounds, then `--iters` timed rounds with no verification inside the timed loop, then one untimed verified round.
-//   p73_single_domain_bench [--iters N] [--cuda-free]   prints one line per case: case median_ms min_ms
+//   single_domain_bench [--iters N] [--cuda-free]   prints one line per case: case median_ms min_ms
 #include "../tests/mesh_test_support.hpp"
 
 #include <algorithm>

@@ -11,7 +11,7 @@
 // Every run measures ONE (bytes, chunk_bytes, pipeline_depth) point:
 // warmup iterations (untimed), then measured iterations (timed),
 // reusing one persistent connection/worker/staging pool throughout
-// (Part AX: never benchmark initialization as steady-state).
+// (never benchmark initialization as steady-state).
 
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/peer_capabilities.hpp>

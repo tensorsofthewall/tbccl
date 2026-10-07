@@ -1,4 +1,4 @@
-/* pure-C functional test of C ABI v1 (docs/c_abi_v1.md): bootstrap at N=1..4, P2P, every collective, Work semantics, opaque byte payloads, abort,
+/* pure-C functional test of C ABI v1 (docs/reference/c-abi.md): bootstrap at N=1..4, P2P, every collective, Work semantics, opaque byte payloads, abort,
  * capabilities and the argument-validation matrix. Plain C11; the only TBCCL header is tbccl.h. */
 
 #include "c_test_support.h"

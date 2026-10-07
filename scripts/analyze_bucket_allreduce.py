@@ -2,7 +2,7 @@
 """Summarize tbccl_bucketed_allreduce_bench JSON output.
 
 Usage:
-    analyze_phase39_bucket_allreduce.py file1.json file2.json [...]
+    analyze_bucket_allreduce.py file1.json file2.json [...]
 
 Prints Markdown tables: Primary overlap (serial/overlap pairs matched by
 label suffix), Reduction decomposition (if TBCCL_ALLREDUCE_TIMING logs are

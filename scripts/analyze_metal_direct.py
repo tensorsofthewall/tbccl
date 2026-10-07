@@ -3,9 +3,9 @@
 / tbccl_bucketed_allreduce_bench JSON output for the Metal-direct A/B comparison.
 
 Usage:
-    analyze_phase40_metal_direct.py --p2p file1.json file2.json [...]
-    analyze_phase40_metal_direct.py --allreduce file1.json file2.json [...]
-    analyze_phase40_metal_direct.py --timing-log file.timing.log [...]
+    analyze_metal_direct.py --p2p file1.json file2.json [...]
+    analyze_metal_direct.py --allreduce file1.json file2.json [...]
+    analyze_metal_direct.py --timing-log file.timing.log [...]
 
 Prints Markdown tables pairing "*_adapter*" / "*_direct*" labeled runs.
 """

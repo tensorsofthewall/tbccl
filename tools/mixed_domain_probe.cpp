@@ -5,7 +5,7 @@
 // wrong result says whose bytes arrived where. Scenarios cover the same relative order on both ranks and the opposite order, which the intended contract says
 // must be legal: collectives and P2P are independent ordering domains.
 //
-//   p73_mixed_domain_probe [--gate] [--seed N] [--family AR|BC|AG|BAR] [--bytes N]...
+//   mixed_domain_probe [--gate] [--seed N] [--family AR|BC|AG|BAR] [--bytes N]...
 //
 // Without --gate it only reports (exit 0): this is how the pre-repair behaviour is recorded. With --gate any scenario that is not PASS fails the run.
 #include "../tests/mesh_test_support.hpp"

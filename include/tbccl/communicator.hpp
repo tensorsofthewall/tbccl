@@ -1,8 +1,8 @@
 #pragma once
 
 // The public, framework-independent communication runtime
-// entry point. See docs/framework_integration_architecture.md for the
-// full design and docs/public_api.md for usage documentation.
+// entry point. See docs/concepts/architecture.md for the
+// full design and docs/reference/cpp-api-overview.md for usage documentation.
 //
 // This header has zero CUDA/Objective-C/Metal dependency, matching the
 // existing invariant already stated at the top of this project's
@@ -13,7 +13,7 @@
 // an explicit, testable extension point rather than a weak-symbol trick.
 // MemoryKind::MetalShared needs no such extension: it is handled by the
 // SAME built-in host-pointer provider as MemoryKind::Host (see
-// docs/framework_integration_architecture.md Section 5).
+// docs/concepts/memory-providers.md).
 
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/buffer.hpp>
@@ -66,10 +66,10 @@ public:
 
     // A provider-owned scratch AsyncMemoryBackend of the same byte
     // capacity as the wrapped buffer, allocated lazily on first use and
-    // reused thereafter (Part BC: no payload-sized allocation per
-    // collective). Used only as the AllReduce root's landing zone for
-    // the peer's contribution, so the caller's own buffer (holding the
-    // local input) is never overwritten before the local reduce runs.
+    // reused thereafter (no payload-sized allocation per collective).
+    // Used only as the AllReduce root's landing zone for the peer's
+    // contribution, so the caller's own buffer (holding the local
+    // input) is never overwritten before the local reduce runs.
     virtual AsyncMemoryBackend &scratch_backend() = 0;
 
     // Local SUM reduce: scratch_backend's contents are added into

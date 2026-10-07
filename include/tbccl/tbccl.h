@@ -1,5 +1,5 @@
 /*
- * TBCCL C ABI v1 (docs/c_abi_v1.md is authoritative).
+ * TBCCL C ABI v1 (docs/reference/c-abi.md is authoritative).
  *
  * Plain C11, also valid C++. Only <stdint.h> and <stddef.h>; no CUDA, Metal or C++ header. The symbols live in the dedicated TBCCL::tbccl_c target;
  * the C++ runtime (TBCCL::tbccl) is not an ABI promise. Never renumber a constant, reorder or remove a field, remove a function or change a
@@ -159,7 +159,7 @@ TBCCL_API tbcclResult_t TBCCL_CALL tbcclGetPackageVersion(uint32_t *major, uint3
 /* Static generic text for a result value; never NULL. */
 TBCCL_API const char *TBCCL_CALL tbcclGetResultString(tbcclResult_t result);
 
-/* ---- bootstrap: the application exchanges opaque endpoint blobs (docs/c_api_bootstrap.md) --------------------------------------------- */
+/* ---- bootstrap: the application exchanges opaque endpoint blobs (docs/reference/c-abi-bootstrap.md) --------------------------------------------- */
 TBCCL_API tbcclResult_t TBCCL_CALL tbcclGetUniqueId(tbcclUniqueId *id);
 /* Binds this rank's listeners (ports chosen by the kernel) and owns them. `options` may be NULL. */
 TBCCL_API tbcclResult_t TBCCL_CALL tbcclBootstrapBegin(uint32_t rank, uint32_t world_size, const tbcclUniqueId *id,

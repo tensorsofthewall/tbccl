@@ -214,8 +214,8 @@ int main(int argc, char **argv)
         // A World connection is always established, even for --algo async
         // alone: besides serving the sync reference phase, it doubles as a
         // readiness barrier for the async phase's separate TcpTransport
-        // connection below (Part CI -- do not regress to sleep-only
-        // coordination; barrier() is an existing, unmodified collective).
+        // connection below (do not regress to sleep-only coordination;
+        // barrier() is an existing, unmodified collective).
         tbccl::TcpWorldOptions world_opts;
         world_opts.rank = rank;
         for (const auto &p : options.peers) world_opts.peers.push_back({p.host, p.port});

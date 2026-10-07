@@ -44,7 +44,7 @@ namespace
 // A deliberately minimal, internal duplicate of
 // benchmarks/tensor/host_async_backend.hpp's and host_reduce_backend.hpp's
 // logic, rather than including those benchmark-only headers from core
-// tbccl (Part AE: public installed headers -- and, by the same
+// tbccl (public installed headers -- and, by the same
 // reasoning, core's own internal implementation -- must not depend on
 // benchmarks/, which is structurally built ON TOP of core, never the
 // reverse). Both pieces are small and proven; this is a deliberate,
@@ -121,7 +121,7 @@ private:
 };
 
 // ---------------------------------------------------------------------
-// Provider factory registry (Part P/N extension point).
+// Provider factory registry (extension point).
 // ---------------------------------------------------------------------
 
 std::mutex &registry_mutex()

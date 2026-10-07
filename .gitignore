@@ -44,28 +44,7 @@ __pycache__/
 
 # Local the TB4 latency work health/benchmark artifacts (machine-specific,
 # untracked).
-/results/phase20-local/
-/results/phase21-local/
-/results/phase22-local/
-/results/phase23-local/
-/results/phase24-local/
-/results/phase25-local/
-/results/phase26-local/
-/results/phase27-local/
-/results/phase28-local/
-/results/phase29-local/
-/results/phase30-local/
-/results/phase31-local/
-/results/phase32-local/
-/results/phase33-local/
-/results/phase34-local/
-/results/phase35-local/
-/results/phase36-local/
-/results/phase37-local/
-/results/phase38-local/
-/results/phase39-local/
-/results/phase40-local/
-/results/phase41-local/
+/results/async-transport-local/
 
 # Local agent instructions (never committed)
 AGENTS.local.md
@@ -76,3 +55,6 @@ build-*/
 # Documentation build
 .venv-docs/
 docs/_build/
+
+# Raw local measurement output
+/results/*-local/

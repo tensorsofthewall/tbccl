@@ -12,8 +12,8 @@
 // rationale): this is a worker-thread-driven wrapper over
 // TensorBackend's existing *synchronous* stage_device_to_host()/
 // stage_host_to_device() calls, not the finer-grained per-chunk
-// cudaEvent/copy-stream overlap the plan's Part S describes. The
-// caller-side benefit Part K asks for -- the enqueuing thread never
+// cudaEvent/copy-stream overlap the design describes. The
+// caller-side benefit the design asks for -- the enqueuing thread never
 // blocks on GPU work -- is still genuinely delivered, because those
 // blocking calls now happen on TensorCommWorker's own staging thread,
 // never on the thread that called enqueue(). What this adapter does
@@ -94,9 +94,9 @@ public:
             // guarantee) -- exactly once per transfer, on whichever
             // thread happens to commit the final chunk (StagingPool's
             // depth bounds how many chunks can be "in flight" at once,
-            // but per Part K/L this worker still commits chunks in
-            // strict order on one thread, so no race is actually
-            // possible here; the atomic is defensive, not load-bearing).
+            // but this worker still commits chunks in strict order on
+            // one thread, so no race is actually possible here; the
+            // atomic is defensive, not load-bearing).
             backend_.stage_host_to_device();
         }
         else if (committed > expected_chunk_count_)

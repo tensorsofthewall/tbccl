@@ -107,7 +107,7 @@ void CudaChunkedAsyncBackend::allocate(std::size_t bytes, std::size_t max_chunk_
     if (bytes == capacity_ && max_chunk_bytes == impl_->max_chunk_bytes &&
         impl_->source_device != nullptr)
     {
-        return; // persistent across iterations, Part W: no reallocation
+        return; // persistent across iterations, no reallocation
     }
 
     if (impl_->source_device) { cudaFree(impl_->source_device); impl_->source_device = nullptr; }

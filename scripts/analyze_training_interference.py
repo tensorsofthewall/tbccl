@@ -86,7 +86,7 @@ def summary_stats(samples_us):
 
 def empirical_cdf(samples_us):
     """Returns sorted (value, cumulative_fraction) pairs -- no plotting,
-    just the data (plan Part M item 59: "no plot required")."""
+    just the data (plan "no plot required")."""
     ordered = sorted(samples_us)
     n = len(ordered)
     return [(v, (i + 1) / n) for i, v in enumerate(ordered)]

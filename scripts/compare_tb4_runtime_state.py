@@ -12,7 +12,7 @@ found in either snapshot is classified into exactly one of:
 A field must never be silently treated as "changed" just because it is
 missing from one side (e.g. a historical the NHI ring-cadence work snapshot that predates
 a field this tool now captures) -- that would fabricate a difference that
-was never actually observed. See Part D item 19/99 in the sustained-session reproduction plan.
+was never actually observed.
 
 List-valued fields (e.g. pci_devices) are flattened by positional index.
 capture_tb4_runtime_state.py sorts every list it produces by a stable key

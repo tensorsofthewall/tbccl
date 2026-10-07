@@ -5,7 +5,7 @@ Each AllReduce run produces two JSON files (one per rank, rank 0's is
 authoritative for timing since it's the side this script is pointed at by
 convention -- both ranks' verify_ok flags are reported). Usage:
 
-    analyze_phase38_allreduce.py file1_rank0.json file1_rank1.json [...]
+    analyze_hetero_allreduce.py file1_rank0.json file1_rank1.json [...]
 
 Prints Markdown tables: Correctness, Sync vs Async, Root comparison.
 """

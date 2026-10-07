@@ -209,7 +209,7 @@ def gpu_state():
 def active_compute_processes():
     """nvidia-smi's own compute-app listing -- empty (not None) means no
     CUDA compute process is currently running, which is the actual signal
-    Part B needs (a graphics-only client like Xorg/Firefox does not show
+    the capture needs (a graphics-only client like Xorg/Firefox does not show
     up here at all)."""
     if not shutil.which("nvidia-smi"):
         return None
