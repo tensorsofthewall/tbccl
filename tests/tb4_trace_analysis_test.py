@@ -83,7 +83,7 @@ class AnalysisTests(unittest.TestCase):
 def sched_line(ts,kind,pid,comm='tbccl_tensor_tr',other_pid=999,state='S'):
     """Builds one synthetic ftrace text line matching this kernel's actual
     sched_switch/sched_wakeup format (verified against real captured
-    output in the the tail-latency investigation's manual analysis)."""
+    output in the tail-latency investigation's manual analysis)."""
     if kind=='wakeup':
         return f'          <idle>-0       [000] dN.2. {ts:.6f}: sched_wakeup: comm={comm} pid={pid} prio=120 target_cpu=000'
     if kind=='sleep':
