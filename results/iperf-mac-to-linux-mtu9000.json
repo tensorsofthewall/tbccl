@@ -8,7 +8,7 @@
 				"remote_port":	5201
 			}],
 		"version":	"iperf 3.8.1 -  -- Apple version iperf3-126.100.2",
-		"system_info":	"Darwin Sandeshs-Mac-mini.local 25.5.0 Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:26 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8132 arm64",
+		"system_info":	"Darwin mac-host 25.5.0 Darwin Kernel Version 25.5.0: Mon Apr 27 20:41:26 PDT 2026; root:xnu-12377.121.6~2/RELEASE_ARM64_T8132 arm64",
 		"timestamp":	{
 			"time":	"Sat, 26 Sep 2026 16:41:27 UTC",
 			"timesecs":	1790440887

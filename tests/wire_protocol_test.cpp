@@ -9,6 +9,7 @@
 #include "test_utils.hpp"
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <string>
@@ -180,6 +181,80 @@ int main()
         f.reason.clear();
         send_control_frame(*server, f);
         expect(recv_control_frame(*client).type == ControlFrameType::Goodbye, "goodbye round trip");
+    }
+
+    // Malformed input that already has defined behavior: an out-of-range role, a first message that is not a hello, a hello that ends early,
+    // a control frame that ends early, and a control frame type this version does not know.
+    expect_rejected(run(hello(id, 1, 3, static_cast<ConnectionRole>(99)), 0, base), "connection arrived", "out-of-range connection role");
+    {
+        auto expect_stranger = [&](const std::string &label, const std::function<void(Connection &)> &misbehave, const std::string &needle) {
+            auto listener = tcp_listen("127.0.0.1", 0);
+            const auto port = listener->local_port();
+            std::string error;
+            auto acceptor = std::async(std::launch::async, [&] {
+                try
+                {
+                    auto c = listener->accept_for(std::chrono::seconds(5));
+                    c->set_io_timeout(std::chrono::seconds(2));
+                    accept_handshake(*c, base);
+                }
+                catch (const std::exception &e)
+                {
+                    error = e.what();
+                }
+            });
+            {
+                auto c = tcp_connect("127.0.0.1", port);
+                misbehave(*c);
+            }
+            acceptor.get();
+            expect(has(error, "protocol_mismatch: not a TBCCL peer") && has(error, needle), label + ": " + error);
+        };
+        expect_stranger(
+            "first message is not a hello",
+            [&](Connection &c) {
+                std::vector<std::uint8_t> raw(kHelloWireSize, 0);
+                put_u32(raw.data(), 0x54424332U);
+                put_u32(raw.data() + 8, 99);
+                c.send(raw.data(), raw.size());
+            },
+            "is not a hello");
+        expect_stranger(
+            "hello truncated by a close",
+            [&](Connection &c) {
+                std::vector<unsigned char> half(kHelloWireSize / 2, 0);
+                c.send(half.data(), half.size());
+            },
+            "no complete hello");
+    }
+    {
+        auto listener = tcp_listen("127.0.0.1", 0);
+        auto client = tcp_connect("127.0.0.1", listener->local_port());
+        auto server = listener->accept_for(std::chrono::seconds(5));
+        server->set_io_timeout(std::chrono::seconds(2));
+        std::vector<unsigned char> half(kControlFrameWireSize / 2, 0);
+        client->send(half.data(), half.size());
+        client.reset();
+        bool threw = false;
+        try
+        {
+            recv_control_frame(*server);
+        }
+        catch (const std::exception &)
+        {
+            threw = true;
+        }
+        expect(threw, "a control frame cut short by a close is an error, not a partial frame");
+    }
+    {
+        auto listener = tcp_listen("127.0.0.1", 0);
+        auto client = tcp_connect("127.0.0.1", listener->local_port());
+        auto server = listener->accept_for(std::chrono::seconds(5));
+        std::vector<unsigned char> raw(kControlFrameWireSize, 0);
+        raw[3] = 0x63;
+        client->send(raw.data(), raw.size());
+        auto f = recv_control_frame(*server);
+        expect(f.type != ControlFrameType::Abort && f.type != ControlFrameType::Goodbye, "an unknown control frame type is returned for the caller to ignore");
     }
 
     std::cout << "wire_protocol_test passed\n";
