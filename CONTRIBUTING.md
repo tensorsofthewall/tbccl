@@ -68,6 +68,12 @@ AI-Assistance: documentation | tests | benchmark tooling | build automation | me
 
 and use `AI-Validated-By: <tool>` only when the tool itself ran and recorded the validation the commit reports. Do not list an AI tool as an author, co-author, signer or reviewer.
 
+## License of contributions
+
+tbccl is licensed under the Apache License, Version 2.0. By submitting a contribution you agree that it is licensed under the same terms (Apache-2.0, section 5), and you confirm that you have the right to submit it. Do not submit code you did not write unless its license is compatible with Apache-2.0 and you say where it came from.
+
 ## Reporting problems
+
+Security problems: do not open an issue; follow `SECURITY.md`.
 
 Open an issue with the version, platform, how to reproduce, and the observed and expected behavior. Please do not include credentials or private network details.
