@@ -72,3 +72,7 @@ AGENTS.local.md
 
 # Out-of-tree CMake build directories
 build-*/
+
+# Documentation build
+.venv-docs/
+docs/_build/
