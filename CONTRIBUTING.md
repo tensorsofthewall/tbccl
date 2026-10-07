@@ -48,7 +48,7 @@ ci: add documentation checks
 
 ## Documentation
 
-User-visible changes update the relevant documentation (`README.md` and `docs/`) in the same pull request. Document behavior that exists, not behavior you intend to add.
+User-visible changes update the relevant documentation (`README.md` and `docs/`) in the same pull request. Document behavior that exists, not behavior you intend to add. Build the documentation with `make docs` before submitting; warnings fail the build and the same check runs in continuous integration.
 
 ## Compatibility requirements
 
