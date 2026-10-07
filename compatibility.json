@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "project": "tbccl",
+  "package": {
+    "development_version": "0.5.1",
+    "release_target": "0.6.0",
+    "released": false
+  },
+  "c_abi": {
+    "version": 1
+  },
+  "wire_protocol": {
+    "version": 4,
+    "interoperable_with": [4]
+  },
+  "endpoint_blob_format": 1,
+  "platforms": [
+    {"os": "linux", "arch": "x86_64", "memory_kinds": ["host", "cuda"]},
+    {"os": "macos", "arch": "arm64", "memory_kinds": ["host", "metal_shared"]}
+  ],
+  "world_sizes": {"validated": [1, 2, 3, 4], "accepted_max": 8}
+}

@@ -1,7 +1,7 @@
 DOCS_VENV ?= .venv-docs
 PYTHON ?= python3
 
-.PHONY: docs docs-linkcheck docs-clean
+.PHONY: docs docs-linkcheck docs-clean check-compat
 
 $(DOCS_VENV)/.installed: docs/requirements.txt
 	$(PYTHON) -m venv $(DOCS_VENV)
@@ -16,3 +16,6 @@ docs-linkcheck: $(DOCS_VENV)/.installed
 
 docs-clean:
 	rm -rf docs/_build
+
+check-compat:
+	python3 scripts/check_compatibility_manifest.py

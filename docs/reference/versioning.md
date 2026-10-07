@@ -9,6 +9,8 @@ TBCCL tracks four independent versions. They change for different reasons and mu
 | Wire protocol version | `kWireProtocolVersion` in `include/tbccl/rank_directory.hpp` | 4 | what ranks exchange on the network changes incompatibly |
 | Endpoint blob format | `tbcclEndpointBlob.format_version` | 1 | the bootstrap blob layout changes |
 
+The machine-readable form of the first three rows is `compatibility.json` at the repository root; `scripts/check_compatibility_manifest.py` (run in CI and by `make check-compat`) fails if it disagrees with the sources. TBCCL owns this file; each adapter keeps its own manifest of the frameworks, Python versions and platforms it supports and refers to the C ABI and wire protocol versions defined here.
+
 Adapter packages (torch-tbccl, vllm-tbccl, exo-tbccl) have their own package versions and their own framework compatibility ranges; they declare which C ABI and wire protocol versions they were built and validated against.
 
 ## Compatibility rules
