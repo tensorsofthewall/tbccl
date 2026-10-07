@@ -191,7 +191,7 @@ if(TBCCL_ENABLE_METAL)
     target_sources(tbccl_tensor_backend PRIVATE benchmarks/tensor/metal_backend.mm)
 endif()
 
-# --------------------------------------------------------------------------- The stable C ABI shim (docs/c_abi_v1.md). include/tbccl/tbccl.h plus the
+# --------------------------------------------------------------------------- The stable C ABI shim (docs/reference/c-abi.md). include/tbccl/tbccl.h plus the
 # symbols of TBCCL::tbccl_c are the ABI; TBCCL::tbccl stays the C++ target. The shim is written in C++ internally, wraps the final asynchronous runtime
 # and reimplements nothing. A host-only build and a CUDA build export the SAME symbol set (tbcclRegisterCudaSupport exists in both; the host-only one
 # returns TBCCL_UNSUPPORTED). ---------------------------------------------------------------------------
@@ -1142,12 +1142,12 @@ if(BUILD_TESTING)
     list(APPEND tbccl_dynamic_port_tests communicator_p2p_nrank_test)
 
     # Direct mixed P2P + collective probe (reports; --gate makes a non-PASS scenario fail).
-    add_executable(p73_mixed_domain_probe
-        tools/p73_mixed_domain_probe.cpp
+    add_executable(mixed_domain_probe
+        tools/mixed_domain_probe.cpp
     )
-    target_link_libraries(p73_mixed_domain_probe PRIVATE tbccl Threads::Threads)
+    target_link_libraries(mixed_domain_probe PRIVATE tbccl Threads::Threads)
     if(NOT MSVC)
-        target_compile_options(p73_mixed_domain_probe PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(mixed_domain_probe PRIVATE -Wall -Wextra -Wpedantic)
     endif()
 
     add_executable(mixed_domain_ordering_test
@@ -1162,12 +1162,12 @@ if(BUILD_TESTING)
     set_tests_properties(mixed_domain_ordering_test PROPERTIES TIMEOUT 1500)
     list(APPEND tbccl_dynamic_port_tests mixed_domain_ordering_test)
     # The W2 ordering matrix (4 collective families x sizes x 11 relative orders, seeded jitter); fails on any non-PASS scenario.
-    add_test(NAME mixed_domain_matrix_test COMMAND p73_mixed_domain_probe --gate --seed 7 --bytes 4096 --bytes 1048576 --bytes 16777216)
+    add_test(NAME mixed_domain_matrix_test COMMAND mixed_domain_probe --gate --seed 7 --bytes 4096 --bytes 1048576 --bytes 16777216)
     set_tests_properties(mixed_domain_matrix_test PROPERTIES TIMEOUT 900)
     list(APPEND tbccl_dynamic_port_tests mixed_domain_matrix_test)
 
-    add_executable(p73_single_domain_bench tools/p73_single_domain_bench.cpp)
-    target_link_libraries(p73_single_domain_bench PRIVATE tbccl Threads::Threads)
+    add_executable(single_domain_bench tools/single_domain_bench.cpp)
+    target_link_libraries(single_domain_bench PRIVATE tbccl Threads::Threads)
 
     add_executable(communicator_nrank_collectives_test
         tests/communicator_nrank_collectives_test.cpp
@@ -1257,7 +1257,7 @@ if(BUILD_TESTING)
     add_test(NAME c_api_mixed_domain_test COMMAND c_api_mixed_domain_test)
     set_tests_properties(c_api_mixed_domain_test PROPERTIES TIMEOUT 120)
 
-    # The documented quickstart (docs/c_api_quickstart.md) is a real program: built strictly and run as a test.
+    # The documented quickstart (docs/guides/c-api-quickstart.md) is a real program: built strictly and run as a test.
     add_executable(c_quickstart examples/c_quickstart.c)
     target_link_libraries(c_quickstart PRIVATE tbccl_c Threads::Threads)
     if(NOT MSVC)
@@ -2288,9 +2288,9 @@ if(BUILD_TESTING)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tb4_runtime_state_test.py)
         add_test(NAME analyze_training_interference_test
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/analyze_training_interference_test.py)
-        add_test(NAME analyze_phase32_async_transport_test
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/analyze_phase32_async_transport_test.py)
-        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test tb4_runtime_state_test analyze_training_interference_test analyze_phase32_async_transport_test
+        add_test(NAME analyze_async_transport_test
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/analyze_async_transport_test.py)
+        set_tests_properties(tb4_sweep_test tb4_health_test tensor_diagnostics_test tb4_trace_analysis_test tb4_receive_trace_test tb4_runtime_state_test analyze_training_interference_test analyze_async_transport_test
             PROPERTIES TIMEOUT 90)
     endif()
 
@@ -2315,7 +2315,7 @@ endif()
 # component (tbccl_tensor_backend, benchmarks/tensor/), benchmarks/,
 # examples/, and tests/ are NOT installed; they remain source-tree/vendored
 # this phase (a deliberate, documented scope limit -- see
-# docs/public_api.md). A host-only external consumer needs nothing beyond
+# docs/reference/cpp-api-overview.md). A host-only external consumer needs nothing beyond
 # what this block installs.
 # ---------------------------------------------------------------------------
 

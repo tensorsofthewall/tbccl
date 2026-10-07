@@ -1,5 +1,5 @@
 // TBCCL C ABI v1: P2P and collective submission. Every call validates at the ABI level, translates POD to the C++ API, and returns a Work handle; none of
-// them waits for transport progress. P2P is byte-based; collectives follow docs/c_abi_v1.md.
+// them waits for transport progress. P2P is byte-based; collectives follow docs/reference/c-abi.md.
 
 #include "c_internal.hpp"
 

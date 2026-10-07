@@ -78,10 +78,10 @@ THUNDERBOLT_DATA_EVENTS = [
     "thunderbolt_net/tbnet_rx_skb",
 ]
 
-# Present but deliberately not enabled by default (Part H item 42: "avoid
-# allocation/free traces unless necessary") -- alloc/free/invalid-frame
-# traces are high-frequency and not needed to answer the NHI ring-cadence
-# work's question.
+# Present but deliberately not enabled by default ("avoid allocation/free
+# traces unless necessary") -- alloc/free/invalid-frame traces are
+# high-frequency and not needed to answer the NHI ring-cadence work's
+# question.
 THUNDERBOLT_DATA_EVENTS_EXTRA = [
     "thunderbolt_net/tbnet_alloc_rx_frame",
     "thunderbolt_net/tbnet_alloc_tx_frame",
@@ -110,7 +110,7 @@ SYSTEM_WIDE_EVENTS = set(RECEIVE_EVENTS) | set(THUNDERBOLT_CONTROL_EVENTS) \
 # start_poll=NULL, so TX servicing is unconditionally workqueue-based while
 # RX is unconditionally NAPI-based, confirmed from source, not assumed).
 # Filtered against this kernel's actual available_filter_functions before use
-# (Part F item 28 -- do not assume traceability).
+# (do not assume traceability).
 NHI_FUNCTIONS = [
     "ring_msix",
     "ring_work",

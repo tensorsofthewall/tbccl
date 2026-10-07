@@ -2,7 +2,7 @@
 
 // framework-independent public runtime types. This header, and every other header
 // directly under include/tbccl/, has no CUDA or Objective-C/Metal dependency --
-// see docs/framework_integration_architecture.md. DataType/ReduceOp already exist
+// see docs/concepts/architecture.md. DataType/ReduceOp already exist
 // (tbccl/reduction.hpp); this header adds the remaining small enums the public
 // Communicator/BufferView API needs.
 
@@ -13,7 +13,7 @@ namespace tbccl
 
 // What kind of memory a BufferView's data pointer refers to. MetalShared
 // is deliberately NOT a separate code path from Host at the transport
-// layer (docs/framework_integration_architecture.md Section 5): once a
+// layer (docs/concepts/memory-providers.md): once a
 // caller has taken an MTLBuffer's .contents pointer, it is ordinary
 // CPU-visible memory as far as TBCCL's transport is concerned. The
 // label exists for documentation/provenance and to leave room for a

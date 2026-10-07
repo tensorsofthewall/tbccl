@@ -1,6 +1,6 @@
 // P2P and collective traffic are independent ordering domains on one communicator (loopback, Host buffers; threads or forked processes per rank).
 //
-// The W2 ordering matrix (same / opposite relative order, 4 families, 3 sizes) lives in tools/p73_mixed_domain_probe.cpp, run with --gate as a second ctest. This file adds:
+// The W2 ordering matrix (same / opposite relative order, 4 families, 3 sizes) lives in tools/mixed_domain_probe.cpp, run with --gate as a second ctest. This file adds:
 //   W3 / W4 mixes (all_reduce + P2P pair / ring, all_gather + ring, broadcast + independent pair; the first use of each domain on a pair in either order),
 //   application threads (one submits collectives, another P2P), seeded random-jitter stress, collective-mismatch and P2P-size-mismatch semantics with the other domain
 //   in flight, abort / destroy / peer death with both domains outstanding (the survivor must fail promptly and never touch a buffer after its Work is terminal),

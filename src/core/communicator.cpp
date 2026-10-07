@@ -44,7 +44,7 @@ namespace
 // A deliberately minimal, internal duplicate of
 // benchmarks/tensor/host_async_backend.hpp's and host_reduce_backend.hpp's
 // logic, rather than including those benchmark-only headers from core
-// tbccl (Part AE: public installed headers -- and, by the same
+// tbccl (public installed headers -- and, by the same
 // reasoning, core's own internal implementation -- must not depend on
 // benchmarks/, which is structurally built ON TOP of core, never the
 // reverse). Both pieces are small and proven; this is a deliberate,
@@ -121,7 +121,7 @@ private:
 };
 
 // ---------------------------------------------------------------------
-// Provider factory registry (Part P/N extension point).
+// Provider factory registry (extension point).
 // ---------------------------------------------------------------------
 
 std::mutex &registry_mutex()
@@ -747,7 +747,7 @@ detail::CollectiveDescriptor describe(
     return d;
 }
 
-std::atomic<std::uint64_t> g_phase43_transfer_id{std::uint64_t{1} << 40};
+std::atomic<std::uint64_t> g_transfer_id{std::uint64_t{1} << 40};
 
 void run_transfer(
     TensorCommWorker &worker,
@@ -758,7 +758,7 @@ void run_transfer(
     const char *what)
 {
     TransferRequest request;
-    request.transfer_id = g_phase43_transfer_id.fetch_add(1, std::memory_order_relaxed);
+    request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
     request.direction = direction;
     request.backend = &backend;
     request.transport = &transport;

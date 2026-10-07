@@ -98,8 +98,8 @@ enum class StagingSlotState
 };
 
 // A fixed-depth set of preallocated, reusable host-visible buffers,
-// each `slot_bytes` bytes. Race-safe acquire()/release() (Part M item
-// 54) -- acquire() blocks (via condition_variable, never spins,
+// each `slot_bytes` bytes. Race-safe acquire()/release() --
+// acquire() blocks (via condition_variable, never spins,
 //) until a slot is Free, and marks it in use;
 // release() returns it to Free and wakes one waiter.
 class StagingPool

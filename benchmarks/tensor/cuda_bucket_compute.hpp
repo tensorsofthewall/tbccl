@@ -15,12 +15,12 @@ namespace tbccl_bench::tensor
 // Launches a per-byte deterministic hash-mix transform on `device_ptr`
 // (device-resident, `bytes` long), with `rounds` iterations of mixing
 // per byte -- more rounds means more GPU time, used for compute-time
-// calibration. Writes every byte of the buffer (Part AU: no "touches 4
-// bytes, transfers 16 MiB" realism gap). Asynchronous: returns once
-// the kernel is launched, not once it completes -- callers synchronize
-// `stream` explicitly when they need completion (Part L/M: host-side
-// stream synchronization, not CUDA events, is the first thing this
-// phase tries).
+// calibration. Writes every byte of the buffer (no "touches 4 bytes,
+// transfers 16 MiB" realism gap). Asynchronous: returns once the
+// kernel is launched, not once it completes -- callers synchronize
+// `stream` explicitly when they need completion (host-side stream
+// synchronization, not CUDA events, is the first thing this phase
+// tries).
 void launch_bucket_compute(
     void *device_ptr,
     std::size_t bytes,
@@ -28,19 +28,17 @@ void launch_bucket_compute(
     int rounds,
     void *stream);
 
-// The exact same transform, computed on the CPU, for verification
-// (Part AV: integer arithmetic, no floating-point determinism
-// concerns) and for the one-time untimed post-loop byte-exact check
-// (docs/benchmark_methodology.md's convention). Defined inline, here,
-// in plain C++ (NOT in cuda_bucket_compute.cu) so it is available on
-// every platform regardless of TBCCL_ENABLE_CUDA -- critical for the
-// CUDA compute-overlap benchmark's receiver role, which commonly runs
-// on a non- CUDA machine (e.g. the Mac mini's Metal-shared
-// destination) but still needs to verify CUDA-computed bytes it
-// received. The CUDA kernel in cuda_bucket_compute.cu uses an
-// intentional __device__ duplicate of this exact formula (matching
-// this codebase's established convention for small CUDA-side pattern
-// duplicates).
+// The exact same transform, computed on the CPU, for verification (integer
+// arithmetic, no floating-point determinism concerns) and for the one-time
+// untimed post-loop byte-exact check (docs/development/benchmark-methodology.md's
+// convention). Defined inline, here, in plain C++ (NOT in cuda_bucket_compute.cu)
+// so it is available on every platform regardless of TBCCL_ENABLE_CUDA --
+// critical for the CUDA compute-overlap benchmark's receiver role, which commonly
+// runs on a non- CUDA machine (e.g. the Mac mini's Metal-shared destination) but
+// still needs to verify CUDA-computed bytes it received. The CUDA kernel in
+// cuda_bucket_compute.cu uses an intentional __device__ duplicate of this exact
+// formula (matching this codebase's established convention for small CUDA-side
+// pattern duplicates).
 inline std::uint8_t expected_bucket_byte(std::size_t i, std::uint32_t seed, int rounds)
 {
     const std::uint64_t index = static_cast<std::uint64_t>(i);

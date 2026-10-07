@@ -30,7 +30,7 @@ namespace tbccl_bench
 {
 
 // Lightweight completion handle, matching tbccl::TransferWork's shape
-// (wait()/is_completed()/has_error()/error()) -- Part T item 70: no
+// (wait()/is_completed()/has_error()/error()) -- no
 // cancellation/future semantics beyond this.
 class BucketAllReduceWork
 {
@@ -89,9 +89,8 @@ private:
 // One job: everything n2_all_reduce_tensor() needs, plus a bucket index
 // for diagnostic logging. Non-owning pointers -- all referenced objects
 // (transport, worker, backends) must outlive the job's execution, exactly
-// matching TransferRequest's own buffer-lifetime contract (Part V/W: one
-// persistent tensor/backend per bucket makes this trivial for the
-// benchmark).
+// matching TransferRequest's own buffer-lifetime contract (one persistent
+// tensor/backend per bucket makes this trivial for the benchmark).
 struct BucketAllReduceJob
 {
     tbccl::Transport *transport = nullptr;

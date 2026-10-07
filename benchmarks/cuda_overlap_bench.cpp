@@ -5,7 +5,7 @@
 // communicated with TBCCL's existing per-chunk async CUDA staging
 // (CudaChunkedAsyncBackend, the CUDA/Metal device-pipeline work) to a portable RECEIVER backend
 // (host or Metal shared, matching async_transfer_bench.cpp's existing
-// cross-platform pattern -- Part AP/CE: the receiver does no compute
+// cross-platform pattern -- the receiver does no compute
 // and must build/run on a non-CUDA machine).
 //
 // This is a plain .cpp (not .cu): all CUDA-specific code is guarded
@@ -13,7 +13,7 @@
 // (cuda_bucket_compute.hpp, cuda_chunked_async_backend.hpp -- both use
 // void* for device pointers/streams) so this file itself never
 // includes cuda_runtime.h or CUDA syntax. The sender role REQUIRES a
-// CUDA-enabled build (Part AS: real CUDA kernel execution only, never
+// CUDA-enabled build (real CUDA kernel execution only, never
 // a CPU/sleep substitute for the authoritative result); the receiver
 // role requires only tensor_backend.hpp's portable backend set.
 //
@@ -535,12 +535,13 @@ int main(int argc, char **argv)
             if (round == total_rounds - 1) last_timeline = timeline;
         }
 
-        // Part C/benchmark_methodology.md: verification happens ONCE,
-        // untimed, after the whole measured loop -- never inside it.
-        // content_round matches whichever content is actually in the
-        // sender's device buffers right now: for compute-driving
-        // schedules, that's the last measured round; for comm-only,
-        // content was fixed once at content_round=0.
+        // the benchmark methodology
+        // (docs/development/benchmark-methodology.md): verification
+        // happens ONCE, untimed, after the whole measured loop --
+        // never inside it. content_round matches whichever content is
+        // actually in the sender's device buffers right now: for
+        // compute-driving schedules, that's the last measured round;
+        // for comm-only, content was fixed once at content_round=0.
         const std::size_t content_round = do_compute ? (total_rounds - 1) : 0;
 #if defined(TBCCL_ENABLE_CUDA)
         if (is_sender && do_compute)

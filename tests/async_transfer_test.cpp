@@ -2,8 +2,8 @@
 // substrate (async_transfer.hpp): ChunkPlan correctness, StagingPool
 // race-safety, and TensorCommWorker
 // lifecycle/ordering/error-propagation, all over real local TCP
-// loopback connections via TcpTransport -- no GPU involved (Part Q:
-// host path first, validates the substrate itself).
+// loopback connections via TcpTransport -- no GPU involved (host
+// path first, validates the substrate itself).
 
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/tcp.hpp>
@@ -191,7 +191,7 @@ namespace
     }
 
     // acquire() on a fully-depleted pool blocks until release(),
-    // exercised across two threads (Part M item 54: race-safe).
+    // exercised across two threads (race-safe).
     void test_staging_pool_acquire_blocks_until_release()
     {
         tbccl::StagingPool pool(16, 1);

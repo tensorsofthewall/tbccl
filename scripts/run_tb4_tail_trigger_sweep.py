@@ -65,8 +65,8 @@ def run_burst(session_index, idle_ms, warmup, measured, payload_bytes,
     over SSH), both with --trace, and returns the parsed result. Each
     process is fresh -- this itself is the 'fresh process' condition."""
     run_id = f'{run_id_prefix}_s{session_index}'
-    linux_stderr_path = ROOT / 'results' / 'phase24-local' / f'{run_id}_linux.trace'
-    mac_stderr_path = ROOT / 'results' / 'phase24-local' / f'{run_id}_mac.trace'
+    linux_stderr_path = ROOT / 'results' / 'tail-trigger-local' / f'{run_id}_linux.trace'
+    mac_stderr_path = ROOT / 'results' / 'tail-trigger-local' / f'{run_id}_mac.trace'
     peers = f'192.168.3.1:{base_port},192.168.3.2:{base_port + 1}'
 
     linux_argv = [
@@ -82,8 +82,8 @@ def run_burst(session_index, idle_ms, warmup, measured, payload_bytes,
         f'--run-id {run_id} --physical-machine mac'
     )
 
-    linux_stdout_path = ROOT / 'results' / 'phase24-local' / f'{run_id}_linux.csv'
-    mac_stdout_path = ROOT / 'results' / 'phase24-local' / f'{run_id}_mac.csv'
+    linux_stdout_path = ROOT / 'results' / 'tail-trigger-local' / f'{run_id}_linux.csv'
+    mac_stdout_path = ROOT / 'results' / 'tail-trigger-local' / f'{run_id}_mac.csv'
 
     wall_launch_start = time.monotonic()
     with open(linux_stdout_path, 'w') as lout, open(linux_stderr_path, 'w') as lerr:
@@ -150,7 +150,7 @@ def main():
     idle_list_ms = [int(x) for x in args.idle_ms.split(',') if x.strip()]
     order = rotate_conditions(idle_list_ms, args.bursts_per_condition)
 
-    (ROOT / 'results' / 'phase24-local').mkdir(parents=True, exist_ok=True)
+    (ROOT / 'results' / 'tail-trigger-local').mkdir(parents=True, exist_ok=True)
 
     metadata = {
         'commit': git_commit(),

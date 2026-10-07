@@ -40,12 +40,12 @@ namespace
     // diagnostic-only control to test the "idle staging-thread affects
     // network-thread scheduling" hypothesis. When set, Impl skips
     // creating staging_thread entirely -- ONLY safe for workloads that
-    // exclusively use the direct path (Part H: chunk_hint==0 &&
+    // exclusively use the direct path (chunk_hint==0 &&
     // backend->supports_direct_transport_access()), since the staged
     // path's submit_job()/wait_job() would otherwise block forever
     // with no staging thread to service it. Not part of the public
-    // API; gated off by default, for a controlled A/B only (Part AT:
-    // no production topology change without justification).
+    // API; gated off by default, for a controlled A/B only (no
+    // production topology change without justification).
     bool no_staging_thread_enabled()
     {
         static const bool enabled = (std::getenv("TBCCL_ASYNC_NO_STAGING_THREAD") != nullptr);
@@ -232,7 +232,7 @@ namespace
     // Optional per-chunk timeline timing (same
     // TBCCL_ASYNC_TIMING gate as the direct path's instrumentation) --
     // this is what lets a benchmark prove device-copy/network overlap
-    // from something other than aggregate throughput, per Part S item
+    // from something other than aggregate throughput, item
     // 73's explicit requirement ("do not claim pipeline overlap from
     // throughput alone").
     void staging_produce_send(
@@ -777,7 +777,7 @@ struct TensorCommWorker::Impl
         const TransferRequest &request,
         const std::shared_ptr<TransferWork::State> &state)
     {
-        // Part H pseudocode, exactly: direct path only when the memory
+        // The design's pseudocode, exactly: direct path only when the memory
         // is directly transport-accessible AND the caller has not
         // explicitly asked for chunking/pipelining (chunk_hint == 0).
         // A caller that explicitly sets chunk_hint (wanting pipelined

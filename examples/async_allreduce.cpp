@@ -1,14 +1,14 @@
 // The standalone reference example for the public
 // TBCCL runtime API. Uses ONLY public, installed headers
 // (<tbccl/communicator.hpp> and friends) -- no benchmark headers, no
-// internal TBCCL classes. This is also the vehicle for Part AY's
+// internal TBCCL classes. This is also the vehicle for the
 // central end-to-end proof: a real N=2 heterogeneous SUM AllReduce
 // (CUDA on Linux <-> Metal-shared on Mac) over the real Thunderbolt
 // link, reached only through Communicator::all_reduce(), reusing the
 // exact, unmodified n2_all_reduce_tensor() engine every prior phase
 // built and proved.
 //
-// Build with TBCCL installed (see docs/public_api.md) or from this
+// Build with TBCCL installed (see docs/reference/cpp-api-overview.md) or from this
 // source tree directly:
 //   --backend host         : portable, no device required.
 //   --backend cuda          : requires a CUDA device (Linux) and the

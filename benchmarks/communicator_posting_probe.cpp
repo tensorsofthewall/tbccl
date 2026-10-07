@@ -1,4 +1,4 @@
-// the N>2 collective-selection work probe (grouped-operations audit, docs/grouped_operations_audit.md): can a rank POST an arbitrary pattern of asynchronous sends and receives
+// the N>2 collective-selection work probe (grouped-operations audit, docs/adr/0008-nonblocking-submission-without-group-calls.md): can a rank POST an arbitrary pattern of asynchronous sends and receives
 // without a grouped-call API? Two ranks each post K sends of `bytes` bytes to the other BEFORE posting any receive, then K receives, then wait for everything (the classic
 // Isend...Irecv pattern that deadlocks when a post blocks). Prints one line: completed or "BLOCKED" (a watchdog fires). Usage: communicator_posting_probe <K> <bytes> [world]
 

@@ -42,11 +42,11 @@ private:
     void *stream_;
 };
 
-// Test-only plain memcpy helpers (Part Q: hardware correctness tests need
-// to seed a known peer value into a device buffer and read back a
-// post-reduction result) -- kept here rather than in a .cpp test file so
-// no test translation unit needs to include <cuda_runtime.h> directly,
-// matching this codebase's existing CUDA-type-free-header convention.
+// Test-only plain memcpy helpers (hardware correctness tests need to seed
+// a known peer value into a device buffer and read back a post-reduction
+// result) -- kept here rather than in a .cpp test file so no test
+// translation unit needs to include <cuda_runtime.h> directly, matching
+// this codebase's existing CUDA-type-free-header convention.
 void cuda_copy_host_to_device(const void *host_src, void *device_dst, std::size_t bytes);
 void cuda_copy_device_to_host(const void *device_src, void *host_dst, std::size_t bytes);
 

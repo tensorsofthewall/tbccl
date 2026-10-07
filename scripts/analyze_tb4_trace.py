@@ -704,7 +704,7 @@ def classify_mac_sender_boundary(
     row['trace_quality'] = 'application + packet'
 
     # send_end -> this same iteration's own payload becoming visible on
-    # Mac's own capture (Part I item 40 / Part M classification G).
+    # Mac's own capture.
     # send() is synchronous, so the payload is often already (mostly or
     # fully) visible on the wire microseconds BEFORE send_end is
     # timestamped, not strictly after -- confirmed empirically in this
@@ -845,7 +845,7 @@ def sender_boundary_report(
 # timed on this kernel -- napi_gro_receive_entry (GRO is active per `ethtool
 # -k thunderbolt0`, so netif_receive_skb_entry does not fire for this
 # device) is used as the single proxy for both, and this collapsing is
-# documented rather than silently implied (Part P item 62: never infer a
+# documented rather than silently implied (never infer a
 # stage that was not traced).
 FTRACE_RECEIVE_LINE = re.compile(
     r'(?P<ts>\d+\.\d+):\s*(?P<event>irq_handler_entry|softirq_entry|napi_poll|'
@@ -965,7 +965,7 @@ def classify_receive_path_event(
         baseline=None, prompt_threshold_us=150, irq_anomaly_threshold_us=500):
     """The decision tree for one slow iteration.
 
-    Primary signal (, Part H classification A): does an
+    Primary signal: does an
     anomalous gap in the continuous irq_handler_entry cadence overlap this
     iteration's window? If so, the delay is upstream of all traced
     receiver network processing -- softirq/NAPI/socket-wakeup are never
@@ -1168,7 +1168,7 @@ def per_vector_irq_gaps(events):
     """irq_cadence_gaps(), computed separately per MSI-X vector (irq
     number) instead of aggregated across all `name=thunderbolt` IRQs --
     the NHI ring-cadence work's primary extension of the receive-path investigation work's single-stream analysis
-    (Part E item 21: 'do not aggregate all name=thunderbolt events into
+    ('do not aggregate all name=thunderbolt events into
     one sequence'). Returns {irq_number: [(start, end, gap_us), ...]}."""
     by_irq = {}
     for event in events:
@@ -1195,8 +1195,7 @@ def simultaneous_vector_silence(window_start_s, window_end_s, per_vector_gaps,
                                  anomaly_threshold_us=500):
     """For every vector, the largest anomalous gap (if any) overlapping
     the window -- lets the caller determine whether multiple vectors go
-    silent together or only one does (Part S outcomes
-    D/E). Returns {irq: gap_us_or_None}."""
+    silent together or only one does. Returns {irq: gap_us_or_None}."""
     result = {}
     for irq, gaps in per_vector_gaps.items():
         overlap = irq_silence_overlap(window_start_s, window_end_s, gaps, anomaly_threshold_us)
@@ -1334,7 +1333,7 @@ def parse_nhi_function_trace(trace_text, functions=('ring_msix', 'ring_work',
 def resolve_cpu_roles(function_events):
     """Maps each CPU to 'tx' or 'rx' by which follow-on function runs on
     it after ring_msix: ring_work (TX, always workqueue-based on this
-    kernel -- Part E: tb_ring_alloc_tx() always passes start_poll=NULL) or
+    kernel -- tb_ring_alloc_tx() always passes start_poll=NULL) or
     tb_ring_poll (RX, always NAPI-based). Returns {cpu: 'tx'|'rx'}; a CPU
     that shows neither is simply absent, never guessed."""
     cpu_role = {}
@@ -1349,7 +1348,7 @@ def resolve_cpu_roles(function_events):
 def vector_roles_from_affinity(cpu_role_by_cpu, cpu_by_irq):
     """Combines resolve_cpu_roles()'s {cpu: 'tx'|'rx'} with a caller-
     supplied {irq_number: cpu} affinity mapping (from /proc/interrupts,
-    Part E item 19 -- read-only, never changed) to produce the final
+    read-only, never changed) to produce the final
     {irq_number: 'tx'|'rx'|'unknown'}."""
     return {irq: cpu_role_by_cpu.get(cpu, 'unknown') for irq, cpu in cpu_by_irq.items()}
 

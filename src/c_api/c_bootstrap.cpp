@@ -1,4 +1,4 @@
-// TBCCL C ABI v1: caller-exchanged endpoint bootstrap (docs/c_api_bootstrap.md).
+// TBCCL C ABI v1: caller-exchanged endpoint bootstrap (docs/reference/c-abi-bootstrap.md).
 //
 //   tbcclGetUniqueId -> (app distributes the id) -> tbcclBootstrapBegin (binds this rank's listeners on kernel-chosen ports and owns them)
 //   -> tbcclBootstrapGetEndpoint -> (app all-gathers the opaque blobs) -> tbcclBootstrapComplete (hands the listeners to the Communicator) -> tbcclBootstrapDestroy

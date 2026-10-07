@@ -41,9 +41,9 @@ namespace
     // integer avalanche mix (a Murmur3-style finalizer), seeded by the
     // input byte, seed, and byte index -- genuinely depends on real
     // input data (not trivially hoistable/eliminated), uses only
-    // integer arithmetic (Part AV: no float determinism/ denormal
-    // concerns), and its cost scales linearly and predictably with
-    // `rounds` for calibration.
+    // integer arithmetic (no float determinism/ denormal concerns),
+    // and its cost scales linearly and predictably with `rounds` for
+    // calibration.
     __device__ __host__ std::uint8_t bucket_transform(
         std::uint8_t input, std::size_t i, std::uint32_t seed, int rounds)
     {

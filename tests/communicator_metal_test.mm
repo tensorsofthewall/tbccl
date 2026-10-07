@@ -2,7 +2,7 @@
 // MTLBuffer (MTLResourceStorageModeShared) can participate in the
 // public Communicator API tagged as MemoryKind::MetalShared, with TBCCL
 // never allocating or freeing it -- the architecture doc's "Metal
-// simplification" (docs/framework_integration_architecture.md Section
+// simplification" (docs/concepts/architecture.md
 // 5) validated against real hardware, not just the Host-only loopback
 // suite in communicator_test.cpp.
 

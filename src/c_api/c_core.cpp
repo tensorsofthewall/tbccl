@@ -1,4 +1,4 @@
-// TBCCL C ABI v1: version, result strings, communicator lifetime and queries, CUDA registration. See docs/c_abi_v1.md.
+// TBCCL C ABI v1: version, result strings, communicator lifetime and queries, CUDA registration. See docs/reference/c-abi.md.
 
 #include "c_internal.hpp"
 

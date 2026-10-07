@@ -108,7 +108,7 @@ namespace
         }
         expect(destination.verify_destination(kSeed), "destination must verify after committing all chunks");
 
-        // Repeat once more, reusing the same instances (Part W: no
+        // Repeat once more, reusing the same instances (no
         // reallocation on an identical allocate() call).
         const auto pinned_before = source.diagnostic_pinned_alloc_count();
         const auto stream_before = source.diagnostic_stream_create_count();

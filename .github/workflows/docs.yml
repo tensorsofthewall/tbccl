@@ -17,3 +17,5 @@ jobs:
         run: make docs
       - name: Check local links
         run: make docs-linkcheck
+      - name: Check the compatibility manifest
+        run: python3 scripts/check_compatibility_manifest.py

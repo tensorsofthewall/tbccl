@@ -1,7 +1,7 @@
 #pragma once
 
 // The public asynchronous Work handle. The audit
-// (docs/framework_integration_architecture.md Section 6) found
+// (docs/concepts/architecture.md) found
 // TransferWork's existing shape (wait()/is_completed()/has_error()/
 // error(), shared completion state, repeated-wait-safe,
 // friend-gated construction) already public-API-grade -- it is

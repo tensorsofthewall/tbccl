@@ -1,7 +1,7 @@
 // host-only correctness tests for n2_all_reduce_tensor()
 // (tbccl/hetero_allreduce.hpp), over real local TCP loopback connections
-// via TcpTransport -- no GPU involved (Part AK: prove the executor itself
-// on host first, matching the async tensor-transfer async-substrate test
+// via TcpTransport -- no GPU involved (prove the executor itself on host
+// first, matching the async tensor-transfer async-substrate test
 // convention in tests/async_transfer_test.cpp).
 
 #include <tbccl/hetero_allreduce.hpp>

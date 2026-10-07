@@ -133,8 +133,7 @@ protected:
 // the async tensor-transfer substrate (TransferRequest/TransferWork/
 // TensorCommWorker/StagingPool/ChunkPlan, async_transfer.hpp) can move
 // bytes without knowing which concrete transport is underneath. This is
-// deliberately NOT just "Connection with a different name" (Part E item
-// 22): it is the seam a data-plane implementation with genuinely
+// deliberately NOT just "Connection with a different name": it is the seam a data-plane implementation with genuinely
 // different semantics (registered memory, zero-copy, direct device
 // access) can occupy later, by implementing this same interface and
 // reporting different capabilities() -- no caller above this class
@@ -142,7 +141,7 @@ protected:
 //
 // the async tensor-transfer work ships exactly one implementation: TcpTransport, adapting the
 // existing Connection this header already defines. No other transport
-// is implemented this phase (see docs/transport_architecture.md).
+// is implemented this phase (see docs/concepts/transports.md).
 class Transport
 {
 public:
