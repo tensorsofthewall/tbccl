@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import os
 from pathlib import Path
 import socket
 import subprocess
@@ -14,10 +15,36 @@ import run_tb4_busy_poll_sweep as sweep
 BINARY = sys.argv.pop(1)
 
 
+def ephemeral_floor():
+    try:
+        return int(Path('/proc/sys/net/ipv4/ip_local_port_range').read_text().split()[0])
+    except (OSError, ValueError):
+        return 49152
+
+
 def ports():
-    with socket.socket() as a, socket.socket() as b:
-        a.bind(('127.0.0.1',0));b.bind(('127.0.0.1',0))
-        return a.getsockname()[1],b.getsockname()[1]
+    # The bench processes bind their own endpoints, so an OS-assigned socket cannot be handed to them. The only other users of
+    # the OS ephemeral range are concurrent dynamic-port tests (bind port 0, connect source ports), which can take a port
+    # between a bind-0/close probe here and the bench's bind. So pick below that range: a fixed-port test cannot run beside
+    # this one (all of them share the tbccl_loopback_ports lock).
+    floor = ephemeral_floor()
+    start = 20000 + (os.getpid() * 7) % max(1, floor - 22000)
+    found = []
+    port = start
+    while len(found) < 2:
+        if port + 1000 >= floor:
+            port = 20000
+        with socket.socket() as a, socket.socket() as b:
+            for sock in (a, b):
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                a.bind(('127.0.0.1', port))
+                b.bind(('127.0.0.1', port + 1000))
+                found.append(port)
+            except OSError:
+                pass
+        port += 2
+    return found[0], found[1]
 
 
 class DiagnosticsTests(unittest.TestCase):

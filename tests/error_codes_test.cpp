@@ -127,7 +127,9 @@ namespace
             posted.arrive_and_wait(); // every rank has posted before anyone aborts
             comm.abort("test abort");
             pending.wait();
-            expect(pending.has_error() && pending.error_code() == ErrorCode::Aborted, "a pending recv fails Aborted when the communicator is aborted");
+            // A peer that aborted first closes its sockets, which can fail this rank's recv with TransportError before this rank's own abort() runs.
+            expect(pending.has_error() && (pending.error_code() == ErrorCode::Aborted || pending.error_code() == ErrorCode::TransportError),
+                   "a pending recv fails Aborted (or TransportError if a peer's abort arrived first) when the communicator is aborted");
             expect(comm.aborted(), "aborted()");
         });
         std::cout << "[PASS] collective mismatch -> ProtocolMismatch; abort -> pending Works and new calls report Aborted\n";

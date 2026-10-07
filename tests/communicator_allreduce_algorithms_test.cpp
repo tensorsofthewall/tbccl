@@ -15,6 +15,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <random>
 #include <set>
 
@@ -139,13 +140,23 @@ namespace
         std::vector<std::size_t> worlds;
     };
 
-    // Runs one world and returns every rank's result.
+    // One world per size is reused by every case of the matrix (see mesh_test::World); the edge check below builds its own fresh one.
+    std::map<std::size_t, std::unique_ptr<mesh_test::World>> g_worlds;
+
+    mesh_test::World &pooled_world(std::size_t world)
+    {
+        auto &w = g_worlds[world];
+        if (!w) w = std::make_unique<mesh_test::World>(world);
+        return *w;
+    }
+
+    // Runs one all_reduce and returns every rank's result.
     template <typename T> std::vector<std::vector<T>> run_all_reduce(std::size_t world, const std::vector<std::vector<T>> &inputs, bool in_place, std::set<std::size_t> *edges_out = nullptr)
     {
         std::vector<std::vector<T>> results(world);
         std::vector<std::set<std::size_t>> edges(world);
         const std::size_t count = inputs[0].size();
-        run_world(world, [&](std::size_t rank, tbccl::Communicator &comm) {
+        const auto body = [&](std::size_t rank, tbccl::Communicator &comm) {
             std::vector<T> mine = inputs[rank], out(count, T{});
             const std::size_t bytes = count * sizeof(T);
             tbccl::Work w = in_place ? comm.all_reduce(view(mine.data(), bytes), view(mine.data(), bytes), count, dtype_of<T>(), ReduceOp::Sum)
@@ -156,7 +167,9 @@ namespace
             results[rank] = in_place ? mine : out;
             auto v = tbccl::detail::debug_connected_data_peers(comm);
             edges[rank] = std::set<std::size_t>(v.begin(), v.end());
-        });
+        };
+        if (edges_out) run_world(world, body);
+        else pooled_world(world).run(body);
         if (edges_out) for (std::size_t r = 0; r < world; ++r) edges_out[r] = edges[r];
         return results;
     }
@@ -222,6 +235,7 @@ namespace
                     }
                 }
             }
+            g_worlds.erase(world);
             std::cout << "[PASS] all_reduce algorithm=" << cfg.algorithm << " world_size=" << world << ": Float32/Float64 vs the high-precision reference (random, positive, wide range, cancellation, subnormal, inf/NaN), "
                       << "rank agreement and determinism; Int32/Int64/Int8/UInt8 exact; in-place and out-of-place\n";
         }
