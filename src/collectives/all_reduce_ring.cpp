@@ -19,7 +19,7 @@ namespace
     // arithmetic or ring transport engine, just composing the two
     // already-validated ring primitives. This composition also means
     // no dedicated changes were needed here for the persistent
-    // ring-worker work's persistent ring worker: both calls below
+    // ring worker: both calls below
     // resolve `world`'s RingExecutor (see ring_executor.hpp)
     // themselves, so the two phases automatically submit two
     // sequential jobs to the same already-running worker rather than

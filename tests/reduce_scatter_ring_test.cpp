@@ -89,7 +89,7 @@ namespace
         }
     }
 
-    // Reference vs ring comparison policy (see phase plan item 23):
+    // Reference vs ring comparison policy (see the reduce-scatter test plan):
     // exact for integers and for Float Min/Max, tolerance-based for
     // Float Sum/Product since ring and reference reduce in different
     // orders and floating-point Sum/Product are not associative in
@@ -223,8 +223,8 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test: explicit segment-ownership check at N=4, recv_count=1 — the
-    // phase plan's own worked example shape. If the shifted ring
+    // Test: explicit segment-ownership check at N=4, recv_count=1 — a
+    // worked example shape. If the shifted ring
     // formula were wrong (e.g. rank ended up with a neighbor's segment
     // instead of its own), comparing against the independently-indexed
     // `expected[i]` in run_correctness would catch it immediately.
@@ -719,7 +719,7 @@ namespace
     }
 
     // Ring AllGather <-> ring ReduceScatter, both orders — the pair
-    // the optimized ring all-reduce work's optimized AllReduce will
+    // the optimized AllReduce will
     // compose directly.
     void test_ring_allgather_then_ring_rs()
     {

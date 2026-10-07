@@ -975,7 +975,7 @@ TransferWork TensorCommWorker::enqueue(TransferRequest request)
         std::unique_lock<std::mutex> lock(lane.queue_mutex);
         if (lane.queue_depth != std::numeric_limits<std::size_t>::max())
         {
-            // pre-Phase-52 backpressure for standalone users; the Communicator's lanes never take this branch
+            // blocking backpressure for standalone users; the Communicator's lanes never take this branch
             lane.queue_cv.wait(
                 lock,
                 [&]() { return lane.aborted.load() || lane.queue.size() < lane.queue_depth; });

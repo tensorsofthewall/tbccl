@@ -14,9 +14,9 @@
 //   chain      the latency-attribution decode chain: rank 0 send+wait then all_gather; rank 1 recv+wait then all_gather (one iteration)
 //   --gap-mode sleep|spin   how the idle gaps (--gap-us, --profile) are spent: sleep (default; the application is idle, cores may enter deep idle) or spin (the
 //                           application thread stays busy, as a CUDA synchronize does)
-//   idle       the cold-progress work: create the communicator, do nothing for --iters seconds (default 30), report the process CPU use over that time (busy cores;
+//   idle       create the communicator, do nothing for --iters seconds (default 30), report the process CPU use over that time (busy cores;
 //              an idle communicator must not spin, with or without a progress experiment enabled)
-//   replay     the cold-progress work: replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
+//   replay     replay a recorded cadence (--profile FILE, this rank's ops: kind, bytes, idle gap before the op; --passes N). A profile comes from
 //              tools/cadence_profile.py (a real decode's communication calls); each rank replays its own file, so the waits for the peer's compute
 //              reproduce themselves. Reports the per-pass wall time and the communication overhead per step ((wall - sum of gaps) / steps), medians.
 // Internal experiment switches are environment variables read by libtbccl (TBCCL_LATENCY_TRACE, TBCCL_DIAG_*), see docs/concepts/execution-and-progress.md.

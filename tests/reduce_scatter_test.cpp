@@ -160,7 +160,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 3: three-rank rank-ordered segments — the phase plan's own
+    // Test 3: three-rank rank-ordered segments — a
     // worked example. Explicitly checks rank r receives segment r, not
     // merely "some correct data".
     // -----------------------------------------------------------------------------

@@ -83,7 +83,7 @@ class AnalysisTests(unittest.TestCase):
 def sched_line(ts,kind,pid,comm='tbccl_tensor_tr',other_pid=999,state='S'):
     """Builds one synthetic ftrace text line matching this kernel's actual
     sched_switch/sched_wakeup format (verified against real captured
-    output in the tail-latency root-cause work's manual investigation)."""
+    output in the tail-latency investigation's manual analysis)."""
     if kind=='wakeup':
         return f'          <idle>-0       [000] dN.2. {ts:.6f}: sched_wakeup: comm={comm} pid={pid} prio=120 target_cpu=000'
     if kind=='sleep':
@@ -191,7 +191,7 @@ class ClassifyTests(unittest.TestCase):
 
 
 def tcpdump_line(ts,src,dst,length,flags='P.'):
-    """Builds one synthetic tcpdump -tt text line matching this phase's
+    """Builds one synthetic tcpdump -tt text line matching the
     real captured format closely enough for parse_tcpdump_text."""
     return (f'{ts:.6f} IP {src} > {dst}: Flags [{flags}], seq 1:2, ack 1, '
             f'win 100, options [nop,nop,TS val 1 ecr 1], length {length}')
@@ -238,7 +238,7 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(extra,[])
 
     def test_verification_round_excluded_via_expected_count(self):
-        # Reproduces the real bug found in this phase: the benchmark's
+        # Reproduces the real bug found earlier: the benchmark's
         # own untimed post-loop verification round (one more full tensor
         # resend after the measured loop) gets structurally paired with
         # the last measured iteration's ack, since ack/payload alternate
@@ -468,7 +468,7 @@ class SenderBoundaryTests(unittest.TestCase):
         self.assertEqual(row['classification'],'delay after Mac local packet observation')
 
     def test_send_to_packet_matches_own_payload_not_next_iteration(self):
-        # Regression test for the bug found in this phase: the payload
+        # Regression test for an earlier bug: the payload
         # segment for the CURRENT iteration can appear on the capture
         # microseconds BEFORE send_end is timestamped (send() is
         # synchronous). Searching only for packets strictly after

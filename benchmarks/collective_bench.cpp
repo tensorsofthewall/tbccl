@@ -21,7 +21,7 @@
 // ever resolves to "reference" or "ring", exactly as before. --chunk-
 // bytes is ignored (has no effect) for reference/ring/auto.
 //
-// The CLI/CSV shape is deliberately generic so later phases can add
+// The CLI/CSV shape is deliberately generic so later work can add
 // more collectives/algorithms without replacing this tool — see
 // run_all_gather_benchmark()/run_reduce_scatter_benchmark() as the
 // pattern to follow for e.g. all-reduce.

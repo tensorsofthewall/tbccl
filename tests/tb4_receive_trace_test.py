@@ -250,7 +250,7 @@ class ReceiveEventDiscoveryTests(unittest.TestCase):
 class FunctionTracingTests(unittest.TestCase):
     """Tier-1 narrow function tracing (--include-nhi-
     functions) -- current_tracer/set_ftrace_filter save/restore, and the
-    real bug this phase found: set_ftrace_pid must NOT be written when a
+    real bug found while building it: set_ftrace_pid must NOT be written when a
     function_filter is active, since ring_msix/ring_work/tb_ring_poll run
     in interrupt/workqueue context, never attributed to the benchmark's
     own PID -- writing it would scope the function tracer away from every
@@ -316,7 +316,7 @@ class FunctionTracingTests(unittest.TestCase):
         self.assertEqual((self.root / "set_ftrace_filter").read_text(), "some_other_func")
 
     def test_set_pid_filter_does_not_write_set_ftrace_pid_when_function_filter_active(self):
-        # The real the NHI DMA-ring work bug: NHI functions run in
+        # The real NHI DMA-ring bug: NHI functions run in
         # interrupt/workqueue context, not the benchmark's own PID --
         # set_ftrace_pid must stay untouched (system-wide function
         # tracing) or every NHI function trace line is silently filtered
@@ -342,7 +342,7 @@ class FunctionTracingTests(unittest.TestCase):
             self.assertEqual((self.root / "set_ftrace_pid").read_text(), "4242")
 
     def test_no_function_tracing_when_filter_is_none(self):
-        # Default behavior (every prior phase) must be completely
+        # Default behavior (the default) must be completely
         # untouched: current_tracer/set_ftrace_filter are never read or
         # written when function_filter is None.
         events = ["sched/sched_switch"]

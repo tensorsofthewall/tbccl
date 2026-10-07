@@ -44,21 +44,19 @@ namespace
         std::size_t threshold_bytes;
     };
 
-    // Algorithm Selection v2 (Phase 15). The persistent ring-worker work's persistent ring
-    // worker substantially cut ring's fixed per-invocation overhead,
-    // which made the original per-invocation-thread ring thresholds (kept in git history
-    // — see the per-invocation-thread ring and Phase 15 final reports) badly stale: most
+    // Algorithm selection thresholds. The persistent ring worker substantially cut ring's fixed per-invocation overhead,
+    // which made the thresholds of the earlier per-invocation-thread ring badly stale: most
     // crossover points had moved down by one to two orders of
-    // magnitude. These v2 values come from a two-stage process, not a
-    // single sweep: a broad the loopback algorithm-sweep work loopback A/B sweep (2 independent
-    // runs) identified rough crossover *neighborhoods*, then Phase 15
-    // re-measured each neighborhood directly (3 independent runs,
+    // magnitude. These values come from a two-stage process, not a
+    // single sweep: a broad loopback A/B sweep (2 independent
+    // runs) identified rough crossover *neighborhoods*, then each
+    // neighborhood was re-measured directly (3 independent runs,
     // checking both median AND p95, at the candidate size and its
-    // half/double neighbors) before adopting a value. Several the loopback algorithm-sweep work
-    // candidates did not survive that re-check — see the Phase 15
-    // final report for the full evidence trail — and were moved to a
+    // half/double neighbors) before a value was adopted. Several
+    // candidates did not survive that re-check
+    // and were moved to a
     // larger, cleanly-supported size instead of being adopted as-is;
-    // AllReduce's the loopback algorithm-sweep work candidates in particular turned out to be
+    // AllReduce's candidates in particular turned out to be
     // computed against the wrong size unit (segment bytes instead of
     // the tensor bytes the selector and CLI actually use) and, once
     // corrected and re-measured, did not support lowering any of its
@@ -73,7 +71,7 @@ namespace
 
     constexpr WorldSizeThreshold kAllGatherThresholds[] = {
         // N=2 is a v2 policy change, not a threshold adjustment: the
-        // per-invocation-thread ring work always used Reference here
+        // earlier implementation always used Reference here
         // (loopback and real-TB4 data conflicted at the time). The
         // dedicated N=2 investigation — alternating (ABBA) real
         // TB4 A/B runs at 64 B/4 KiB/64 KiB/1 MiB, both physical rank
@@ -85,7 +83,7 @@ namespace
         // tested; not extrapolated below it.
         {2, 64},
         {3, 64ull * 1024},
-        // N=4/N=8 candidates from the loopback algorithm-sweep work's
+        // N=4/N=8: the loopback sweep's
         // raw crossover point (16 KiB) did not hold up under the
         // 3-run re-check — Ring was still consistently worse at
         // 16 KiB, only becoming cleanly and consistently favorable at
@@ -97,8 +95,8 @@ namespace
     };
 
     constexpr WorldSizeThreshold kReduceScatterThresholds[] = {
-        // N=2's the loopback algorithm-sweep work candidate (64 KiB)
-        // was contradicted by a non-monotonic Phase 15 re-check:
+        // N=2's loopback candidate (64 KiB)
+        // was contradicted by a non-monotonic re-check:
         // Ring lost consistently at 64 KiB across 3 reps despite
         // winning at both the smaller (32 KiB) and larger (128 KiB)
         // neighboring sizes tested. Moved up to 128 KiB, the
@@ -119,11 +117,11 @@ namespace
         {4, 2ull * 1024 * 1024},
         {8, 512ull * 1024},
         // N=2 and N=3 deliberately absent, and N=4/N=8 deliberately
-        // UNCHANGED from per-invocation-thread ring — this is a real (evidence-based)
-        // finding, not an oversight. The loopback algorithm-sweep work's AllReduce candidates
+        // UNCHANGED from the earlier ring implementation — this is a real (evidence-based)
+        // finding, not an oversight. The loopback sweep's AllReduce candidates
         // were computed against segment bytes but the selector
         // threshold (and the benchmark's --sizes) is total tensor
-        // bytes per rank; once Phase 15 corrected that and
+        // bytes per rank; once that was corrected and
         // re-measured directly in tensor-byte terms: N=3 showed Ring
         // consistently *worse* than Reference at every tensor size
         // tested, up to 768 KiB; N=4 showed no consistent direction
@@ -131,7 +129,7 @@ namespace
         // both the candidate size and 2x it); N=8's candidate (256
         // KiB tensor) was marginal/inconsistent, and the size where
         // Ring became a clean, repeatable win (512 KiB tensor) turned
-        // out to already match the existing per-invocation-thread ring threshold almost
+        // out to already match the earlier threshold almost
         // exactly. AllReduce composes two ring phases (reduce-scatter
         // + all-gather) per call, roughly doubling the fixed cost
         // Ring must amortize versus AllGather/ReduceScatter alone,

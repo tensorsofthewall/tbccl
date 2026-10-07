@@ -15,7 +15,7 @@ namespace tbccl
 
 // The version of the Communicator wire protocol (Hello, control frames, collective descriptors). It is independent of the package version and of kProtocolVersion in peer_capabilities.hpp (the capability-record
 // layout). Version 1 was the implicit pre-N-rank-runtime N=2 bootstrap (TcpWorld hello + capability record); version 2 was the N-rank runtime work; version 3 (the N>2 collective-selection work) adds the algorithm
-// id to the collective verdict and the forced-algorithm field to the descriptor; version 4 (the ordering-domain repair work) adds a second data connection per rank pair (ConnectionRole::CollectiveData) so
+// id to the collective verdict and the forced-algorithm field to the descriptor; version 4 adds a second data connection per rank pair (ConnectionRole::CollectiveData) so
 // point-to-point and collective traffic are independent ordering domains on separate byte streams. Older versions are not wire-compatible and are rejected by the handshake.
 constexpr std::uint32_t kWireProtocolVersion = 4;
 

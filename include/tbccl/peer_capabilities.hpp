@@ -38,7 +38,7 @@ enum class OsKind : std::uint8_t
     MacOS = 2,
     // Exists as a capability value so a future Windows peer can
     // advertise itself through the same wire format without a protocol
-    // version bump -- no Windows code runs this phase.
+    // version bump -- no Windows code exists.
     Windows = 3,
 };
 

@@ -15,7 +15,7 @@
 //   data      point-to-point payload bytes (a connection of its own since ordering-domain repair for collectives: see coll_data)
 //   worker    a duplex TensorCommWorker: independent send and receive lanes, so one direction never delays the other and
 //             different peers make independent progress
-//   coll_data / coll_worker   the ordering-domain repair work: the same pair for collective payload bytes (wire protocol 4, ConnectionRole::CollectiveData)
+//   coll_data / coll_worker   the same pair for collective payload bytes (wire protocol 4, ConnectionRole::CollectiveData)
 
 #include "bootstrap_config.hpp"
 #include "collective_protocol.hpp"

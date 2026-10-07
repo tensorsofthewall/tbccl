@@ -14,7 +14,7 @@ namespace tbccl
 // connections are an unframed byte stream per peer, so concurrent
 // unrelated send()/recv() traffic over the same World while a
 // collective is executing — from another thread, or messages left in
-// flight from a previous phase — is not supported and will corrupt the
+// flight from an earlier operation — is not supported and will corrupt the
 // control/payload protocol. Sequence application communication and
 // collective calls strictly one after another (see
 // tests/barrier_test.cpp and tests/broadcast_test.cpp for the intended

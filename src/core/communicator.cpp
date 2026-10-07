@@ -788,7 +788,7 @@ Work Communicator::all_reduce(
     const std::size_t world = impl_->world_size;
     if (op != ReduceOp::Sum)
     {
-        throw Error(ErrorCode::Unsupported, "unsupported: all_reduce only supports ReduceOp::Sum this phase");
+        throw Error(ErrorCode::Unsupported, "unsupported: all_reduce only supports ReduceOp::Sum");
     }
     validate_reduction(datatype, op);
     if (world > 2 && (datatype == DataType::Float16 || datatype == DataType::BFloat16))

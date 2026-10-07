@@ -125,7 +125,7 @@ static void abort_body(int rank, int world, tbcclComm_t comm, void *user)
     tbcclResult_t op = TBCCL_SUCCESS;
     CHECK_OK(tbcclWorkWaitFor(coll, 10000, &done, &op));
     /* the aborted collective is terminal and failed; its text says why (the result code of a collective cut short inside the N=2 reduction is mapped by the collective executor,
-     * not by this phase) */
+     * not by this test) */
     CHECK(done == 1 && op != TBCCL_SUCCESS);
     {
         char text[256];

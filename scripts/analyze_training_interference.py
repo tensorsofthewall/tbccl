@@ -4,7 +4,7 @@
 Standard-library only (no scipy) -- Fisher's exact test (two-sided, via
 the hypergeometric distribution and math.comb) and the Wilson score
 interval are both simple enough to implement directly rather than adding
-a dependency for this one phase.
+a dependency for this one tool.
 
 Every function here takes plain lists of per-iteration latency samples in
 microseconds (as produced by parsing a TBCCL_DIAGNOSTIC transfer_trace,
@@ -172,7 +172,7 @@ def event_rate_comparison(on_events, on_n, off_events, off_n):
 def irq_cadence_table(baselines_by_condition):
     """baselines_by_condition: {condition_name: per_vector_baseline dict
     as produced by analyze_tb4_trace.nhi_cadence_report}. Returns a flat
-    comparison table, TX=177/RX=178 (the NHI DMA-ring work's confirmed roles on
+    comparison table, TX=177/RX=178 (the NHI DMA-ring's confirmed roles on
     this boot -- not re-derived here)."""
     rows = []
     for condition, baseline in baselines_by_condition.items():

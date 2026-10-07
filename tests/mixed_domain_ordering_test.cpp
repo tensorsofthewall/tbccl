@@ -598,7 +598,7 @@ void test_new_dialer_rejected_by_old_listener()
     }
     old.join();
     expect(contains(error, "protocol_mismatch") && contains(error, "wire protocol"), "a wire-4 dialer against a wire-3 listener: " + error);
-    expect(tbccl::kWireProtocolVersion == 4, "kWireProtocolVersion is expected to be 4 after Phase 73");
+    expect(tbccl::kWireProtocolVersion == 4, "kWireProtocolVersion is expected to be 4");
     std::cout << "[PASS] wire-4 dialer against a wire-3 listener: " << error.substr(0, 80) << "\n";
 }
 

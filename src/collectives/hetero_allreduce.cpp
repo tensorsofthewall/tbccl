@@ -30,7 +30,7 @@ namespace
     }
 
     // Optional stage-decomposition timing, disabled by default -- same
-    // pattern as the async fast-path work's TBCCL_ASYNC_TIMING (a
+    // pattern as TBCCL_ASYNC_TIMING (a
     // single getenv() at first use, cached; prints directly to stderr
     // for a human/script-readable log, not threaded through any public
     // return value). Never adds cost to the normal hot path.

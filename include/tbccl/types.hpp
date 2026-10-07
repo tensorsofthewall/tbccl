@@ -28,8 +28,8 @@ enum class MemoryKind
 std::string memory_kind_name(MemoryKind kind);
 
 // What kind of execution context a caller's buffer was produced under.
-// Host means "already synchronized, safe to read now" -- every prior
-// phase's benchmark-owned-tensor convention. CudaStream carries an
+// Host means "already synchronized, safe to read now" -- the
+// benchmark-owned-tensor convention. CudaStream carries an
 // opaque native stream handle, cast to cudaStream_t only inside the
 // CUDA-specific provider implementation -- this header never includes a
 // CUDA header.

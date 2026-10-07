@@ -5,8 +5,8 @@
 // central end-to-end proof: a real N=2 heterogeneous SUM AllReduce
 // (CUDA on Linux <-> Metal-shared on Mac) over the real Thunderbolt
 // link, reached only through Communicator::all_reduce(), reusing the
-// exact, unmodified n2_all_reduce_tensor() engine every prior phase
-// built and proved.
+// exact, unmodified n2_all_reduce_tensor() engine the
+// benchmarks already use.
 //
 // Build with TBCCL installed (see docs/reference/cpp-api-overview.md) or from this
 // source tree directly:

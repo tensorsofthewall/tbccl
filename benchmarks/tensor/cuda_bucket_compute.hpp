@@ -19,8 +19,8 @@ namespace tbccl_bench::tensor
 // transfers 16 MiB" realism gap). Asynchronous: returns once the
 // kernel is launched, not once it completes -- callers synchronize
 // `stream` explicitly when they need completion (host-side stream
-// synchronization, not CUDA events, is the first thing this phase
-// tries).
+// synchronization, not CUDA events, is the first approach
+// tried).
 void launch_bucket_compute(
     void *device_ptr,
     std::size_t bytes,

@@ -175,7 +175,7 @@ public:
                << ",\"thread_id\":" << thread_id_
                // Always null: no local socket fd/port is obtainable here
                // without touching tbccl::World's API, which the
-               // tail-latency root-cause work explicitly avoids. PID+TID is
+               // the tail-latency tooling explicitly avoids. PID+TID is
                // sufficient to correlate against scheduler/packet evidence
                // for this benchmark, since it is single-threaded and each
                // run uses one process.

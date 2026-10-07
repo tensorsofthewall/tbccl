@@ -30,7 +30,7 @@ public:
     // and destination about to receive (or having already received) the
     // peer's contribution. `stream` is an explicit CUDA stream (cast to
     // void*) this reduction launches on and synchronizes before
-    // returning -- reusing the CUDA compute-overlap work's proven
+    // returning -- reusing the proven
     // "cudaStreamSynchronize is sufficient, no cudaEvent_t needed"
     // result. Passing nullptr uses the default stream.
     CudaReduceBackend(CudaChunkedAsyncBackend &backend, void *stream);

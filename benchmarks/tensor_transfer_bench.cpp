@@ -133,7 +133,7 @@ namespace
                "networking). Every other mode requires exactly 2 --peers. "
                "network-only and latency-floor always use the host "
                "backend (--local-backend is rejected if not 'host') -- "
-               "see Part E of the Phase 17 plan. end-to-end uses "
+               "see the benchmark methodology. end-to-end uses "
                "--local-backend as each rank's OWN backend (they may "
                "legitimately differ, e.g. cuda-pinned on one rank and "
                "metal-shared on the other -- that IS the heterogeneous "
@@ -143,8 +143,8 @@ namespace
                "--local-backend (Part 37's host-only control baseline) "
                "and implicitly measures an extra 0-byte payload first.\n\n"
             << "--timing-scope applies to end-to-end/ack-calibration only "
-               "(Phase 18, Part C). 'ready' (default, matches every prior "
-               "Phase 17 measurement exactly): source generation and "
+               "(see the benchmark methodology). 'ready' (default, matches the earlier "
+               "measurements exactly): source generation and "
                "producer synchronization happen BEFORE the primary timer "
                "-- completion_confirmed_us then measures the cost of "
                "communicating an already-ready tensor. 'produce': the "
@@ -449,7 +449,7 @@ namespace
             {
                 throw std::runtime_error(
                     "--local-backend must be 'host' for --mode network-only "
-                    "or latency-floor (Part E's host-only baseline)");
+                    "or latency-floor (the host-only baseline)");
             }
         }
 
@@ -585,7 +585,7 @@ namespace
         // The CUDA synchronization-audit work, which of the two
         // disjoint timing boundaries
         // `stats`/`completion_confirmed_us` describes -- "ready"
-        // (producer excluded, the CUDA tensor-benchmark work's only
+        // (producer excluded, the original only
         // behavior) or "produce" (producer included). "NA" for
         // modes/rows where the distinction doesn't apply
         // (staging-only/network-only/ latency-floor).
@@ -1316,13 +1316,13 @@ namespace
                     if (i == options.warmup) cpu.begin();
                     const std::uint32_t seed = static_cast<std::uint32_t>(0x3000 + i);
 
-                    // the CUDA synchronization-audit work, this is the ONLY difference
+                    // the earlier behavior, this is the ONLY difference
                     // between the two timing scopes -- where
                     // `interval_start` (the primary timer's start) is
                     // captured relative to the producer's work.
                     //
                     // "ready": generate + synchronize the source BEFORE
-                    // starting the timer (the CUDA tensor-benchmark work's only behavior,
+                    // starting the timer (the original only behavior,
                     // and the default here) -- completion_confirmed_us
                     // then measures the cost of communicating an
                     // ALREADY-ready tensor, deliberately excluding
