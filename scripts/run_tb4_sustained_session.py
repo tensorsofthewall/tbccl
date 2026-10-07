@@ -16,7 +16,7 @@ tail-latency investigation) tracefs capture, both of which are the same
 kind of bounded, restoring action the other captures already use.
 
 Requires: passwordless sudo for capture_tb4_scheduler_trace.py's exact
-path (already granted, see SESSION_HANDOFF.md), and SSH access to the
+path (already granted), and SSH access to the
 Mac (tbccl-mac, already configured).
 """
 import argparse

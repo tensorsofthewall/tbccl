@@ -268,7 +268,7 @@ int main(int argc, char **argv)
         {
 #if !defined(TBCCL_ENABLE_CUDA)
             throw std::runtime_error(
-                "the sender role requires a CUDA-enabled build (Part AS: real CUDA "
+                "the sender role requires a CUDA-enabled build (real CUDA "
                 "compute is the authoritative result, never a CPU substitute)");
 #endif
         }
