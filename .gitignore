@@ -66,3 +66,9 @@ __pycache__/
 /results/phase39-local/
 /results/phase40-local/
 /results/phase41-local/
+
+# Local agent instructions (never committed)
+AGENTS.local.md
+
+# Out-of-tree CMake build directories
+build-*/
