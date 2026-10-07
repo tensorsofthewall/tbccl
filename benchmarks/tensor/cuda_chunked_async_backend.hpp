@@ -66,7 +66,7 @@ public:
     // AsyncMemoryBackend overrides -- called only from
     // TensorCommWorker's staging thread (never the enqueuing caller's
     // thread), so blocking inside these is explicitly permitted by
-    // the async tensor-transfer work's own documented contract.
+    // the documented contract.
     void stage_source_chunk(const tbccl::Chunk &chunk, void *staging) override;
     void commit_destination_chunk(const tbccl::Chunk &chunk, const void *staging) override;
 

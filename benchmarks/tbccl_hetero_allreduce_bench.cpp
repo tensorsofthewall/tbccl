@@ -260,7 +260,7 @@ int main(int argc, char **argv)
                 // guarantees it IS the real backing store for host/
                 // cuda-pinned/metal-shared (never a read-only copy), so
                 // writing the deterministic test input here (before any
-                // timed region, matching every prior phase's benchmark-
+                // timed region, matching the shared benchmark-
                 // methodology convention) is safe and is how every
                 // existing device backend's own initialize_source()
                 // would have filled it anyway.

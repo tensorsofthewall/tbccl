@@ -6,8 +6,8 @@
 // prove a stable public collective API). Lets a producer (CUDA compute)
 // submit bucket AllReduce jobs without blocking on each one's completion,
 // while guaranteeing only ONE n2_all_reduce_tensor() call is ever
-// in-flight at a time (Part 3/BC: no wire-level AllReduce multiplexing
-// this phase). This is purely a FIFO queue + one thread driving the
+// in-flight at a time (no wire-level AllReduce multiplexing
+// yet). This is purely a FIFO queue + one thread driving the
 // EXISTING, unmodified n2_all_reduce_tensor() -- it is not a second
 // network/transport implementation.
 //

@@ -470,7 +470,7 @@ else()
     )
 endif()
 
-# The loopback algorithm-sweep work diagnostic only — dumps the
+# Diagnostic only — dumps the
 # internal ring trace (see ring_trace.hpp) for a handful of
 # ReduceScatter invocations. Builds fine without
 # TBCCL_ENABLE_RING_TRACE, but prints no events in that case (every
@@ -1266,7 +1266,7 @@ if(BUILD_TESTING)
     add_test(NAME c_quickstart COMMAND c_quickstart)
     set_tests_properties(c_quickstart PROPERTIES TIMEOUT 60)
 
-    # the C ABI v1 work diagnostic: caller-side submission cost (C++ API vs the C wrapper), not
+    # Diagnostic: caller-side submission cost (C++ API vs the C wrapper), not
     # a ctest.
     add_executable(communicator_submit_bench benchmarks/communicator_submit_bench.cpp)
     target_include_directories(communicator_submit_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
@@ -2314,7 +2314,7 @@ endif()
 # surface (include/tbccl/*.hpp + libtbccl). The optional CUDA/Metal device
 # component (tbccl_tensor_backend, benchmarks/tensor/), benchmarks/,
 # examples/, and tests/ are NOT installed; they remain source-tree/vendored
-# this phase (a deliberate, documented scope limit -- see
+# only (a deliberate, documented scope limit -- see
 # docs/reference/cpp-api-overview.md). A host-only external consumer needs nothing beyond
 # what this block installs.
 # ---------------------------------------------------------------------------

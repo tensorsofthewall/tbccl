@@ -1160,7 +1160,7 @@ int main(int argc, char **argv)
         // CUDA runtime's own default (which is itself
         // cudaDeviceScheduleAuto, so skipping vs. explicitly passing
         // "auto" should be equivalent -- but only the "skip" path was
-        // the CUDA synchronization-audit work's actual, unmodified
+        // the actual, unmodified
         // behavior, so it remains the default here too).
         if (!device_schedule.empty())
         {

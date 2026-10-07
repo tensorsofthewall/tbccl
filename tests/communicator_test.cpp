@@ -359,7 +359,7 @@ void test_errors_unsupported_reduce_op()
             {
                 threw = true;
             }
-            expect(threw, "all_reduce with ReduceOp::Max must throw (Sum-only this phase)");
+            expect(threw, "all_reduce with ReduceOp::Max must throw (Sum only)");
         },
         [&](tbccl::Communicator &) {});
     std::cout << "[PASS] test_errors_unsupported_reduce_op\n";

@@ -23,7 +23,7 @@
 // with respect to its own effects -- when a stage method returns, its
 // effect is guaranteed complete and it is always safe to proceed to
 // the next stage or to reuse/reallocate the buffer. Overlapping
-// stages (double-buffering) is explicitly out of scope for the CUDA tensor-benchmark work.
+// stages (double-buffering) is explicitly out of scope for the tensor benchmark.
 
 #include <cstddef>
 #include <cstdint>

@@ -1,4 +1,4 @@
-// The loopback algorithm-sweep work diagnostic tool: runs a handful
+// Diagnostic tool: runs a handful
 // of ring ReduceScatter invocations between two ranks and dumps the
 // merged ring trace (calling-thread events + the persistent worker's
 // own events) to stdout, sorted by timestamp, so the T0-T4 executor

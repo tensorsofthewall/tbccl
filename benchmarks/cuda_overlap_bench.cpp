@@ -30,7 +30,7 @@
 // block waiting for the transfer to complete, bucket i's communication
 // (handled by TensorCommWorker's own threads) and bucket i+1's GPU
 // compute (launched immediately after) proceed concurrently -- the
-// overlap this phase exists to measure, achieved with no new
+// overlap this benchmark exists to measure, achieved with no new
 // synchronization primitives.
 //
 // Schedules: "serial" computes every bucket, synchronizes

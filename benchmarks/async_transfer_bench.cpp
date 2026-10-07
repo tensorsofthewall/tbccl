@@ -6,7 +6,7 @@
 // "connect to every lower-ranked peer" rule for the 2-peer case),
 // followed by a real PeerCapabilities exchange/negotiation --
 // this is deliberately NOT skipped even though only one transport
-// exists, to exercise the real control-plane path this phase built.
+// exists, to exercise the real control-plane path.
 //
 // Every run measures ONE (bytes, chunk_bytes, pipeline_depth) point:
 // warmup iterations (untimed), then measured iterations (timed),
@@ -98,7 +98,7 @@ namespace
         // sender's proof of destination-visible completion).
         // Disabling verification isolates whether this receiver-side
         // CPU work, not Transport itself, is inflating the measured
-        // regression. Default true to match every prior phase's
+        // regression. Default true to match the earlier
         // correctness-checked measurements.
         bool verify = true;
     };
@@ -192,7 +192,7 @@ int main(int argc, char **argv)
         auto connection = establish_connection(options);
 
         // Real control-plane exchange: negotiate before doing anything
-        // data-plane, even though this phase only has one transport to
+        // data-plane, even though there is only one transport to
         // select.
         const auto local_caps = tbccl::local_capabilities();
         const auto remote_caps = tbccl::exchange_capabilities(*connection, local_caps);

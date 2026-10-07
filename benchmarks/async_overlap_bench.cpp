@@ -9,7 +9,7 @@
 // deterministic CPU-bound workload (repeated FNV-1a-style hashing over
 // the buffer), not a CUDA/Metal kernel -- building and validating a new
 // GPU compute kernel was out of scope for the time this benchmark could
-// receive this phase. This still tests the real architectural claim
+// receive. This still tests the real architectural claim
 // (does asynchronous transfer hide otherwise-
 // serial work), just with host-side compute standing in for
 // device-side compute. It does NOT claim to demonstrate GPU

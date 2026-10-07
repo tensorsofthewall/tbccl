@@ -1,8 +1,8 @@
 // The central experiment -- real CUDA compute(bucket N+1)
 // overlapping a real heterogeneous N=2 SUM AllReduce(bucket N), over the
 // real Linux<->Mac TB4 link. Reuses, unchanged: the CUDA compute-overlap work's
-// cuda_bucket_compute kernel, the CUDA/Metal device-pipeline work's CudaChunkedAsyncBackend, and
-// the heterogeneous all-reduce work's n2_all_reduce_tensor() -- the only new scheduling component
+// cuda_bucket_compute kernel, the CudaChunkedAsyncBackend, and
+// n2_all_reduce_tensor() -- the only new scheduling component
 // is BucketAllReduceWorker (bucket_allreduce_worker.hpp), which guarantees
 // exactly one AllReduce protocol is ever in flight on the wire while
 // letting the CUDA rank's compute run ahead (Part 3/4 of the plan).
@@ -33,7 +33,7 @@
 #include "tensor/tensor_backend_async_adapter.hpp"
 
 // cuda_bucket_compute.hpp's expected_bucket_byte() is portable, CUDA-type-
-// free C++ (the CUDA compute-overlap work's own design: "critical for the
+// free C++ (the compute-overlap design: "critical for the
 // receiver role, which commonly runs on a non-CUDA machine but still needs
 // to verify CUDA-computed bytes it received") -- included unconditionally
 // so the Mac (non-CUDA) rank can compute the correct expected value for

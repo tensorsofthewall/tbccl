@@ -24,10 +24,10 @@ namespace
     static_assert(static_cast<int>(tbccl::DataType::Int64) == 1, "DataType values are ABI-visible");
     static_assert(static_cast<int>(tbccl::DataType::Float32) == 2, "DataType values are ABI-visible");
     static_assert(static_cast<int>(tbccl::DataType::Float64) == 3, "DataType values are ABI-visible");
-    static_assert(static_cast<int>(tbccl::DataType::Int8) == 4, "appended in Phase 49");
-    static_assert(static_cast<int>(tbccl::DataType::UInt8) == 5, "appended in Phase 49");
-    static_assert(static_cast<int>(tbccl::DataType::Float16) == 6, "appended in Phase 49");
-    static_assert(static_cast<int>(tbccl::DataType::BFloat16) == 7, "appended in Phase 49");
+    static_assert(static_cast<int>(tbccl::DataType::Int8) == 4, "appended after the original types");
+    static_assert(static_cast<int>(tbccl::DataType::UInt8) == 5, "appended after the original types");
+    static_assert(static_cast<int>(tbccl::DataType::Float16) == 6, "appended after the original types");
+    static_assert(static_cast<int>(tbccl::DataType::BFloat16) == 7, "appended after the original types");
 
     using tbccl::DataType;
     using tbccl::ReduceOp;
@@ -92,7 +92,7 @@ namespace
         }
         for (DataType type : kNewTypes)
         {
-            expect(tbccl::reduction_supported(type, ReduceOp::Sum), "every Phase 49 type supports Sum");
+            expect(tbccl::reduction_supported(type, ReduceOp::Sum), "every low-precision type supports Sum");
             tbccl::validate_reduction(type, ReduceOp::Sum);
         }
         expect(!tbccl::reduction_supported(static_cast<DataType>(99), ReduceOp::Sum), "unknown dtype is unsupported");

@@ -9,7 +9,7 @@ captures the trace buffer, then restores every setting it touched -- even on
 error or interruption (SIGINT/SIGTERM), so no global tracing state is left
 enabled afterward.
 
-The tail-latency root-cause work. Not invoked automatically -- requires explicit user
+Part of the tail-latency investigation. Not invoked automatically -- requires explicit user
 authorization per run.
 
 The receive-path investigation work extended this script with a receive-path event set
@@ -205,7 +205,7 @@ class TraceSession:
         # names to restrict the function tracer to, via
         # set_ftrace_filter). None means function tracing is left alone
         # entirely (current_tracer/set_ftrace_filter are not touched at
-        # all) -- the default, preserving every prior phase's behavior.
+        # all) -- the default, preserving the previous behavior.
         self.function_filter = function_filter
         self.original_tracing_on = None
         self.original_set_ftrace_pid = None
@@ -258,7 +258,7 @@ class TraceSession:
             # set_ftrace_filter must be narrowed BEFORE current_tracer is
             # switched to "function" -- otherwise there is a window where
             # the function tracer runs unfiltered (system-wide), exactly
-            # the set_ftrace_pid mistake the tail-latency root-cause work
+            # the set_ftrace_pid mistake the tail-latency investigation
             # made for tracepoints.
             write_text(TRACEFS / "set_ftrace_filter", "")  # clear first
             for name in self.function_filter:
@@ -282,7 +282,7 @@ class TraceSession:
         filter file -- set_ftrace_pid alone does NOT scope tracepoint
         events enabled via events/*/*/enable, only the function tracer.
 
-        the NHI DMA-ring work discovery: when self.function_filter is active (Tier-1
+        the NHI DMA-ring discovery: when self.function_filter is active (Tier-1
         NHI function tracing), set_ftrace_pid is deliberately NOT written.
         ring_msix/ring_work/tb_ring_poll run in interrupt or workqueue
         context, never attributed to the benchmark's own PID -- writing
@@ -465,8 +465,7 @@ def list_available_events(output_path):
 
 def check_filter_functions(candidates, output_path):
     """Read-only: which of `candidates` actually appear in
-    available_filter_functions on this running kernel (the NHI DMA-ring work
-    item 26/28 -- do not assume traceability; a static function can be
+    available_filter_functions on this running kernel (do not assume traceability; a static function can be
     inlined/optimized away and simply absent). Grep-style substring
     match against the function-name column (ignoring any trailing
     module annotation like ' [thunderbolt]')."""
@@ -557,7 +556,7 @@ def reset_state(events, output_path):
     """Emergency cleanup, read-write but conservative: force tracing_on to
     0, disable each of --events, and clear any real (non-empty) filter
     text by writing "" (the ftrace-documented way to clear a filter --
-    unlike the bare "0" this script's restore path used before the receive-path investigation work,
+    unlike the bare "0" this script's restore path used before,
     which is rejected by irq/napi/net/sock tracepoints). Does not touch
     trace_clock or set_ftrace_pid, since those are read back as valid
     values by TraceSession and don't get corrupted by a failed write the
@@ -642,7 +641,7 @@ def main():
              "kernel, and exit -- no capture is performed")
     parser.add_argument(
         "--include-nhi-functions", action="store_true",
-        help="Tier-1 narrow function tracing (Phase 29 Part G): switch "
+        help="Tier-1 narrow function tracing: switch "
              "current_tracer to 'function' filtered to NHI_FUNCTIONS "
              "(ring_msix/__ring_interrupt/ring_work/tb_ring_poll/"
              "tb_ring_poll_complete), scoped to the benchmark PID via "

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Bounded trigger-characterization sweep for the intermittent
-~1.1-1.4ms Mac->Linux tail-latency mode (the tail-latency root-cause work).
+~1.1-1.4ms Mac->Linux tail-latency mode (the tail-latency investigation).
 
 Runs many short Mac->Linux host/64KiB/poll-0 bursts, varying the idle
 duration between bursts (rotated order, not grouped) and recording session
@@ -143,7 +143,7 @@ def main():
     parser.add_argument('--measured', type=int, default=20)
     parser.add_argument('--payload-bytes', type=int, default=65536)
     parser.add_argument('--base-port', type=int, default=34000)
-    parser.add_argument('--run-id-prefix', default='p24_idle')
+    parser.add_argument('--run-id-prefix', default='idle')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
 

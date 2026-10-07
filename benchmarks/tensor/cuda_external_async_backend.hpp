@@ -106,7 +106,7 @@ public:
     // has completed, without a blocking cudaDeviceSynchronize(). Uses
     // one persistent, reused cudaEvent_t (never allocated per call). A
     // no-op if producer_stream is null (the Host-execution-context
-    // convention every prior phase already used: the buffer is assumed
+    // convention the other backends already use: the buffer is assumed
     // ready).
     void wait_for_producer_stream(void *producer_stream);
 

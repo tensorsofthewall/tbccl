@@ -159,8 +159,7 @@ namespace
     // A World whose send()/recv() throw a distinctive message if ever
     // called. Used only to test that reduce()'s argument validation
     // happens before any communication is attempted, without stranding
-    // real peer ranks (see test_null_root_recv_buffer below and item
-    // #35 of the phase plan).
+    // real peer ranks (see test_null_root_recv_buffer below and )
     class FailingWorld : public tbccl::World
     {
     public:
@@ -284,7 +283,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 2: Int32 Sum across 3 ranks with the phase plan's own worked
+    // Test 2: Int32 Sum across 3 ranks with a worked
     // example.
     // -----------------------------------------------------------------------------
 

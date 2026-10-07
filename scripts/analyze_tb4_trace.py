@@ -361,7 +361,7 @@ def sched_cycles_for_pid(sched_result, pid):
 # from two different machines' captures directly.
 #
 # Classification is by observed payload length only (confirmed against
-# real captures in this phase): the benchmark's completion ACK is always a
+# real captures): the benchmark's completion ACK is always a
 # single application byte (TCP payload length 1); a bare TCP ACK carries no
 # payload (length 0); a tensor payload segment is large (length >= 1000,
 # comfortably above the connection handshake's small control messages of
@@ -419,7 +419,7 @@ def ack_to_payload_intervals(
     The final measured iteration's completion ack has no legitimate next
     payload (the run ends after it) -- without a bound, it would pair with
     whatever unrelated packet happens to appear later in the capture
-    (observed in this phase: a ~2ms "interval" that was actually the last
+    (observed in a real capture: a ~2ms "interval" that was actually the last
     iteration's ack spuriously matched against post-run traffic). max_gap_us
     (default 5000, well above any interval this investigation is chasing)
     excludes such pairings; every dropped ack is still reported, in
@@ -431,7 +431,7 @@ def ack_to_payload_intervals(
     temporally-ordered pairs. This excludes the benchmark's own untimed
     post-loop verification round (tensor_transfer_bench.cpp resends one
     full, explicitly untimed tensor for byte verification after the
-    measured loop) -- discovered in this phase when that round's payload
+    measured loop) -- discovered when that round's payload
     was found spuriously paired with the last measured iteration's ack,
     producing a ~2ms "interval" that was not a real measurement. Anything
     beyond expected_count is reported in extra_beyond_expected, never
@@ -637,7 +637,7 @@ def summarize_by_position(sweep_output):
 
 
 # Decompose the Mac sender boundary preceding a slow Linux iteration, and
-# classify which sub-interval expands. Discovered in this phase's own
+# classify which sub-interval expands. Observed in captured
 # data that two genuinely distinct mechanisms exist among slow events:
 # (1) the completion-ack packet is visible on Mac's own bridge0 capture
 # promptly, but Mac's TCP-level ack / application ack_received lags far
@@ -707,8 +707,8 @@ def classify_mac_sender_boundary(
     # Mac's own capture.
     # send() is synchronous, so the payload is often already (mostly or
     # fully) visible on the wire microseconds BEFORE send_end is
-    # timestamped, not strictly after -- confirmed empirically in this
-    # phase's own data (a payload's trailing segment observed ~1us
+    # timestamped, not strictly after -- confirmed empirically in
+    # captured data (a payload's trailing segment observed ~1us
     # before its iteration's app-level send_end). Searching only for
     # packets with ts >= send_end therefore skips the current iteration's
     # own (already-sent) payload and incorrectly finds the NEXT
@@ -907,7 +907,7 @@ def receive_path_events_in_window(events, window_start_s, window_end_s, margin_s
     window boundary (from the application trace) and these kernel-event
     timestamps come from different measurement points not expected to
     align to the microsecond. In practice this fallback path is rarely
-    reached: every slow event in this phase's live capture was resolved
+    reached: every slow event in the live captures was resolved
     by the irq-gap check in classify_receive_path_event before reaching
     here (see receive_path_report)."""
     lo = window_start_s - margin_s
@@ -928,8 +928,8 @@ def irq_cadence_gaps(events, event_kind='irq_handler_entry'):
     whether a given cycle carries real TBCCL TCP payload -- i.e. this is
     the thunderbolt-net driver's own RX ring polling substrate, not a
     per-TCP-segment signal. A slow iteration's window reliably overlaps a
-    single anomalous ~1ms gap in this cadence (9/9 events, this phase's
-    live run) -- a far stronger and more direct signal than checking
+    single anomalous ~1ms gap in this cadence (9/9 events in the live
+    run) -- a far stronger and more direct signal than checking
     "first event after window_start" (which always finds a normal-cadence
     event just before window_start regardless of what happens later
     inside the window, since the cadence is continuous)."""
@@ -1029,8 +1029,8 @@ def receive_path_baseline(events, normal_windows, device='thunderbolt0'):
     """Same-run normal irq/softirq/skb/wakeup sub-interval
     distributions, computed from normal_windows -- a list of
     (window_start_s, window_end_s) pairs for NON-slow iterations on this
-    same receiving host in this same run. Never uses another phase's
-    historical numbers as the reference (item 65)."""
+    same receiving host in this same run. Never uses historical
+    numbers from another run as the reference."""
     irq_us, softirq_us, skb_us, wakeup_us = [], [], [], []
     for start, end in normal_windows:
         found = receive_path_events_in_window(events, start, end)
@@ -1064,8 +1064,8 @@ def receive_path_report(app_trace, sched_result, slow_threshold_us=1000, normal_
     slow iteration's delay must fall within) and a
     capture_tb4_scheduler_trace.py --include-receive-events result.
     Same-run baseline is computed from this run's own
-    recv_us < normal_threshold_us iterations, never from another phase's
-    historical numbers (item 65)."""
+    recv_us < normal_threshold_us iterations, never from historical
+    numbers of another run."""
     events = parse_receive_path_trace((sched_result or {}).get('trace_text') or '')
     slow_windows, normal_windows = [], []
     for entry in app_trace['entries']:
@@ -1167,7 +1167,7 @@ def parse_tbnet_data_trace(trace_text):
 def per_vector_irq_gaps(events):
     """irq_cadence_gaps(), computed separately per MSI-X vector (irq
     number) instead of aggregated across all `name=thunderbolt` IRQs --
-    the NHI ring-cadence work's primary extension of the receive-path investigation work's single-stream analysis
+    the primary extension of the single-stream receive-path analysis
     ('do not aggregate all name=thunderbolt events into
     one sequence'). Returns {irq_number: [(start, end, gap_us), ...]}."""
     by_irq = {}
@@ -1296,7 +1296,7 @@ def nhi_cadence_report(app_trace, sched_result, slow_threshold_us=1000,
 # leads to ring_work/process_one_work in a kworker thread; ring_msix on an
 # RX-ring IRQ leads to tb_ring_poll/tb_ring_poll_complete inside
 # tbnet_poll's NAPI softirq context -- confirmed from the exact v6.18.34
-# source, the interrupt-throttling experiment work's provenance:
+# source:
 # tb_ring_alloc_tx() always passes start_poll=NULL, so TX servicing is
 # unconditionally workqueue-based while RX is unconditionally NAPI-based)
 # and (b) count tb_ring_poll "bursts" (consecutive calls with no large
@@ -1389,27 +1389,27 @@ def main():
                        help='classify slow iterations from --application-trace, '
                             'optionally with --sched-trace-json / --packet-pcap')
     group.add_argument('--boundary', action='store_true',
-                       help='Phase 23 Part F: dual-end completion-ack-to-'
+                       help='dual-end completion-ack-to-'
                             'next-payload local interval distributions from '
                             '--linux-pcap and/or --mac-pcap (each analyzed '
                             'using only its own capture clock)')
     group.add_argument('--trigger-summary', type=Path,
-                       help='Phase 24 Part N: condition-level and '
+                       help='condition-level and '
                             'position-in-burst summary of a '
                             'run_tb4_tail_trigger_sweep.py output JSON file')
     group.add_argument('--sender-boundary', action='store_true',
-                       help='Phase 25 Part G/M: Mac sender-boundary '
+                       help='Mac sender-boundary '
                             'decomposition and classification of slow '
                             'Linux iterations, from --application-trace '
                             '(Linux), --mac-application-trace, --mac-pcap')
     group.add_argument('--receive-path', action='store_true',
-                       help='Phase 26 Part P: Linux receive-path (irq -> '
+                       help='Linux receive-path (irq -> '
                             'softirq -> napi/skb -> socket-wakeup) '
                             'classification of slow iterations, from '
                             '--application-trace and --sched-trace-json '
                             '(captured with --include-receive-events)')
     group.add_argument('--nhi-cadence', action='store_true',
-                       help='Phase 27 Part Q: per-MSI-X-vector IRQ '
+                       help='per-MSI-X-vector IRQ '
                             'cadence, 128us-hypothesis ratios, and '
                             'Thunderbolt control/data-plane correlation, '
                             'from --application-trace and '

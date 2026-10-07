@@ -451,7 +451,7 @@ namespace
         const std::vector<std::size_t> sample_bytes = {
             0, 1024, 1ull << 30};
 
-        // N=2 is deliberately excluded here: Phase 15 gave it its own
+        // N=2 is deliberately excluded here: it has its own
         // measured threshold (see test_all_gather_threshold_boundaries),
         // so it is no longer "unmeasured" for AllGather.
         for (std::size_t world_size : {1, 5, 6, 7, 9, 16})
@@ -940,8 +940,8 @@ namespace
         EnvUnset unset_global("TBCCL_ALGORITHM");
         EnvUnset unset_ag("TBCCL_ALL_GATHER_ALGORITHM");
 
-        // N=2 is a Phase 15 policy change (was always Reference under
-        // the per-invocation-thread ring work): Ring now resolves at
+        // N=2 is a policy change (it was always Reference under
+        // the earlier per-invocation-thread ring): Ring now resolves at
         // any tested size, so even a small,
         // otherwise-Reference-favoring-under-the-old-policy 4 KiB
         // contribution must dispatch through ring_all_gather() and

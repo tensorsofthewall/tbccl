@@ -5,15 +5,15 @@ Launches one Mac(source)->Linux(sink) end-to-end host/64KiB session (the
 27 trigger shape: a single continuous process/TCP connection,
 warmup + measured iterations), optionally under the Linux-side ftrace
 diagnostic stack (--include-receive-events --include-thunderbolt-events,
-and --include-nhi-functions for the NHI DMA-ring work's Tier-1 function tracer), with
+and --include-nhi-functions for the Tier-1 NHI function tracer), with
 a read-only runtime-state snapshot taken immediately before and after.
 
 This script does not change any system configuration -- CPU governor,
 IRQ affinity, offloads, power management, and every other item in the
-The sustained-session reproduction work plan's "explicitly out of scope" list are left untouched. It
+system configuration that the sustained-session procedure treats as out of scope are left untouched. It
 only starts/stops the benchmark process pair and the (already-existing,
-The tail-latency root-cause work/27/29-built) tracefs capture, both of which are the same
-kind of bounded, restoring action those phases already used.
+tail-latency investigation) tracefs capture, both of which are the same
+kind of bounded, restoring action the other captures already use.
 
 Requires: passwordless sudo for capture_tb4_scheduler_trace.py's exact
 path (already granted, see SESSION_HANDOFF.md), and SSH access to the

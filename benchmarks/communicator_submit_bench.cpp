@@ -1,9 +1,9 @@
-// the C ABI v1 work diagnostic (not a pass/fail gate): CALLER-SIDE cost of submitting a send, in nanoseconds per call, through the C++ API and through the C ABI wrapper.
+// Diagnostic (not a pass/fail gate): CALLER-SIDE cost of submitting a send, in nanoseconds per call, through the C++ API and through the C ABI wrapper.
 //   idle      the lane is empty and the peer is receiving
 //   busy      a large send is active on the lane (the peer receives it) when the timed 4 KiB send is submitted behind it
-//   deep      1000 large sends are already queued to a peer that posts nothing (the queue is deep and the head is stalled)   [the C ABI v1 work only: before it the 10th post blocked]
-//   stalled   world_size 3: 1000 sends are queued to a stalled peer; the timed sends go to ANOTHER peer that is receiving                 [the C ABI v1 work only]
-// Usage: communicator_submit_bench <iterations>. Built with -DTBCCL_BENCH_BASELINE=1 against the pre-Phase-52 library only the first two cases (and no C wrapper) exist.
+//   deep      1000 large sends are already queued to a peer that posts nothing (the queue is deep and the head is stalled)   [unbounded admission only: before it the 10th post blocked]
+//   stalled   world_size 3: 1000 sends are queued to a stalled peer; the timed sends go to ANOTHER peer that is receiving                 [unbounded admission only]
+// Usage: communicator_submit_bench <iterations>. Built with -DTBCCL_BENCH_BASELINE=1 against the earlier library only the first two cases (and no C wrapper) exist.
 #include "../tests/mesh_test_support.hpp"
 
 #include <tbccl/communicator.hpp>

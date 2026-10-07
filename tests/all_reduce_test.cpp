@@ -159,7 +159,7 @@ namespace
     }
 
     // -----------------------------------------------------------------------------
-    // Test 3: three-rank Sum, the phase plan's own worked example.
+    // Test 3: three-rank Sum, a worked example.
     // -----------------------------------------------------------------------------
 
     void test_three_rank_sum()
