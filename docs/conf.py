@@ -46,11 +46,14 @@ html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
 if not _released_build:
     html_theme_options = {"announcement": "Development documentation (not a release)"}
 
-# Only the core site has a decided address; the adapters are added here when their hosting is decided.
+# The four documentation sites. Until a release exists the references use each site's development (latest) version.
 # Cross-project references are opt-in: the build never needs the network unless DOCS_INTERSPHINX=1. A local inventory can be given with
 # DOCS_INVENTORY_<PROJECT> (for example DOCS_INVENTORY_TORCH_TBCCL=/path/to/objects.inv).
 _SITES = {
-    "tbccl": "https://tbccl.tensorsofthewall.com/en/stable/",
+    "tbccl": "https://tbccl.tensorsofthewall.com/en/latest/",
+    "torch-tbccl": "https://torch-tbccl.tensorsofthewall.com/en/latest/",
+    "vllm-tbccl": "https://vllm-tbccl.tensorsofthewall.com/en/latest/",
+    "exo-tbccl": "https://exo-tbccl.tensorsofthewall.com/en/latest/",
 }
 if os.environ.get("DOCS_INTERSPHINX") == "1":
     extensions.append("sphinx.ext.intersphinx")

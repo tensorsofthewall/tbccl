@@ -4,6 +4,7 @@ project(
     tbccl
     VERSION 0.5.1
     DESCRIPTION "Thunderbolt Collective Communication Library"
+    HOMEPAGE_URL "https://tbccl.tensorsofthewall.com"
     LANGUAGES C CXX
 )
 
