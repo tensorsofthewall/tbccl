@@ -52,7 +52,7 @@ The documentation is in `docs/` and builds with `make docs`:
 - [Getting started](docs/getting-started/index.md), [guides](docs/guides/index.md), [concepts](docs/concepts/index.md), [reference](docs/reference/index.md), [architecture decision records](docs/adr/index.md).
 - Contributing: `CONTRIBUTING.md` and `AGENTS.md`.
 
-The hosted documentation, https://tbccl.tensorsofthewall.com/en/stable/, is published with the first release; until then build it with `make docs`. Related projects and their documentation: `docs/related-projects.md`.
+The hosted documentation is at https://tbccl.tensorsofthewall.com/ (development documentation built from `main` until the first release); you can also build it with `make docs`. Related projects and their documentation: `docs/related-projects.md`.
 
 ## Related projects
 

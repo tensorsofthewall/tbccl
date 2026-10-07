@@ -14,4 +14,4 @@ Links from other projects to the TBCCL documentation use the core `stable` site;
 
 `make docs` builds the documentation, `make docs-linkcheck` checks the local links, and the compatibility manifest check runs in the same CI job. None of them needs the network after the requirements are installed.
 
-Cross-project references (Intersphinx) are off by default so that a build never depends on another site. Set `DOCS_INTERSPHINX=1` to enable them once the other projects publish their inventories; set `DOCS_INVENTORY_<PROJECT>` to a local `objects.inv` to use a local copy.
+Cross-project references (Intersphinx) are off by default so that a build never depends on another site. Set `DOCS_INTERSPHINX=1` to enable them against the other projects' published development inventories (`latest`); set `DOCS_INVENTORY_<PROJECT>` to a local `objects.inv` to use a local copy.
