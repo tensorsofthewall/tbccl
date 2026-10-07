@@ -3,7 +3,7 @@
   "project": "tbccl",
   "package": {
     "development_version": "0.5.1",
-    "release_target": "0.6.0",
+    "target_release": "0.6.0",
     "released": false
   },
   "c_abi": {
