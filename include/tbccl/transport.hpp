@@ -139,9 +139,9 @@ protected:
 // reporting different capabilities() -- no caller above this class
 // needs to change.
 //
-// the async tensor-transfer work ships exactly one implementation: TcpTransport, adapting the
+// The library ships exactly one implementation: TcpTransport, adapting the
 // existing Connection this header already defines. No other transport
-// is implemented this phase (see docs/concepts/transports.md).
+// is implemented (see docs/concepts/transports.md).
 class Transport
 {
 public:

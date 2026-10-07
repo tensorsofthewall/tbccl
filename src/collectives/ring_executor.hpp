@@ -8,7 +8,7 @@
 //
 // This is an execution-engine optimization, not a collective-
 // algorithm optimization: it exists solely to eliminate the
-// per-invocation std::thread create/join cost the pre-Phase-13 ring
+// per-invocation std::thread create/join cost the earlier ring
 // implementations each paid on every call, by giving every World a
 // single, lazily-created, reusable sender worker thread instead.
 // Chunk formulas, reduction arithmetic, buffer semantics, and public
@@ -37,7 +37,7 @@ namespace tbccl::detail
 // operation's completed-steps count or failure state can never
 // spuriously satisfy — or block — a later one. This is the same
 // mutex/condition_variable/completed_steps/failed coordination the
-// pre-Phase-13 ring implementations each duplicated inline (as
+// earlier ring implementations each duplicated inline (as
 // "RingSyncState"), now shared in one place.
 class RingSession
 {
@@ -114,7 +114,7 @@ struct RingExecutorStats
 // execute() runs `sender` on the persistent worker and `receiver` on
 // the calling thread concurrently, and does not return until both
 // have finished — from the caller's point of view this has the same
-// blocking, synchronous behavior as the pre-Phase-13 "create a
+// blocking, synchronous behavior as the earlier "create a
 // thread, join it" pattern, just without repeatedly paying
 // thread-creation cost. Every execute() call is a fresh job: nothing
 // about it is retained by the worker once it completes, so the worker

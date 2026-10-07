@@ -66,12 +66,12 @@ void all_reduce_ring(
 // is needed between the two phases and why send_buffer == recv_buffer
 // aliasing is safe). The two phases are not fused: all-gather does not
 // begin until reduce-scatter has fully returned, and chunk_bytes is
-// not pipelined *across* the reduce-scatter/all-gather boundary in
-// this phase, only within each primitive. Requires
+// not pipelined *across* the reduce-scatter/all-gather boundary,
+// only within each primitive. Requires
 // `count % world.size() == 0`, rejected before any communication
 // otherwise. Every rank in the World must be called with the identical
 // chunk_bytes value. Not connected to the public Auto selector or any
-// public API in this phase; internal/benchmark-only.
+// public API; internal/benchmark-only.
 void all_reduce_pipelined(
     World &world,
     const void *send_buffer,

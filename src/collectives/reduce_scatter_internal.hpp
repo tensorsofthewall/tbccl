@@ -68,7 +68,7 @@ void reduce_scatter_ring(
 // reduce_scatter_pipelined.cpp for the exact schedule. Every rank in
 // the World must be called with the identical chunk_bytes value for
 // one invocation. Not connected to the public Auto selector or any
-// public API in this phase; internal/benchmark-only, and kept
+// public API; internal/benchmark-only, and kept
 // independent from reduce_scatter_ring() (not a drop-in replacement —
 // both remain separately callable baselines). Requires chunk_bytes > 0
 // and chunk_bytes % datatype_size(datatype) == 0 for a nonzero

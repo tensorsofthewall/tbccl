@@ -22,7 +22,7 @@ namespace tbccl
 // peer at the same time (TCP is full-duplex), matching a typical
 // communication protocol's alternating or independent send/recv use.
 // Concurrent send()/send() or recv()/recv() calls on the *same* peer
-// are not guaranteed thread-safe in this phase.
+// are not guaranteed thread-safe.
 class World
 {
 public:

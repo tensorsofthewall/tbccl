@@ -9,8 +9,8 @@ namespace tbccl
 // (send/recv, broadcast, all_gather) move opaque bytes and never need one of these; payloads such as FP8 or packed
 // 4-bit weights are deliberately NOT members (they are transported, not reduced).
 //
-// Numeric values are fixed (an installed consumer may store them): Int32..Float64 are the original Phase 1 set;
-// Int8, UInt8, Float16 and BFloat16 were appended in low-precision datatype. Never reorder or reuse a value.
+// Numeric values are fixed (an installed consumer may store them): Int32..Float64 are the original set;
+// Int8, UInt8, Float16 and BFloat16 were appended later. Never reorder or reuse a value.
 enum class DataType
 {
     Int32 = 0,

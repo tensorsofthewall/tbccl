@@ -58,7 +58,7 @@ void all_gather_ring(
 // its whole segment. Every rank in the World must be called with the
 // identical chunk_bytes value for one invocation — see
 // all_gather_pipelined.cpp. Not connected to the public Auto selector
-// or any public API in this phase; internal/benchmark-only, and kept
+// or any public API; internal/benchmark-only, and kept
 // independent from all_gather_ring() (not a drop-in replacement — both
 // remain separately callable baselines). Requires chunk_bytes > 0 for
 // a nonzero bytes_per_rank; throws before any communication otherwise.

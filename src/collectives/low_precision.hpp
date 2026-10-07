@@ -9,7 +9,7 @@
 //
 // for every element. For N = 2 that is exactly one rounding per element, and it is the same arithmetic the CUDA kernels perform,
 // so host and device results agree bit for bit. (For N > 2 a sequential algorithm re-rounds after each pairwise add; N > 2
-// low-precision semantics are not defined by the low-precision datatype work.)
+// low-precision semantics are not defined by the library.)
 //
 // NaN: any NaN operand produces a NaN result; payloads are not preserved bit for bit across host and CUDA (callers and tests
 // assert "is NaN", never a payload). +/-inf and overflow follow IEEE round-to-nearest-even.

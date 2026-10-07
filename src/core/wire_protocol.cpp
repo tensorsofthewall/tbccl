@@ -48,7 +48,7 @@ bool decode(const std::uint8_t (&buffer)[kHelloWireSize], WireHello &w, std::str
 {
     if (get_u32(buffer + 0) != kHelloMagic)
     {
-        why = "bad magic (peer is not a Phase 50 TBCCL rank; an older TBCCL, or a different service)";
+        why = "bad magic (peer is not a TBCCL rank of this wire protocol version: an older TBCCL, or a different service)";
         return false;
     }
     w.hello.wire_version = get_u32(buffer + 4);

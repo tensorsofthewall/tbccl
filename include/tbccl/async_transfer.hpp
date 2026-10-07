@@ -175,7 +175,7 @@ public:
 
     // Capability, not type check. A backend whose tensor memory is
     // ALREADY directly readable/writable by a Transport (plain host CPU
-    // memory over TCP, this phase's only such case) can report true
+    // memory over TCP, currently the only such case) can report true
     // here to let TensorCommWorker skip the StagingPool entirely for
     // this transfer -- no TBCCL-owned memcpy, no staging thread. A
     // backend that must stage through host-visible memory to move data
@@ -342,9 +342,9 @@ public:
     // lane (queue, network thread, lazily created staging thread). A lane serves one direction at a time and a direction keeps its FIFO order on one
     // lane, so a pending send never delays a receive on the same transport and vice versa; with a single direction in flight everything runs on the
     // first lane, as in the single-lane worker. The default (false) keeps the single FIFO lane every pre-N-rank-runtime user relies on.
-    // `queue_depth` applies per lane. the C ABI v1 work: `queue_depth == kUnboundedAdmission (0)` makes enqueue() NEVER wait for capacity: the
+    // `queue_depth` applies per lane. `queue_depth == kUnboundedAdmission (0)` makes enqueue() NEVER wait for capacity: the
     // request joins a growing queue of lightweight descriptors (FIFO per lane) and the lane's persistent network thread moves it to the bounded
-    // active/staging resources when its turn comes. The Communicator uses this for every peer lane; a non-zero depth keeps the pre-Phase-52 blocking
+    // active/staging resources when its turn comes. The Communicator uses this for every peer lane; a non-zero depth keeps the blocking
     // backpressure for standalone users.
     static constexpr std::size_t kUnboundedAdmission = 0;
 
