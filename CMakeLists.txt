@@ -246,13 +246,15 @@ foreach(_lib IN LISTS CMAKE_CXX_IMPLICIT_LINK_LIBRARIES)
         list(APPEND TBCCL_CXX_RUNTIME_LIBS ${_lib})
     endif()
 endforeach()
-if(TBCCL_CXX_RUNTIME_LIBS)
-    # install-only: in the build tree CMake already links in-tree C targets with the C++ driver
-    target_link_libraries(tbccl_c INTERFACE "$<INSTALL_INTERFACE:${TBCCL_CXX_RUNTIME_LIBS}>")
-endif()
 if(TBCCL_ENABLE_CUDA)
     target_compile_definitions(tbccl_c PRIVATE TBCCL_C_WITH_CUDA)
     target_link_libraries(tbccl_c PUBLIC tbccl_cuda)
+endif()
+# Declared after every static dependency: the C++ runtime must follow the archives that need it (a toolchain whose libstdc++.so is a linker script over
+# libstdc++_nonshared.a, such as the manylinux gcc toolsets, resolves archive members only for symbols already undefined at that point).
+if(TBCCL_CXX_RUNTIME_LIBS)
+    # install-only: in the build tree CMake already links in-tree C targets with the C++ driver
+    target_link_libraries(tbccl_c INTERFACE "$<INSTALL_INTERFACE:${TBCCL_CXX_RUNTIME_LIBS}>")
 endif()
 
 # benchmarks/ (not benchmarks/tensor/) is the public include root, so
