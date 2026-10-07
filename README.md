@@ -41,6 +41,7 @@ Consumers use `find_package(TBCCL CONFIG)`; C-only consumers link `TBCCL::tbccl_
 | algorithms and the planner | `docs/collective_algorithms.md` |
 | numerical semantics, low precision | `docs/numerical_reduction_semantics.md`, `docs/quantized_payloads.md` |
 | hardware, the Thunderbolt link, safety | `docs/mac_thunderbolt_access.md`, `docs/tb4_recovery.md`, `docs/tb4_busy_poll.md` |
+| contributing, repository guidance | `CONTRIBUTING.md`, `AGENTS.md` |
 
 ### Algorithm selection: `TBCCL_ALGORITHM` (synchronous `World` API)
 
