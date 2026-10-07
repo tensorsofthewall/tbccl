@@ -1,0 +1,21 @@
+# Doxygen configuration used only to extract XML for Sphinx (Breathe); no HTML is generated.
+PROJECT_NAME           = "TBCCL"
+OUTPUT_DIRECTORY       = _build/doxygen
+INPUT                  = ../include/tbccl
+FILE_PATTERNS          = *.h *.hpp
+RECURSIVE              = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = NO
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_AS_ERROR          = YES
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = "TBCCL_API=" "TBCCL_CALL="
+EXCLUDE_SYMBOLS         = tbccl::detail tbccl::detail::*
