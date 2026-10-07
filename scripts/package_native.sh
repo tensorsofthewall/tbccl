@@ -26,7 +26,7 @@ case "$(uname -s)" in Linux) OS=linux ;; Darwin) OS=macos ;; *) echo "unsupporte
 case "$(uname -m)" in x86_64|amd64) ARCH=x86_64 ;; arm64|aarch64) ARCH=arm64 ;; *) echo "unsupported arch" >&2; exit 1 ;; esac
 EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$SRC" log -1 --format=%ct 2>/dev/null || echo 0)}
 
-CFG=(-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF)
+CFG=(-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_LIBDIR=lib)
 PFX_MAP="-ffile-prefix-map=$SRC=. -fdebug-prefix-map=$SRC=."
 SUFFIX=""
 if [ "$CUDA" = 1 ]; then
