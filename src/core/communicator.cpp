@@ -747,7 +747,7 @@ detail::CollectiveDescriptor describe(
     return d;
 }
 
-std::atomic<std::uint64_t> g_phase43_transfer_id{std::uint64_t{1} << 40};
+std::atomic<std::uint64_t> g_transfer_id{std::uint64_t{1} << 40};
 
 void run_transfer(
     TensorCommWorker &worker,
@@ -758,7 +758,7 @@ void run_transfer(
     const char *what)
 {
     TransferRequest request;
-    request.transfer_id = g_phase43_transfer_id.fetch_add(1, std::memory_order_relaxed);
+    request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
     request.direction = direction;
     request.backend = &backend;
     request.transport = &transport;
