@@ -1128,6 +1128,18 @@ if(BUILD_TESTING)
     add_test(NAME communicator_mesh_test COMMAND communicator_mesh_test)
     list(APPEND tbccl_dynamic_port_tests communicator_mesh_test)
 
+    add_executable(mesh_world_test
+        tests/mesh_world_test.cpp
+    )
+    target_link_libraries(mesh_world_test PRIVATE tbccl Threads::Threads)
+    if(MSVC)
+        target_compile_options(mesh_world_test PRIVATE /W4)
+    else()
+        target_compile_options(mesh_world_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME mesh_world_test COMMAND mesh_world_test)
+    list(APPEND tbccl_dynamic_port_tests mesh_world_test)
+
     add_executable(communicator_p2p_nrank_test
         tests/communicator_p2p_nrank_test.cpp
     )

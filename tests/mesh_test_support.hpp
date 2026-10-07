@@ -150,33 +150,52 @@ namespace mesh_test
         return slots;
     }
 
-    // Runs `body(rank, comm)` on one thread per rank of a healthy world, then destroys every communicator after ALL bodies finished (so an
-    // early finisher never tears down a socket a peer still uses). Rethrows the first failure after joining everything.
+    // A bootstrapped healthy world whose communicators outlive a single body. run() executes `body(rank, comm)` on one thread per rank, joins them
+    // all, and rethrows the first failure; every communicator is destroyed only when the World is, after ALL bodies finished (so an early finisher
+    // never tears down a socket a peer still uses). A test that runs many small cases reuses one World instead of bootstrapping one per case: every
+    // world costs real loopback connections, and each closed connection leaves a TIME_WAIT entry that holds an ephemeral port for about a minute, so
+    // thousands of short-lived worlds exhaust the host's ephemeral range and make bind(port 0) fail for every test running at the same time.
+    class World
+    {
+    public:
+        explicit World(std::size_t world, std::chrono::milliseconds timeout = std::chrono::seconds(20)) : world_(world), results_(bootstrap(healthy_slots(world), timeout))
+        {
+            for (std::size_t r = 0; r < world; ++r) expect(results_[r].comm != nullptr, "rank " + std::to_string(r) + " bootstrap failed: " + results_[r].error);
+        }
+
+        void run(const std::function<void(std::size_t, tbccl::Communicator &)> &body)
+        {
+            Latch done(world_);
+            std::vector<std::string> errors(world_);
+            std::vector<std::thread> threads;
+            for (std::size_t r = 0; r < world_; ++r)
+            {
+                threads.emplace_back([&, r] {
+                    try
+                    {
+                        body(r, *results_[r].comm);
+                    }
+                    catch (const std::exception &e)
+                    {
+                        errors[r] = e.what();
+                    }
+                    done.arrive_and_wait();
+                });
+            }
+            for (auto &t : threads) t.join();
+            for (std::size_t r = 0; r < world_; ++r)
+                if (!errors[r].empty()) throw std::runtime_error("rank " + std::to_string(r) + ": " + errors[r]);
+        }
+
+    private:
+        std::size_t world_;
+        std::vector<RankResult> results_;
+    };
+
+    // Runs `body(rank, comm)` on one thread per rank of a fresh healthy world, then destroys every communicator.
     inline void run_world(std::size_t world, const std::function<void(std::size_t, tbccl::Communicator &)> &body, std::chrono::milliseconds timeout = std::chrono::seconds(20))
     {
-        auto results = bootstrap(healthy_slots(world), timeout);
-        for (std::size_t r = 0; r < world; ++r) expect(results[r].comm != nullptr, "rank " + std::to_string(r) + " bootstrap failed: " + results[r].error);
-        Latch done(world);
-        std::vector<std::string> errors(world);
-        std::vector<std::thread> threads;
-        for (std::size_t r = 0; r < world; ++r)
-        {
-            threads.emplace_back([&, r] {
-                try
-                {
-                    body(r, *results[r].comm);
-                }
-                catch (const std::exception &e)
-                {
-                    errors[r] = e.what();
-                }
-                done.arrive_and_wait();
-            });
-        }
-        for (auto &t : threads) t.join();
-        results.clear();
-        for (std::size_t r = 0; r < world; ++r)
-            if (!errors[r].empty()) throw std::runtime_error("rank " + std::to_string(r) + ": " + errors[r]);
+        World(world, timeout).run(body);
     }
 
 } // namespace mesh_test
