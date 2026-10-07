@@ -58,4 +58,6 @@ The documentation is in `docs/` and builds with `make docs`:
 
 ## License
 
-No license file has been published yet.
+tbccl is licensed under the Apache License, Version 2.0 (see `LICENSE`). Copyright 2026 Sandesh Bharadwaj.
+
+Security: see `SECURITY.md` and the security model in the documentation. Changes for users: `CHANGELOG.md`. Releasing: `RELEASE.md`.

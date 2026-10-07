@@ -58,3 +58,9 @@ docs/_build/
 
 # Raw local measurement output
 /results/*-local/
+
+# Packaging, test and local state
+.venv/
+.local/
+dist/
+.pytest_cache/

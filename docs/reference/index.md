@@ -18,4 +18,5 @@ configuration
 wire-protocol
 collective-algorithms
 numerical-semantics
+licensing
 ```

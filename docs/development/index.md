@@ -8,4 +8,7 @@ Contributing, building and testing the project and its documentation. See `CONTR
 testing
 benchmark-methodology
 building-docs
+release-process
+security-policy
+changelog
 ```
