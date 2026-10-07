@@ -52,6 +52,8 @@ The documentation is in `docs/` and builds with `make docs`:
 - [Getting started](docs/getting-started/index.md), [guides](docs/guides/index.md), [concepts](docs/concepts/index.md), [reference](docs/reference/index.md), [architecture decision records](docs/adr/index.md).
 - Contributing: `CONTRIBUTING.md` and `AGENTS.md`.
 
+The hosted documentation, https://tbccl.tensorsofthewall.com/en/stable/, is published with the first release; until then build it with `make docs`. Related projects and their documentation: `docs/related-projects.md`.
+
 ## Related projects
 
 [torch-tbccl](https://github.com/tensorsofthewall/torch-tbccl) (PyTorch backend), [vllm-tbccl](https://github.com/tensorsofthewall/vllm-tbccl) (vLLM integration) and [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) (exo pipeline data plane) are separate projects that use an installed TBCCL.

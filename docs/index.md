@@ -13,4 +13,5 @@ reference/index
 development/index
 adr/index
 validation/index
+related-projects
 ```
