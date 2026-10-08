@@ -312,7 +312,9 @@ namespace
                 if (w.has_error())
                 {
                     ++failed;
-                    expect(w.error_code() == tbccl::ErrorCode::Aborted, "a failed operation carries the Aborted code");
+                    // Ungated, the first send is already running when abort() is called; the peer can react to the abort broadcast and close its sockets before the local transfer
+// is interrupted, and that operation then ends with the transport error. Operations that never started (all of them when gated) must carry the Aborted code.
+                    expect(w.error_code() == tbccl::ErrorCode::Aborted || (!gated && w.error_code() == tbccl::ErrorCode::TransportError), "a failed operation carries the Aborted code");
                 }
                 else expect(!gated, "with progress gated no operation can have completed before the abort"); // ungated: small early sends may already have been delivered
             }

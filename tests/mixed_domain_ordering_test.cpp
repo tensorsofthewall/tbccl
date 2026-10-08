@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
+#include <optional>
 #include <iostream>
 #include <map>
 #include <random>
@@ -337,15 +338,25 @@ void test_p2p_size_mismatch_with_collective_active()
             Reduce red(rank, 1 << 20);
             Bytes tx = pattern(0, 4, 1000), rx(2000, 0xEE);
             tbccl::Work p = rank == 0 ? isend(comm, tx, 1) : irecv(comm, rx, 0); // rank 1 posts a receive twice as large as the message
-            auto c = red.post(comm);
-            expect(p.wait_for(std::chrono::seconds(20)) && c.wait_for(std::chrono::seconds(20)), "a Work did not terminate");
+            // Once the P2P failure has poisoned the communicator, a further submission is rejected synchronously (the documented "failed state" error) instead of
+            // returning a failed Work; which of the two happens depends on timing.
+            std::optional<tbccl::Work> c;
+            try
+            {
+                c = red.post(comm);
+            }
+            catch (const std::exception &e)
+            {
+                expect(contains(e.what(), "failed state"), std::string("unexpected submission error: ") + e.what());
+            }
+            expect(p.wait_for(std::chrono::seconds(20)) && (!c || c->wait_for(std::chrono::seconds(20))), "a Work did not terminate");
             if (rank == 1)
             {
                 expect(p.has_error() && contains(p.error(), "size mismatch"), "the P2P size mismatch was not reported: " + p.error());
                 recv_error = p.error();
-                coll_error1 = c.has_error() ? c.error() : "";
+                coll_error1 = c && c->has_error() ? c->error() : "";
             }
-            else coll_error0 = c.has_error() ? c.error() : "";
+            else coll_error0 = c && c->has_error() ? c->error() : "";
         });
     for (auto &t : threads) t.join();
     // The all_reduce may have finished before the P2P failure; if it did not, it must have failed (never hung, never wrong). Either way the communicator is failed afterwards.
