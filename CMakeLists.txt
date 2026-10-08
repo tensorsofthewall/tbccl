@@ -22,6 +22,14 @@ find_package(Threads REQUIRED)
 # from the build tree and from an installed prefix.
 include(GNUInstallDirs)
 
+# The numeric project VERSION is the CMake package version and what tbcclGetPackageVersion reports. The public release version string may carry a
+# release-candidate suffix (0.6.0rc1); it drives tbccl-info, the generated tbccl/version.h and the release archive names. Development trees leave it at the numeric version.
+set(TBCCL_PUBLIC_VERSION "${PROJECT_VERSION}" CACHE STRING "Public release version string: the project VERSION, optionally followed by rcN (for example 0.6.0rc1)")
+if(NOT TBCCL_PUBLIC_VERSION MATCHES "^${PROJECT_VERSION_MAJOR}\\.${PROJECT_VERSION_MINOR}\\.${PROJECT_VERSION_PATCH}(rc[0-9]+)?$")
+    message(FATAL_ERROR "TBCCL_PUBLIC_VERSION '${TBCCL_PUBLIC_VERSION}' must be ${PROJECT_VERSION} optionally followed by rc<N>")
+endif()
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/tbccl/version.h @ONLY)
+
 option(
     TBCCL_ENABLE_RING_TRACE
     "Enable internal ring execution tracing (diagnostic only; adds a lightweight per-thread event buffer to the ring collective path). Off by default; leave off for normal builds."
@@ -222,6 +230,7 @@ target_link_libraries(tbccl_c PUBLIC tbccl Threads::Threads)
 add_executable(tbccl_info tools/tbccl_info.cpp)
 set_target_properties(tbccl_info PROPERTIES OUTPUT_NAME tbccl-info)
 target_link_libraries(tbccl_info PRIVATE tbccl_c)
+target_include_directories(tbccl_info PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if(TBCCL_ENABLE_CUDA)
     target_compile_definitions(tbccl_info PRIVATE TBCCL_INFO_CUDA)
 endif()
@@ -2418,6 +2427,7 @@ install(FILES
 )
 
 install(TARGETS tbccl_info RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/tbccl/version.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tbccl)
 
 # pkg-config metadata for build systems that do not use CMake. The prefix is derived from the file's own location, so a relocated prefix works.
 set(TBCCL_PC_CUDA_LIBS "")

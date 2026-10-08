@@ -1,0 +1,11 @@
+/* Generated from cmake/version.h.in. TBCCL_VERSION_STRING is the public release version (it may carry an rcN suffix); the numeric macros are the package
+ * version that tbcclGetPackageVersion reports. */
+#ifndef TBCCL_VERSION_H
+#define TBCCL_VERSION_H
+
+#define TBCCL_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define TBCCL_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define TBCCL_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define TBCCL_VERSION_STRING "@TBCCL_PUBLIC_VERSION@"
+
+#endif /* TBCCL_VERSION_H */
