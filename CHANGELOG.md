@@ -1,10 +1,15 @@
 # Changelog
 
-All notable user-facing changes are recorded here. The format follows Keep a Changelog, and the project follows Semantic Versioning once it has releases. tbccl has not been released: everything below is unreleased.
+All notable user-facing changes are recorded here. The format follows Keep a Changelog, and the project follows Semantic Versioning once it has releases. tbccl has not had a final release. 0.6.0rc1 is a release candidate (pre-release), not production-ready.
 
-## Unreleased
+## 0.6.0rc1 (release candidate)
 
-Planned for 0.6.0. This section describes the first planned release and changes until it is published.
+First release candidate of the first planned release, 0.6.0. Release candidates are for validation on real hardware; expect an rc2 if a blocker is found.
+
+### Installation
+
+- Native archives built by CI and attached to the GitHub pre-release: `tbccl-0.6.0rc1-linux-x86_64.tar.gz`, `tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz`, `tbccl-0.6.0rc1-macos-arm64.tar.gz`, each with an SPDX SBOM, `SHA256SUMS` and a build-provenance attestation. Extract and use `find_package(TBCCL CONFIG REQUIRED)`; `bin/tbccl-info` reports the version.
+- Building from source remains supported (see the installation guide).
 
 ### Added
 

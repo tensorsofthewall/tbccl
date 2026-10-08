@@ -4,7 +4,7 @@ TBCCL tracks four independent versions. They change for different reasons and mu
 
 | What | Where it is defined | Current value | Changes when |
 |---|---|---|---|
-| Package version | `project(VERSION ...)` in `CMakeLists.txt`; `tbcclGetPackageVersion` | 0.5.1 (development) | a release is made |
+| Package version | `project(VERSION ...)` in `CMakeLists.txt`; `tbcclGetPackageVersion` | 0.6.0 (public version 0.6.0rc1) | a release is made |
 | C ABI version | `TBCCL_C_ABI_VERSION` in `tbccl.h`; `tbcclGetAbiVersion` | 1 | the C ABI is broken (not planned) |
 | Wire protocol version | `kWireProtocolVersion` in `include/tbccl/rank_directory.hpp` | 4 | what ranks exchange on the network changes incompatibly |
 | Endpoint blob format | `tbcclEndpointBlob.format_version` | 1 | the bootstrap blob layout changes |
@@ -30,4 +30,4 @@ If you see this error, check that every rank, and every adapter linked against T
 
 ## Release status
 
-The current tree is a development version (0.5.1). The next release is planned as 0.6.0. Until a release tag exists, documentation labelled "latest" describes the development branch; there is no published stable release.
+The current tree is prepared as release candidate 0.6.0rc1: the CMake package version is 0.6.0 and the public version string (`tbccl-info`, `tbccl/version.h`, `BUILDINFO.json`, archive names) is `0.6.0rc1`, set by `TBCCL_PUBLIC_VERSION`. The final 0.6.0 has not been released. Documentation labelled "latest" describes the development branch; `stable` is not pointed at a release candidate.
