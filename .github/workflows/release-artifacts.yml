@@ -1,0 +1,154 @@
+name: release-artifacts
+
+# Builds, validates and describes every TBCCL release artifact from one exact commit. It only uploads GitHub Actions artifacts: it creates no tag, no GitHub
+# Release and no package upload, and it has no tag trigger.
+on:
+  workflow_dispatch:
+    inputs:
+      public_version:
+        description: "Public version string for the archives (for example 0.6.0rc1); empty uses the project version"
+        required: false
+        default: ""
+  pull_request:
+    paths:
+      - ".github/workflows/release-artifacts.yml"
+      - "scripts/package_native.sh"
+      - "scripts/ci/**"
+      - "scripts/check_*consumer.sh"
+      - "tools/release_metadata.py"
+      - "tools/tbccl_info.cpp"
+      - "packaging/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+
+permissions:
+  contents: read
+
+env:
+  MANYLINUX_IMAGE: quay.io/pypa/manylinux_2_28_x86_64@sha256:39df0042d5cc900b085aa25a0659368b42a0006c54c474299b785b44c1b4ff82
+  PUBLIC_VERSION: ${{ inputs.public_version }}
+
+jobs:
+  host-tests:
+    name: host tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ runner.os == 'macOS' && '-DTBCCL_ENABLE_METAL=ON -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0' || '' }}
+          cmake --build build -j4
+      - name: "Test (the CUDA suite is not run, the hosted runners have no GPU)"
+        run: ctest --test-dir build -j4 --timeout 600 --output-on-failure
+
+  linux-archive:
+    name: Linux ${{ matrix.variant }} archive
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [host, cuda]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build, verify and rebuild in manylinux_2_28 (CUDA 13.0 for the cuda variant)
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD:/src" -w /src "$MANYLINUX_IMAGE" bash scripts/ci/linux_archive.sh ${{ matrix.variant }} "$PUBLIC_VERSION" /src/out
+          sudo chown -R "$USER" out
+          ls -l out
+      - name: Record the size
+        run: stat -c '%n %s bytes' out/*.tar.gz | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archive-linux-${{ matrix.variant }}
+          path: out/
+          retention-days: 14
+          if-no-files-found: error
+
+  macos-archive:
+    name: macOS arm64 archive
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build, verify and rebuild (deployment target 14.0)
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+        run: |
+          mkdir -p out/a out/b
+          ARGS=(); [ -z "$PUBLIC_VERSION" ] || ARGS+=(--public-version "$PUBLIC_VERSION")
+          scripts/package_native.sh "${ARGS[@]}" --out out/a
+          scripts/package_native.sh "${ARGS[@]}" --out out/b
+          A=$(shasum -a 256 out/a/*.tar.gz | cut -d' ' -f1); B=$(shasum -a 256 out/b/*.tar.gz | cut -d' ' -f1)
+          echo "build 1: $A"; echo "build 2: $B"
+          [ "$A" = "$B" ] || { echo "the archive is not reproducible" >&2; exit 1; }
+          cp out/a/*.tar.gz out/ && rm -rf out/a out/b
+      - name: Check the binaries (architecture, deployment target, install names)
+        run: |
+          mkdir x && tar -xzf out/*.tar.gz -C x
+          for f in x/*/bin/tbccl-info x/*/lib/*.a; do lipo -info "$f"; done
+          otool -l x/*/bin/tbccl-info | grep -A4 LC_BUILD_VERSION
+          otool -L x/*/bin/tbccl-info
+      - name: Record the size
+        run: stat -f '%N %z bytes' out/*.tar.gz | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archive-macos-arm64
+          path: out/
+          retention-days: 14
+          if-no-files-found: error
+
+  finalize:
+    name: checksums, SBOM and provenance
+    needs: [host-tests, linux-archive, macos-archive]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: archive-*
+          path: parts
+          merge-multiple: true
+      - name: SBOMs and SHA256SUMS
+        run: |
+          python -m pip install --quiet spdx-tools==0.8.5
+          mkdir release
+          cp parts/*.tar.gz release/
+          cp parts/cuda-toolkit-packages.txt release/ || true
+          EPOCH=$(date -u -d "@$(git log -1 --format=%ct)" +%Y-%m-%dT%H:%M:%SZ)
+          for a in release/tbccl-*.tar.gz; do
+            python tools/release_metadata.py sbom "$a" --out "$a.spdx.json" --repo tbccl --commit "$GITHUB_SHA" --epoch "$EPOCH" --homepage https://tbccl.tensorsofthewall.com/
+            python tools/release_metadata.py check-sbom "$a.spdx.json" "$a"
+          done
+          python tools/release_metadata.py sums release
+          (cd release && sha256sum -c SHA256SUMS)
+      - name: Artifact table
+        run: |
+          {
+            echo "### Release artifacts for $GITHUB_SHA"
+            echo '| artifact | bytes | SHA-256 |'; echo '|---|---|---|'
+            (cd release && for f in tbccl-*.tar.gz; do echo "| $f | $(stat -c %s "$f") | $(sha256sum "$f" | cut -d' ' -f1) |"; done)
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest the artifacts (GitHub build provenance)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-artifacts-${{ github.sha }}
+          path: release/
+          retention-days: 14
+          if-no-files-found: error
