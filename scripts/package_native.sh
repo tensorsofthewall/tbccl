@@ -51,7 +51,7 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/tbccl-package.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 BUILD="$WORK/build"; STAGE="$WORK/$NAME"; mkdir -p "$OUT"
 
-cmake -S "$SRC" -B "$BUILD" "${CFG[@]}" "${DET[@]}" "-DCMAKE_CXX_FLAGS=$PFX_MAP" "-DCMAKE_C_FLAGS=$PFX_MAP" >/dev/null
+cmake -S "$SRC" -B "$BUILD" "${CFG[@]}" ${DET[@]+"${DET[@]}"} "-DCMAKE_CXX_FLAGS=$PFX_MAP" "-DCMAKE_C_FLAGS=$PFX_MAP" >/dev/null
 cmake --build "$BUILD" -j "$JOBS" --target tbccl tbccl_c tbccl_info $([ "$CUDA" = 1 ] && echo tbccl_cuda) 2>&1 | tail -2
 cmake --install "$BUILD" --prefix "$STAGE" >/dev/null
 cp "$SRC/LICENSE" "$STAGE/LICENSE"
