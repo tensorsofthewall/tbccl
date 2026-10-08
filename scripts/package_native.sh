@@ -66,7 +66,9 @@ printf '{"public_version": "%s", "package_version": "%s", "commit": "%s", "os": 
 ( cd "$WORK" && tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" --format=posix --pax-option=delete=atime,delete=ctime \
       -cf - "$NAME" | gzip -n -9 > "$OUT/$NAME.tar.gz" ) 2>/dev/null || {
     # bsdtar (macOS) has no --sort/--pax-option: use an explicit sorted file list
-    ( cd "$WORK" && find "$NAME" | LC_ALL=C sort | tar -cf - --no-recursion --uid 0 --gid 0 -T - 2>/dev/null | gzip -n -9 > "$OUT/$NAME.tar.gz" )
+    # bsdtar records each file's modification time: give every staged file the fixed commit time first
+    ( cd "$WORK" && find "$NAME" -exec touch -h -t "$(date -u -r "$EPOCH" +%Y%m%d%H%M.%S)" {} + \
+        && find "$NAME" | LC_ALL=C sort | tar -cf - --no-recursion --uid 0 --gid 0 --numeric-owner -T - 2>/dev/null | gzip -n -9 > "$OUT/$NAME.tar.gz" )
 }
 ( cd "$OUT" && { sha256sum "$NAME.tar.gz" 2>/dev/null || shasum -a 256 "$NAME.tar.gz"; } > "$NAME.tar.gz.sha256" )
 
