@@ -130,6 +130,9 @@ public:
     void wait_idle();
     void set_fatal_handler(const std::function<void(const std::string &)> &handler);
     // Interrupts every data transport (a blocked send/recv unwinds), wakes every mailbox waiter and fails every queued request. Idempotent.
+    // Marks every transfer lane aborted and fails its queued requests without any I/O, so a failure that follows (a peer closing in response to broadcast_abort) reports
+    // the abort. abort_transfers() then interrupts the transports.
+    void mark_aborting(const std::string &reason);
     void abort_transfers(const std::string &reason);
 
     // Collective control messages. send_* write one control frame to `peer` (best effort ordering: FIFO per peer); the mailbox receives what peers sent.

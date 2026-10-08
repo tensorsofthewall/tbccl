@@ -446,6 +446,20 @@ int thread_count()
     return n;
 }
 
+// A joined or exited thread can stay listed in /proc/self/task until the kernel finishes reaping it, which on a busy or single CPU is not immediate. A real leak never
+// goes away, so wait (bounded) for the count to come down to `limit` instead of sampling once.
+int settled_thread_count(int limit)
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    int n = thread_count();
+    while (n > limit && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::yield();
+        n = thread_count();
+    }
+    return n;
+}
+
 void mixed_cycle()
 {
     run_world(2, [&](std::size_t rank, tbccl::Communicator &comm) {
@@ -471,7 +485,7 @@ void test_lifecycle()
     for (int i = 0; i < 3; ++i) mixed_cycle(); // warm up
     const int fds0 = open_fd_count(), th0 = thread_count();
     for (int i = 0; i < 10; ++i) mixed_cycle();
-    const int fds1 = open_fd_count(), th1 = thread_count();
+    const int fds1 = open_fd_count(), th1 = settled_thread_count(th0 + 1);
     expect(fds1 == fds0, "file descriptors leaked over 10 mixed cycles: " + std::to_string(fds0) + " -> " + std::to_string(fds1));
     expect(th1 <= th0 + 1, "threads leaked over 10 mixed cycles: " + std::to_string(th0) + " -> " + std::to_string(th1));
     for (int i = 0; i < 100; ++i)
@@ -479,7 +493,7 @@ void test_lifecycle()
         auto results = bootstrap(healthy_slots(2), std::chrono::seconds(10));
         for (auto &r : results) expect(r.comm != nullptr, "bootstrap: " + r.error);
     }
-    const int fds2 = open_fd_count(), th2 = thread_count();
+    const int fds2 = open_fd_count(), th2 = settled_thread_count(th0 + 1);
     expect(fds2 == fds0, "file descriptors leaked over 100 create/destroy cycles: " + std::to_string(fds0) + " -> " + std::to_string(fds2));
     expect(th2 <= th0 + 1, "threads leaked over 100 create/destroy cycles: " + std::to_string(th0) + " -> " + std::to_string(th2));
     std::cout << "[PASS] lifecycle: fds " << fds0 << "->" << fds2 << ", threads " << th0 << "->" << th2 << "\n";

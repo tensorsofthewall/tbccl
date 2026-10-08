@@ -537,7 +537,15 @@ struct TensorCommWorker::Impl
 
     ~Impl()
     {
-        stopping.store(true);
+        // The flag is set under each condition variable's mutex: a worker that has evaluated its wait predicate but not yet blocked would otherwise miss the notification
+        // and the join below would never return (seen as a hang in ~Communicator when a world was torn down right after bootstrap on a loaded 1-2 CPU host).
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            stopping.store(true);
+        }
+        {
+            std::lock_guard<std::mutex> lock(job_mutex);
+        }
         queue_cv.notify_all();
         job_cv.notify_all();
 
@@ -555,6 +563,14 @@ struct TensorCommWorker::Impl
     {
         std::lock_guard<std::mutex> lock(queue_mutex);
         return "aborted: communicator aborted" + (abort_reason.empty() ? "" : " (" + abort_reason + ")");
+    }
+
+    // A failure that follows the lane's abort is a consequence of it (the peer reacted to the abort and closed its sockets before this rank's own transport was interrupted),
+    // so the Work reports the abort rather than whichever transport error won the race. `was_aborted` is read before fatal(), and only a plain TransportError is remapped: a failure that itself triggers the abort, or a semantic one, keeps its own code.
+    void complete_failed(const std::shared_ptr<TransferWork::State> &state, bool was_aborted, ErrorCode code, const std::string &message)
+    {
+        if (was_aborted && code == ErrorCode::TransportError) detail::TransferWorkAccess::complete_error(state, ErrorCode::Aborted, aborted_message());
+        else detail::TransferWorkAccess::complete_error(state, code, message);
     }
 
     // Fails every queued (never started, so never touching user memory) request. The queue is moved out under the
@@ -766,9 +782,10 @@ struct TensorCommWorker::Impl
         }
         catch (const std::exception &error)
         {
+            const bool was_aborted = aborted.load();
             fatal(error.what());
             retire(request.direction);
-            detail::TransferWorkAccess::complete_error(state, error_code_of(error), error.what());
+            complete_failed(state, was_aborted, error_code_of(error), error.what());
             record_stat(false);
         }
     }
@@ -869,9 +886,10 @@ struct TensorCommWorker::Impl
 
             if (progress.failed)
             {
+                const bool was_aborted = aborted.load();
                 fatal(progress.error_message);
                 retire(request.direction);
-                detail::TransferWorkAccess::complete_error(state, progress.error_code, progress.error_message);
+                complete_failed(state, was_aborted, progress.error_code, progress.error_message);
                 record_stat(false);
                 return;
             }
@@ -882,9 +900,10 @@ struct TensorCommWorker::Impl
         }
         catch (const std::exception &error)
         {
+            const bool was_aborted = aborted.load();
             fatal(error.what());
             retire(request.direction);
-            detail::TransferWorkAccess::complete_error(state, error_code_of(error), error.what());
+            complete_failed(state, was_aborted, error_code_of(error), error.what());
             record_stat(false);
         }
     }

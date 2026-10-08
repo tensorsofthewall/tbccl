@@ -315,8 +315,14 @@ private:
                 // A job fails only after protocol participation began (arguments were validated before
                 // submission): the collective sequence is no longer trustworthy, so poison the communicator.
                 unfinished_.fetch_sub(1, std::memory_order_acq_rel);
+                std::string aborted_text;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    if (aborted_) aborted_text = abort_message_; // already aborted before this job failed: a plain transport error is then a consequence of the abort (peer closed first); a semantic failure (e.g. ProtocolMismatch) keeps its own code
+                }
                 if (on_fatal_) on_fatal_(e.what());
-                detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), error_code_of(e), e.what());
+                if (!aborted_text.empty() && error_code_of(e) == ErrorCode::TransportError) detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), ErrorCode::Aborted, aborted_text);
+                else detail::TransferWorkAccess::complete_error(detail::TransferWorkAccess::state_of(job.work), error_code_of(e), e.what());
             }
             catch (...)
             {
@@ -471,10 +477,13 @@ struct Communicator::Impl
         }
         failed.store(true, std::memory_order_release);
         trace.line("abort: " + why);
-        if (mesh) mesh->broadcast_abort(origin, raw);
-        // Interrupt first so the active transfer unwinds; then reject/drain queues.
-        if (mesh) mesh->abort_transfers(why);
+        // Close the collective queue before any I/O. Once the active job fails the worker takes the next queued job; broadcast_abort() below lets a peer react and close
+        // its sockets, which on a busy or single CPU can fail the active job before this thread drains the queue, so a job that never started would run on a dead transport
+        // and fail with a transport error instead of the abort. CollectiveExecutor::abort() does not wait for the active job.
         if (collective_executor) collective_executor->abort(why);
+        if (mesh) mesh->mark_aborting(why);
+        if (mesh) mesh->broadcast_abort(origin, raw);
+        if (mesh) mesh->abort_transfers(why);
     }
 
     void request_abort(const std::string &why) { request_abort(why, rank, why); }

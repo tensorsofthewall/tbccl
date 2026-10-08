@@ -77,16 +77,19 @@ struct Pair
         o1.rank = 1;
         std::exception_ptr e;
         std::thread t([&] { try { c1 = Communicator::create(o1); } catch (...) { e = std::current_exception(); } });
-        c0 = Communicator::create(o0);
+        try { c0 = Communicator::create(o0); } catch (...) { t.join(); throw; }
         t.join();
         if (e) std::rethrow_exception(e);
     }
 };
 
-struct Silent // keeps the peer communicator alive (socket open, not reading) until release()
+struct Silent // keeps the peer communicator alive (socket open, not reading) until release(); the destructor releases and joins, so a failed expectation reports instead of terminating
 {
     std::mutex m; std::condition_variable cv; bool go = false;
+    std::thread keep{[this] { park(); }};
+    ~Silent() { release(); join(); }
     void release() { { std::lock_guard<std::mutex> l(m); go = true; } cv.notify_all(); }
+    void join() { if (keep.joinable()) keep.join(); }
     void park() { std::unique_lock<std::mutex> l(m); cv.wait(l, [&] { return go; }); }
 };
 
@@ -96,10 +99,10 @@ void healthy_allreduce(Pair &p)
 {
     std::vector<float> a(1024, 1), b(1024, 2);
     std::thread t([&] { ar(*p.c1, b).wait(); });
-    auto w = ar(*p.c0, a);
-    w.wait();
+    bool failed = false;
+    try { auto w = ar(*p.c0, a); w.wait(); failed = w.has_error(); } catch (...) { t.join(); throw; }
     t.join();
-    expect(!w.has_error() && a[0] == 3.0f && b[0] == 3.0f, "healthy control allreduce");
+    expect(!failed && a[0] == 3.0f && b[0] == 3.0f, "healthy control allreduce");
 }
 // `active`: the job was already running when abort() was called. The abort is broadcast to the peer before the local transfers are interrupted, so on a
 // loaded or small host the peer can react and close its sockets first; the running job then ends with that transport error ("peer closed connection")
@@ -120,7 +123,7 @@ void print_lat(const char *what, double a, double b) { std::printf("  %-34s abor
 void test_silent_allreduce()
 {
     Pair p; healthy_allreduce(p);
-    Silent s; std::thread keep([&] { s.park(); });
+    Silent s;
     std::vector<float> a(1 << 18, 1);
     auto w = ar(*p.c0, a);
     std::this_thread::sleep_for(milliseconds(300));
@@ -132,7 +135,7 @@ void test_silent_allreduce()
     expect(p.c0->aborted() && p.c0->abort_reason() == "test", "state + first reason");
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
     print_lat("silent all_reduce", ms(t0, t1), ms(t1, clk::now()));
-    s.release(); keep.join();
+    s.release(); s.join();
 }
 
 void test_silent_broadcast_and_allgather()
@@ -140,7 +143,7 @@ void test_silent_broadcast_and_allgather()
     for (int variant = 0; variant < 3; ++variant)
     {
         Pair p; healthy_allreduce(p);
-        Silent s; std::thread keep([&] { s.park(); });
+        Silent s;
         std::vector<float> a(1 << 18, 1), o0(1 << 18), o1(1 << 18);
         Work w = variant == 0   ? p.c0->broadcast(host(a), 1)                       // receiver waiting for root
                : variant == 1   ? p.c0->broadcast(host(a), 0)                       // root sending to a silent peer
@@ -154,7 +157,7 @@ void test_silent_broadcast_and_allgather()
         if (w.has_error()) terminal_error(w, "collective", true);
         bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
         print_lat(variant == 0 ? "silent broadcast (receiver)" : variant == 1 ? "silent broadcast (root)" : "silent all_gather", ms(t0, t1), ms(t1, clk::now()));
-        s.release(); keep.join();
+        s.release(); s.join();
     }
 }
 
@@ -163,7 +166,7 @@ void test_p2p_recv_and_send()
     for (int send = 0; send < 2; ++send)
     {
         Pair p; healthy_allreduce(p);
-        Silent s; std::thread keep([&] { s.park(); });
+        Silent s;
         // 256 MiB far exceeds loopback socket buffers, so a sender to a non-reading peer must block.
         std::vector<float> buf(send ? (64u << 20) : 1024);
         BufferView v = host(buf);
@@ -176,14 +179,14 @@ void test_p2p_recv_and_send()
         terminal_error(w, send ? "send" : "recv", true);
         bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
         print_lat(send ? "blocked P2P send" : "blocked P2P recv", ms(t0, t1), ms(t1, clk::now()));
-        s.release(); keep.join();
+        s.release(); s.join();
     }
 }
 
 void test_queued_mixed_and_dropped()
 {
     Pair p; healthy_allreduce(p);
-    Silent s; std::thread keep([&] { s.park(); });
+    Silent s;
     std::vector<float> a(1 << 16, 1), b(1 << 16, 1), c(1 << 16, 1), d(256, 1);
     Work w0 = ar(*p.c0, a);                                    // active, blocked
     Work w1 = ar(*p.c0, b);                                    // queued collective
@@ -196,13 +199,13 @@ void test_queued_mixed_and_dropped()
     bounded("abort", milliseconds(5000), [&] { p.c0->abort("queued"); return 0; });
     terminal_error(w0, "W0", true); terminal_error(w1, "W1"); terminal_error(w2, "W2"); terminal_error(w3, "W3", true); // P2P has its own lane and may already be running when abort() is called
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
-    s.release(); keep.join();
+    s.release(); s.join();
 }
 
 void multi_abort_once()
 {
     Pair p; healthy_allreduce(p);
-    Silent s; std::thread keep([&] { s.park(); });
+    Silent s;
     std::vector<float> a(1 << 16, 1);
     Work w = ar(*p.c0, a);
     std::vector<std::thread> ts;
@@ -213,7 +216,7 @@ void multi_abort_once()
     expect(r.rfind("caller", 0) == 0, "first reason wins and is one of the callers: " + r);
     terminal_error(w, "multi-abort", true);
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
-    s.release(); keep.join();
+    s.release(); s.join();
 }
 
 // Repeated: callers that race a freshly submitted job into the executor queue used to be able to sleep forever in abort() (a lost wake-up), which showed up
@@ -294,13 +297,13 @@ void test_repeated_create_abort_destroy()
     for (int i = 0; i < 20; ++i)
     {
         Pair p; healthy_allreduce(p);
-        Silent s; std::thread keep([&] { s.park(); });
+        Silent s;
         std::vector<float> a(4096, 1);
         Work w = ar(*p.c0, a);
         if (i % 2) p.c0->abort("loop");        // explicit abort, or destructor-triggered abort
         bounded("loop destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
         expect(w.is_completed() && w.has_error(), "outstanding Work failed");
-        s.release(); keep.join();
+        s.release(); s.join();
     }
 }
 } // namespace
