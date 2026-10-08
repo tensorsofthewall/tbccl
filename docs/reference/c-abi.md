@@ -11,7 +11,7 @@ C / Rust / Swift / future bindings -> libtbccl_c (stable C ABI shim) -> libtbccl
 | what | value | meaning |
 |---|---|---|
 | `TBCCL_C_ABI_VERSION` | **1** | this document; changes only if the ABI is broken (never planned) |
-| package version | 0.5.1 (development) | `tbcclGetPackageVersion`; informational |
+| package version | 0.6.0 (release candidate 0.6.0rc1) | `tbcclGetPackageVersion`; informational |
 | wire protocol | 4 | rank-to-rank, internal; never visible through the C API |
 | endpoint blob format | **1** | `tbcclEndpointBlob.format_version`; independent of the three above |
 
