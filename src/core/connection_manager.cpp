@@ -518,7 +518,16 @@ void ConnectionManager::start_data_acceptor()
                 return; // the listener is gone
             }
             if (!connection || closing_.load()) continue;
-            connection->set_io_timeout(std::chrono::milliseconds(2000));
+            try
+            {
+                // setsockopt fails with EINVAL on macOS once the dialing peer has already closed or reset the connection: that is a dropped dial, never a reason to
+                // let an exception escape this thread (it would terminate the process)
+                connection->set_io_timeout(std::chrono::milliseconds(2000));
+            }
+            catch (const std::exception &)
+            {
+                continue;
+            }
             AcceptExpectation expect;
             expect.communicator_id = boot_.communicator_id;
             expect.local_rank = boot_.rank;
@@ -543,7 +552,14 @@ void ConnectionManager::start_data_acceptor()
             {
                 continue; // a stranger, or a rejected (duplicate / foreign) dial: the reply was sent, the connection is dropped
             }
-            connection->set_io_timeout(std::chrono::milliseconds(0));
+            try
+            {
+                connection->set_io_timeout(std::chrono::milliseconds(0));
+            }
+            catch (const std::exception &)
+            {
+                continue; // the peer went away right after the handshake; nothing was installed
+            }
             const bool is_coll = hello.role == ConnectionRole::CollectiveData;
             {
                 std::lock_guard<std::mutex> lock(data_install_mutex_);
