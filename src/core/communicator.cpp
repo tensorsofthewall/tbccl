@@ -241,6 +241,9 @@ public:
             doomed.swap(queue_);
         }
         cv_.notify_all();
+        // wait_idle() sleeps until the queue is empty and nothing runs. Emptying the queue just now can make that true for a caller that started waiting while a
+        // submitted job was still queued; the worker has nothing left to wake it for, so without this the caller would sleep forever (concurrent abort() calls).
+        idle_cv_.notify_all();
         for (auto &job : doomed)
         {
             unfinished_.fetch_sub(1, std::memory_order_acq_rel);

@@ -199,7 +199,7 @@ void test_queued_mixed_and_dropped()
     s.release(); keep.join();
 }
 
-void test_multi_abort_and_idempotent()
+void multi_abort_once()
 {
     Pair p; healthy_allreduce(p);
     Silent s; std::thread keep([&] { s.park(); });
@@ -214,6 +214,13 @@ void test_multi_abort_and_idempotent()
     terminal_error(w, "multi-abort", true);
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
     s.release(); keep.join();
+}
+
+// Repeated: callers that race a freshly submitted job into the executor queue used to be able to sleep forever in abort() (a lost wake-up), which showed up
+// roughly once in a few hundred runs on a many-core host.
+void test_multi_abort_and_idempotent()
+{
+    for (int rep = 0; rep < 150; ++rep) multi_abort_once();
 }
 
 void test_zero_ops_and_after_completion_and_submit_after_abort()
