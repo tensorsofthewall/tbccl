@@ -718,6 +718,16 @@ void ConnectionManager::set_fatal_handler(const std::function<void(const std::st
         }
 }
 
+void ConnectionManager::mark_aborting(const std::string &reason)
+{
+    for (const auto &c : channels_)
+    {
+        if (!c) continue;
+        c->worker->abort(reason);
+        c->coll_worker->abort(reason);
+    }
+}
+
 void ConnectionManager::abort_transfers(const std::string &reason)
 {
     mailbox_.abort(reason);
