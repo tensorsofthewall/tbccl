@@ -2,6 +2,7 @@
 
 #include <tbccl/rank_directory.hpp>
 #include <tbccl/tbccl.h>
+#include <tbccl/version.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -65,13 +66,14 @@ int main(int argc, char **argv)
 
     if (json)
     {
-        std::printf("{\"package_version\": \"%u.%u.%u\", \"c_abi\": %u, \"wire_protocol\": %u, \"os\": \"%s\", \"arch\": \"%s\", "
+        std::printf("{\"public_version\": \"%s\", \"package_version\": \"%u.%u.%u\", \"c_abi\": %u, \"wire_protocol\": %u, \"os\": \"%s\", \"arch\": \"%s\", "
                     "\"providers\": {\"host\": true, \"cuda\": %s, \"metal_shared\": %s}}\n",
-                    major, minor, patch, abi, wire, platform_os(), platform_arch(), cuda ? "true" : "false", metal ? "true" : "false");
+                    TBCCL_VERSION_STRING, major, minor, patch, abi, wire, platform_os(), platform_arch(), cuda ? "true" : "false", metal ? "true" : "false");
     }
     else
     {
-        std::printf("TBCCL %u.%u.%u\n", major, minor, patch);
+        std::printf("TBCCL %s\n", TBCCL_VERSION_STRING);
+        std::printf("Package version:   %u.%u.%u\n", major, minor, patch);
         std::printf("C ABI version:     %u\n", abi);
         std::printf("Wire protocol:     %u\n", wire);
         std::printf("Platform:          %s %s\n", platform_os(), platform_arch());
