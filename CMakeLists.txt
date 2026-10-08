@@ -2346,6 +2346,14 @@ if(BUILD_TESTING)
     # use" (seen as a Mac hetero_allreduce_test failure in vLLM pipeline-parallel study, tensor_backend_async_adapter_test and, in low-precision datatype,
     # reduce_test on Linux). One shared RESOURCE_LOCK makes ctest run them one at a time whatever -j says, and covers tests added later automatically. The
     # N-rank runtime work tests allocate every port dynamically (listed in tbccl_dynamic_port_tests) and are left out of the lock.
+    # Tests that need a Metal GPU report this text when the machine has none (a hosted macOS runner is a virtual machine without one); ctest then lists them as
+    # skipped instead of failed, and on a Mac with a GPU they run normally.
+    foreach(t tensor_backend_async_adapter_test metal_shared_direct_async_backend_test communicator_metal_test metal_reduce_backend_test)
+        if(TEST ${t})
+            set_tests_properties(${t} PROPERTIES SKIP_REGULAR_EXPRESSION "no Metal device available")
+        endif()
+    endforeach()
+
     get_property(tbccl_all_tests DIRECTORY PROPERTY TESTS)
     foreach(t IN LISTS tbccl_all_tests)
         if(NOT t IN_LIST tbccl_dynamic_port_tests)
