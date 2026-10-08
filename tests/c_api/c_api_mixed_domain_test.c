@@ -131,10 +131,13 @@ static void abort_body(int rank, int world, tbcclComm_t comm, void *user)
         char text[256];
         size_t need = 0;
         CHECK_OK(tbcclWorkGetErrorString(coll, text, sizeof(text), &need));
-        CHECK(strstr(text, "abort") != NULL);
+        /* the collective was running when abort() was called; the peer can react to the abort broadcast and close its sockets before the local transfer is
+         * interrupted, and the collective then ends with that transport error instead of the abort text: either is a terminal failure caused by the abort */
+        CHECK(strstr(text, "abort") != NULL || strstr(text, "peer closed connection") != NULL);
     }
     CHECK_OK(tbcclWorkWaitFor(recv, 10000, &done, &op));
-    CHECK(done == 1 && op == TBCCL_ABORTED);
+    /* the receive was also running when abort() was called, so it can end with the transport error for the same reason as the collective above */
+    CHECK(done == 1 && (op == TBCCL_ABORTED || op == TBCCL_TRANSPORT_ERROR));
     pthread_join(t, NULL);
     for (size_t i = 0; i < sizeof(rx); ++i) CHECK(rx[i] == 0xEE); /* nothing was written into the receive buffer */
     CHECK_OK(tbcclWorkDestroy(coll));

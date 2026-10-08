@@ -627,7 +627,14 @@ namespace
         work.wait();
         receiver.join();
 
-        const auto stats = client.worker.stats();
+        // The worker thread updates its counters just after the Work becomes terminal, so a reader that has returned from wait() can see them one step behind:
+        // wait (bounded) for the counters to settle instead of reading them at once.
+        auto stats = client.worker.stats();
+        for (int i = 0; i < 2000 && stats.completed != 1; ++i)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            stats = client.worker.stats();
+        }
         expect(stats.submitted == 1, "stats.submitted should reflect the one enqueue()");
         expect(stats.completed == 1, "stats.completed should reflect the one success");
         expect(stats.failed == 0, "stats.failed should be zero for a clean transfer");
