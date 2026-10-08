@@ -1,65 +1,93 @@
 # TBCCL
 
-TBCCL is a C++17 collective-communication runtime with a stable C ABI. It moves tensors between machines that differ in operating system and memory type, for example a Linux host with an NVIDIA GPU and a Mac, over TCP, including a direct Thunderbolt 4 link. It is a transport and collectives library only: it knows nothing about models, placement or any machine-learning framework.
+[![docs](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml/badge.svg)](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![release](https://img.shields.io/github/v/release/tensorsofthewall/tbccl?include_prereleases&label=pre-release)](https://github.com/tensorsofthewall/tbccl/releases)
 
-> **Status:** release candidate **0.6.0rc1** (pre-release; not for production use), **C ABI 1**, **wire protocol 4**. The final 0.6.0 has not been released. Wire protocol 4 does not interoperate with wire protocol 3.
+TBCCL (Thunderbolt Collective Communication Library) is a C++17 runtime with a stable C ABI that moves tensors between machines that differ in operating system and memory type, for example a Linux host with an NVIDIA GPU and a Mac with Apple silicon, over TCP, including a direct Thunderbolt 4 link.
 
-## What you can use it for
+> **Status:** release candidate **0.6.0rc1** (pre-release; not for production use). **C ABI 1**, **wire protocol 4**. The final 0.6.0 has not been released. Wire protocol 4 does not interoperate with wire protocol 3.
 
-- Point-to-point `send` / `recv` and the collectives `barrier`, `broadcast`, `all_gather` and `Sum` `all_reduce` across 1 to 4 ranks (validated), with nonblocking submission: every call returns a `Work` handle immediately.
+## Why it exists
+
+NCCL and RCCL target homogeneous clusters of one GPU vendor, and Apple-silicon collective backends target Macs. TBCCL covers the gap between them: one communicator can span a CUDA machine and a Metal machine, with host staging handled for you. It is a transport and collectives library only. It knows nothing about models, placement or any machine-learning framework; frameworks use it through adapters.
+
+It is **not** an NCCL replacement, it does not do RDMA (the only transport is TCP), and there is no direct CUDA-to-Metal DMA: CUDA buffers are staged through pinned host memory, and Metal shared (unified) memory is handed to the transport directly.
+
+## Which project do I need?
+
+| I want to... | Use | Documentation |
+|---|---|---|
+| call TBCCL directly from C or C++ | **tbccl** (this repository) | [tbccl docs](https://tbccl.tensorsofthewall.com/en/latest/) |
+| run PyTorch `torch.distributed` (DDP, collectives) across machines | [torch-tbccl](https://github.com/tensorsofthewall/torch-tbccl) | [torch-tbccl docs](https://torch-tbccl.tensorsofthewall.com/en/latest/) |
+| run a vLLM pipeline across a CUDA node and a Mac | [vllm-tbccl](https://github.com/tensorsofthewall/vllm-tbccl) | [vllm-tbccl docs](https://vllm-tbccl.tensorsofthewall.com/en/latest/) |
+| run an exo pipeline across a Mac and a Linux CUDA host | [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) | [exo-tbccl docs](https://exo-tbccl.tensorsofthewall.com/en/latest/) |
+
+The three adapters are independent of each other. Each one carries (or links) its own copy of libtbccl, and none of them needs another adapter.
+
+```text
+ PyTorch ---- torch-tbccl ----+
+ vLLM ------- vllm-tbccl -----+---> libtbccl ---> TCP (Thunderbolt 4 or any IP network)
+ exo --------- exo-tbccl -----+
+```
+
+## What is supported
+
+- Point-to-point `send` / `recv` and the collectives `barrier`, `broadcast`, `all_gather` and `Sum` `all_reduce`, validated at 1 to 4 ranks, with nonblocking submission: every call returns a `Work` handle immediately.
 - Heterogeneous worlds: `Host`, CUDA and Metal-shared buffers in one communicator.
-- Mixing point-to-point and collective traffic freely on one communicator; the two are independent ordering domains.
-- A stable C ABI for other languages and for consumers that must not depend on the C++ ABI.
-
-It is not an RDMA implementation: the only transport is TCP.
-
-## Install
-
-```sh
-cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release     # add -DTBCCL_ENABLE_CUDA=ON on Linux with CUDA
-cmake --build build-release -j
-(cd build-release && ctest --output-on-failure)
-cmake --install build-release --prefix <prefix>
-```
-
-Consumers use `find_package(TBCCL CONFIG REQUIRED)` and link `TBCCL::tbccl` (C++) or `TBCCL::tbccl_c` (C). Requirements: a C++17 compiler, CMake 3.20 or newer, and for CUDA the CUDA Toolkit.
-
-## Minimal example
-
-`examples/c_quickstart.c` is a complete program: two processes bootstrap a communicator, send a message and run an `all_reduce`. It is built and run by the test suite. `examples/async_allreduce.cpp` is the C++ equivalent.
-
-```cmake
-find_package(TBCCL CONFIG REQUIRED)
-add_executable(app app.c)
-target_link_libraries(app PRIVATE TBCCL::tbccl_c)
-```
-
-## Supported configurations
+- Point-to-point and collective traffic mixed freely on one communicator (separate ordering domains).
+- A stable C ABI (v1) for other languages and for consumers that must not depend on the C++ ABI.
 
 | | Validated |
 |---|---|
-| Platforms | Linux x86-64 (host, CUDA) and macOS arm64 (host, Metal shared memory) |
+| Platforms | Linux x86-64 (host, CUDA 13) and macOS arm64 (host, Metal shared memory) |
 | World sizes | 1 to 4 (up to 8 accepted) |
 | Reductions | `Sum`; Float32, Float64, Int32, Int64, Int8, UInt8 at any size; Float16 and BFloat16 at world size 2 |
 | Transport | TCP over IPv4, including Thunderbolt 4 |
 
-Details and limits: [platform capabilities](docs/reference/platform-capabilities.md). Validation evidence: [validation](docs/validation/0.6.0.md) (draft).
+The full ecosystem table is the [compatibility matrix](docs/reference/compatibility-matrix.md).
+
+## Quick start
+
+Download a release archive from the [GitHub release](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.6.0rc1), verify it and check the version:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing
+tar -xzf tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz        # or tbccl-0.6.0rc1-linux-x86_64.tar.gz, tbccl-0.6.0rc1-macos-arm64.tar.gz
+tbccl-0.6.0rc1-linux-x86_64-cuda13/bin/tbccl-info
+```
+
+Then use it from CMake (`find_package(TBCCL CONFIG REQUIRED)`, target `TBCCL::tbccl_c` for C or `TBCCL::tbccl` for C++, with `-DCMAKE_PREFIX_PATH=<extracted directory>`) or through pkg-config. [Installing](docs/getting-started/install.md) covers both paths and building from source.
+
+## Minimal example
+
+`examples/version_check.c` is the smallest consumer: it prints the version the library reports. `examples/two_rank_threads.cpp` runs a two-rank `all_reduce` inside one process on loopback. `examples/c_quickstart.c` is a complete two-process C program (bootstrap, `send`, `all_reduce`) that the test suite builds and runs.
+
+```c
+#include <stdio.h>
+#include <tbccl/tbccl.h>
+#include <tbccl/version.h>
+
+int main(void) {
+    unsigned abi = 0;
+    tbcclGetAbiVersion(&abi);
+    printf("TBCCL %s, C ABI %u\n", TBCCL_VERSION_STRING, abi);
+    return 0;
+}
+```
 
 ## Documentation
 
-The documentation is in `docs/` and builds with `make docs`:
+Hosted documentation: https://tbccl.tensorsofthewall.com/ (`latest` is development documentation built from `main`; release-candidate versions appear as numbered versions; `stable` does not exist until the final release). Build it locally with `make docs`.
 
-- [Getting started](docs/getting-started/index.md), [guides](docs/guides/index.md), [concepts](docs/concepts/index.md), [reference](docs/reference/index.md), [architecture decision records](docs/adr/index.md).
-- Contributing: `CONTRIBUTING.md` and `AGENTS.md`.
+Start with [getting started](docs/getting-started/index.md). The [compatibility matrix](docs/reference/compatibility-matrix.md), [troubleshooting](docs/guides/troubleshooting.md), [known limitations](docs/project/limitations.md) and the [ecosystem overview](docs/project/ecosystem.md) answer most first questions.
 
-The hosted documentation is at https://tbccl.tensorsofthewall.com/ (development documentation built from `main` until the first release); you can also build it with `make docs`. Related projects and their documentation: `docs/related-projects.md`.
+## Known limitations
 
-## Related projects
+Only TCP over IPv4 (no RDMA); no direct CUDA-to-Metal DMA; `Sum` is the only reduction; Float16 and BFloat16 reductions only at world size 2; no recovery after a communicator failure; Windows is not supported. See [known limitations](docs/project/limitations.md).
 
-[torch-tbccl](https://github.com/tensorsofthewall/torch-tbccl) (PyTorch backend), [vllm-tbccl](https://github.com/tensorsofthewall/vllm-tbccl) (vLLM integration) and [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) (exo pipeline data plane) are separate projects that use an installed TBCCL.
+## Development
+
+`CONTRIBUTING.md` explains the workflow and `AGENTS.md` the rules for the code base. The [development documentation](docs/development/index.md) covers building, testing and where a change belongs across the four repositories. Security: `SECURITY.md`. Changes for users: `CHANGELOG.md`. Releasing: `RELEASE.md`.
 
 ## License
 
 tbccl is licensed under the Apache License, Version 2.0 (see `LICENSE`). Copyright 2026 Sandesh Bharadwaj.
-
-Security: see `SECURITY.md` and the security model in the documentation. Changes for users: `CHANGELOG.md`. Releasing: `RELEASE.md`.

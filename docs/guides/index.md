@@ -1,11 +1,14 @@
-# Guides
+---
+orphan: true
+---
 
-Task-oriented how-to guides.
+# Guides
 
 ```{toctree}
 :maxdepth: 1
 
 c-api-quickstart
 thunderbolt-link
+diagnostics
 troubleshooting
 ```

@@ -18,4 +18,4 @@ Each rank advertises its own capabilities during bootstrap, and they differ:
 
 ## Typical pairing
 
-The validated heterogeneous configuration is a Linux x86-64 host with an NVIDIA GPU and a macOS arm64 host using Metal shared memory, connected over Thunderbolt 4 (see [Validation](../validation/index.md) and the [Thunderbolt link guide](../guides/thunderbolt-link.md)). Framework adapters add device specifics on top: torch-tbccl maps PyTorch CUDA and MPS tensors onto `Cuda` and `MetalShared` buffers.
+The validated heterogeneous configuration is a Linux x86-64 host with an NVIDIA GPU and a macOS arm64 host using Metal shared memory, connected over Thunderbolt 4 (see [Validation](../validation/index.md) and the [Thunderbolt link guide](../guides/thunderbolt-link.md)). Framework adapters add device specifics on top: torch-tbccl maps PyTorch CUDA and MPS tensors onto `Cuda` and `MetalShared` buffers, vllm-tbccl and exo-tbccl do the same for vLLM and MLX activations. In every case the CUDA side is staged through pinned host memory and the Metal side uses unified memory directly; there is no direct CUDA-to-Metal DMA.

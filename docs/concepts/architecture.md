@@ -26,14 +26,27 @@ The outer layers depend on the inner ones, never the reverse.
 
 The headers and sources of the core (`include/tbccl/`, `src/core/`, `src/transport/`, `src/collectives/`, `src/c_api/`) have no dependency on CUDA, Metal, Objective-C or any ML framework. Device-specific code is optional and enabled at build time (`TBCCL_ENABLE_CUDA`, `TBCCL_ENABLE_METAL`). The C shim only calls a framework-neutral registration hook for CUDA; it never includes a CUDA header.
 
-Framework integrations are separate projects that link an installed TBCCL package: [torch-tbccl](https://github.com/tensorsofthewall/torch-tbccl) (a PyTorch `torch.distributed` backend), [vllm-tbccl](https://github.com/tensorsofthewall/vllm-tbccl) (a vLLM platform integration built on torch-tbccl) and [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) (an exo pipeline data plane over the C ABI). If a consumer seems to need a framework-specific feature, the right change is a missing generic primitive in TBCCL, never a framework concept in the core (see {doc}`../adr/0001-framework-neutral-core`).
+Framework integrations are separate projects that link an installed TBCCL package and are independent of each other: [torch-tbccl](https://github.com/tensorsofthewall/torch-tbccl) (a PyTorch `torch.distributed` backend), [vllm-tbccl](https://github.com/tensorsofthewall/vllm-tbccl) (a vLLM platform plugin with its own bundled backend over the C ABI) and [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl) (an exo pipeline data plane over the C ABI). None of them depends on another; see the [ecosystem overview](../project/ecosystem.md). If a consumer seems to need a framework-specific feature, the right change is a missing generic primitive in TBCCL, never a framework concept in the core (see {doc}`../adr/0001-framework-neutral-core`).
+
+## Data path
+
+For a send, the application describes a buffer (`BufferView`) and the memory provider for its kind makes the bytes reachable by the transport:
+
+```text
+Host buffer          -------------------------------------> transport (TCP) ---> peer
+Metal-shared buffer  (CPU-visible unified memory) ---------> transport (TCP) ---> peer
+CUDA buffer          device -> pinned host staging -------> transport (TCP) ---> peer
+                     (own copy stream, chunked, overlapped with the network)
+```
+
+Receives run the same path in reverse. There is no direct CUDA-to-Metal DMA: a CUDA to Metal transfer is device to pinned host memory on the Linux side, TCP, and then the Mac writes into unified memory that the Metal GPU can read. See [memory providers](memory-providers.md) and [heterogeneous communication](heterogeneous-communication.md).
 
 ## Public interfaces
 
 - **C++ API** (`TBCCL::tbccl`): `Communicator`, `Work`, `BufferView`, `CommunicatorOptions`, structured errors. It is a source-level API, not an ABI promise. See the [C++ API overview](../reference/cpp-api-overview.md).
 - **C ABI v1** (`TBCCL::tbccl_c`): the stable interface for other languages and for consumers that must not depend on the C++ ABI. See [C ABI v1](../reference/c-abi.md).
 
-The package also contains a legacy synchronous two-rank `World` API used by benchmarks. New code uses `Communicator`.
+The package also contains a legacy synchronous two-rank `World` API used by benchmarks. New code uses `Communicator`. The supported surface is defined in the [public API boundary](../reference/api-boundary.md).
 
 ## Key design properties
 
