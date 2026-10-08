@@ -86,7 +86,9 @@ int main(int argc, char **argv)
             const auto has = [&](std::uint32_t s) { return sites.count(s) != 0; };
             const auto at = [&](std::uint32_t s) { return sites.at(s); };
             for (std::uint32_t s : {0u, 1u, 2u, 8u, 9u, 10u}) expect(has(s), "op " + std::to_string(id) + " has common site " + std::to_string(s));
-            expect(at(0) <= at(1) && at(1) <= at(2) && at(2) <= at(8) && at(8) <= at(9) && at(9) <= at(10), "common sites are ordered");
+                        // Only orderings that causality forces are asserted. Sites recorded by DIFFERENT threads around a hand-off can invert on a loaded or small host (a woken
+            // thread may record its site before the thread that woke it records the one after the notify): enqueued (1) vs dequeued (2), and terminal (8) vs waiter awake (9).
+            expect(at(0) <= at(1) && at(0) <= at(2) && at(2) <= at(8) && at(0) <= at(9) && at(9) <= at(10) && at(8) <= at(10), "common sites are causally ordered");
             if (has(3))
             {
                 ++sends;
@@ -117,7 +119,7 @@ int main(int argc, char **argv)
             ++parents;
             const auto at = [&](std::uint32_t site) { return sites.at(site); };
             for (std::uint32_t site : {11u, 12u, 13u, 8u, 9u, 10u}) expect(sites.count(site) != 0, "collective " + std::to_string(id) + " has site " + std::to_string(site));
-            expect(at(11) <= at(12) && at(11) <= at(13) && at(13) <= at(8) && at(8) <= at(9) && at(9) <= at(10), "collective sites are ordered");
+            expect(at(11) <= at(12) && at(11) <= at(13) && at(13) <= at(8) && at(9) <= at(10) && at(8) <= at(10), "collective sites are causally ordered");
             expect(posted[id].size() == 2 && observed[id] == posted[id], "two children posted and observed in the same order");
             for (std::uint64_t child : posted[id])
             {
