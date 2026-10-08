@@ -101,11 +101,16 @@ void healthy_allreduce(Pair &p)
     t.join();
     expect(!w.has_error() && a[0] == 3.0f && b[0] == 3.0f, "healthy control allreduce");
 }
-void terminal_error(Work &w, const std::string &what)
+// `active`: the job was already running when abort() was called. The abort is broadcast to the peer before the local transfers are interrupted, so on a
+// loaded or small host the peer can react and close its sockets first; the running job then ends with that transport error ("peer closed connection")
+// instead of the abort text. Either way it is a terminal failure caused by the abort. A job that never started must always carry the abort text.
+void terminal_error(Work &w, const std::string &what, bool active = false)
 {
     expect(w.is_completed(), what + ": completed");
     expect(w.has_error(), what + ": has_error");
-    expect(w.error().find("abort") != std::string::npos, what + ": error mentions abort: " + w.error());
+    const bool aborted_text = w.error().find("abort") != std::string::npos;
+    const bool peer_closed = active && w.error().find("peer closed connection") != std::string::npos;
+    expect(aborted_text || peer_closed, what + ": error mentions abort: " + w.error());
     w.wait();                       // repeated wait is stable (does not hang, does not change state)
     w.wait();
     expect(w.has_error() && w.error() == w.error(), what + ": stable error");
@@ -123,7 +128,7 @@ void test_silent_allreduce()
     auto t0 = clk::now();
     bounded("abort", milliseconds(5000), [&] { p.c0->abort("test"); return 0; });
     auto t1 = clk::now();
-    terminal_error(w, "allreduce");
+    terminal_error(w, "allreduce", true);
     expect(p.c0->aborted() && p.c0->abort_reason() == "test", "state + first reason");
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
     print_lat("silent all_reduce", ms(t0, t1), ms(t1, clk::now()));
@@ -146,7 +151,7 @@ void test_silent_broadcast_and_allgather()
         auto t1 = clk::now();
         // a small root broadcast fits in socket buffers and can legitimately finish before the abort; both are valid
         expect(w.is_completed(), "terminal after abort");
-        if (w.has_error()) terminal_error(w, "collective");
+        if (w.has_error()) terminal_error(w, "collective", true);
         bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
         print_lat(variant == 0 ? "silent broadcast (receiver)" : variant == 1 ? "silent broadcast (root)" : "silent all_gather", ms(t0, t1), ms(t1, clk::now()));
         s.release(); keep.join();
@@ -168,7 +173,7 @@ void test_p2p_recv_and_send()
         auto t0 = clk::now();
         bounded("abort", milliseconds(5000), [&] { p.c0->abort("p2p"); return 0; });
         auto t1 = clk::now();
-        terminal_error(w, send ? "send" : "recv");
+        terminal_error(w, send ? "send" : "recv", true);
         bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
         print_lat(send ? "blocked P2P send" : "blocked P2P recv", ms(t0, t1), ms(t1, clk::now()));
         s.release(); keep.join();
@@ -189,7 +194,7 @@ void test_queued_mixed_and_dropped()
     std::this_thread::sleep_for(milliseconds(200));
     expect(!w0.is_completed() && !w1.is_completed(), "pending");
     bounded("abort", milliseconds(5000), [&] { p.c0->abort("queued"); return 0; });
-    terminal_error(w0, "W0"); terminal_error(w1, "W1"); terminal_error(w2, "W2"); terminal_error(w3, "W3");
+    terminal_error(w0, "W0", true); terminal_error(w1, "W1"); terminal_error(w2, "W2"); terminal_error(w3, "W3", true); // P2P has its own lane and may already be running when abort() is called
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
     s.release(); keep.join();
 }
@@ -206,7 +211,7 @@ void test_multi_abort_and_idempotent()
     p.c0->abort("again"); p.c0->abort();
     const auto r = p.c0->abort_reason();
     expect(r.rfind("caller", 0) == 0, "first reason wins and is one of the callers: " + r);
-    terminal_error(w, "multi-abort");
+    terminal_error(w, "multi-abort", true);
     bounded("destroy", milliseconds(5000), [&] { p.c0.reset(); return 0; });
     s.release(); keep.join();
 }
