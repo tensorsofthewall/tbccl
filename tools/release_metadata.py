@@ -169,20 +169,25 @@ def cmd_check_sbom(args):
     print(f"SBOM ok: {name} {version}, {len(doc['packages'])} packages")
 
 
-def members(path):
+# nvcc puts a per-process temporary-file identifier into symbol names (tmpxft_<pid>_<n>); it is the only run-to-run difference in a CUDA build
+NVCC_ID = re.compile(rb"tmpxft_[0-9a-f]{8}_[0-9a-f]{8}")
+
+
+def members(path, normalize_nvcc=False):
+    fix = (lambda b: NVCC_ID.sub(b"tmpxft_00000000_00000000", b)) if normalize_nvcc else (lambda b: b)
     if path.endswith(".whl"):
         z = zipfile.ZipFile(path)
-        return {n: hashlib.sha256(z.read(n)).hexdigest() for n in z.namelist() if not n.endswith("/")}
+        return {n: hashlib.sha256(fix(z.read(n))).hexdigest() for n in z.namelist() if not n.endswith("/")}
     t = tarfile.open(path)
-    return {m.name: hashlib.sha256(t.extractfile(m).read()).hexdigest() for m in t.getmembers() if m.isfile()}
+    return {m.name: hashlib.sha256(fix(t.extractfile(m).read())).hexdigest() for m in t.getmembers() if m.isfile()}
 
 
 def cmd_compare(args):
-    a, b = members(args.a), members(args.b)
+    a, b = members(args.a, args.normalize_nvcc), members(args.b, args.normalize_nvcc)
     same_names = sorted(a) == sorted(b)
     diff = sorted(n for n in set(a) & set(b) if a[n] != b[n])
     print(f"members: {len(a)} vs {len(b)}; same member list: {same_names}; differing contents: {diff or 'none'}")
-    print(f"whole file identical: {sha256_file(args.a) == sha256_file(args.b)}")
+    print(f"whole file identical: {sha256_file(args.a) == sha256_file(args.b)}" + (" (members compared after normalizing the nvcc temporary-file identifier)" if args.normalize_nvcc else ""))
     if not same_names:
         print("only in A:", sorted(set(a) - set(b)), "only in B:", sorted(set(b) - set(a)))
         sys.exit(1)
@@ -199,7 +204,8 @@ def main():
     s.add_argument("--epoch", required=True, help="creation time, ISO 8601 UTC (use the commit time)"); s.add_argument("--homepage"); s.add_argument("--core-archive", help="the TBCCL native archive that is statically linked into the artifact")
     s.add_argument("--bundles-cuda-runtime", action="store_true", help="the artifact contains the static CUDA runtime (libcudart_static)"); s.set_defaults(f=cmd_sbom)
     s = sub.add_parser("check-sbom"); s.add_argument("sbom"); s.add_argument("artifact"); s.set_defaults(f=cmd_check_sbom)
-    s = sub.add_parser("compare"); s.add_argument("a"); s.add_argument("b"); s.add_argument("--strict", action="store_true"); s.set_defaults(f=cmd_compare)
+    s = sub.add_parser("compare"); s.add_argument("a"); s.add_argument("b"); s.add_argument("--strict", action="store_true")
+    s.add_argument("--normalize-nvcc", action="store_true", help="ignore nvcc's per-process tmpxft_ identifier when comparing members"); s.set_defaults(f=cmd_compare)
     args = ap.parse_args()
     args.f(args)
 

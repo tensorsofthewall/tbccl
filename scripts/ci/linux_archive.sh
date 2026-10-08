@@ -19,7 +19,14 @@ mkdir -p "$OUT/a" "$OUT/b"
 "$SRC/scripts/package_native.sh" "${ARGS[@]}" --out "$OUT/b"
 A=$(sha256sum "$OUT"/a/*.tar.gz | cut -d' ' -f1); B=$(sha256sum "$OUT"/b/*.tar.gz | cut -d' ' -f1)
 echo "build 1: $A"; echo "build 2: $B"
-[ "$A" = "$B" ] || { echo "the archive is not reproducible: two builds of the same tree differ" >&2; exit 1; }
-echo "reproducible: yes ($VARIANT)"
+if [ "$A" = "$B" ]; then
+    echo "reproducible: bit-for-bit ($VARIANT)"
+elif [ "$VARIANT" = cuda ]; then
+    # nvcc names internal symbols after a per-process temporary file (tmpxft_<pid>_<n>); with that identifier normalized every member must be identical
+    /opt/python/cp313-cp313/bin/python "$SRC/tools/release_metadata.py" compare --strict --normalize-nvcc "$OUT"/a/*.tar.gz "$OUT"/b/*.tar.gz
+    echo "reproducible: identical member by member except nvcc's temporary-file identifier (cuda)"
+else
+    echo "the archive is not reproducible: two builds of the same tree differ" >&2; exit 1
+fi
 cp "$OUT"/a/*.tar.gz "$OUT"/
 rm -rf "$OUT/a" "$OUT/b"

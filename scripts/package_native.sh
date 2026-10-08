@@ -29,6 +29,18 @@ EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$SRC" log -1 --format=%ct 2>/dev/null || ec
 
 CFG=(-DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_LIBDIR=lib "-DTBCCL_PUBLIC_VERSION=$PUBLIC")
 PFX_MAP="-ffile-prefix-map=$SRC=. -fdebug-prefix-map=$SRC=."
+# Static libraries must not record the build time or the user: GNU ar/ranlib get the deterministic modifier explicitly (some binutils builds, such as the
+# manylinux toolsets, do not default to it); Apple libtool gets -D for the same purpose.
+DET=()
+if [ "$(uname -s)" = Linux ]; then
+    for L in C CXX CUDA; do
+        DET+=("-DCMAKE_${L}_ARCHIVE_CREATE=<CMAKE_AR> qcD <TARGET> <LINK_FLAGS> <OBJECTS>" "-DCMAKE_${L}_ARCHIVE_APPEND=<CMAKE_AR> qD <TARGET> <LINK_FLAGS> <OBJECTS>" "-DCMAKE_${L}_ARCHIVE_FINISH=<CMAKE_RANLIB> -D <TARGET>")
+    done
+else
+    for L in C CXX OBJCXX; do
+        DET+=("-DCMAKE_${L}_CREATE_STATIC_LIBRARY=<CMAKE_LIBTOOL> -static -D -no_warning_for_no_symbols -o <TARGET> <LINK_FLAGS> <OBJECTS>")
+    done
+fi
 SUFFIX=""
 if [ "$CUDA" = 1 ]; then
     CUDA_MAJOR=$(nvcc --version | sed -n 's/.*release \([0-9]*\)\..*/\1/p')
@@ -38,11 +50,12 @@ fi
 if [ "$OS" = macos ]; then CFG+=(-DTBCCL_ENABLE_METAL=ON "-DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-14.0}"); fi
 NAME="tbccl-${PUBLIC}-${OS}-${ARCH}${SUFFIX}"
 
+mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/tbccl-package.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 BUILD="$WORK/build"; STAGE="$WORK/$NAME"; mkdir -p "$OUT"
 
-cmake -S "$SRC" -B "$BUILD" "${CFG[@]}" "-DCMAKE_CXX_FLAGS=$PFX_MAP" "-DCMAKE_C_FLAGS=$PFX_MAP" >/dev/null
+cmake -S "$SRC" -B "$BUILD" "${CFG[@]}" "${DET[@]}" "-DCMAKE_CXX_FLAGS=$PFX_MAP" "-DCMAKE_C_FLAGS=$PFX_MAP" >/dev/null
 cmake --build "$BUILD" -j "$JOBS" --target tbccl tbccl_c tbccl_info $([ "$CUDA" = 1 ] && echo tbccl_cuda) 2>&1 | tail -2
 cmake --install "$BUILD" --prefix "$STAGE" >/dev/null
 cp "$SRC/LICENSE" "$STAGE/LICENSE"
