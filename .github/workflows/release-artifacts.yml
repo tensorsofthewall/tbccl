@@ -87,7 +87,14 @@ jobs:
           scripts/package_native.sh "${ARGS[@]}" --out out/b
           A=$(shasum -a 256 out/a/*.tar.gz | cut -d' ' -f1); B=$(shasum -a 256 out/b/*.tar.gz | cut -d' ' -f1)
           echo "build 1: $A"; echo "build 2: $B"
-          [ "$A" = "$B" ] || { echo "the archive is not reproducible" >&2; exit 1; }
+          if [ "$A" != "$B" ]; then
+            echo "the archive differs between two builds; member comparison:" >&2
+            python3 tools/release_metadata.py compare out/a/*.tar.gz out/b/*.tar.gz >&2 || true
+            mkdir xa xb && tar -xzf out/a/*.tar.gz -C xa && tar -xzf out/b/*.tar.gz -C xb
+            diff -rq xa xb >&2 || true
+            for f in $(cd xa && find . -type f | sort); do cmp -s "xa/$f" "xb/$f" || { echo "== $f"; cmp -l "xa/$f" "xb/$f" | head -5; strings -a "xa/$f" | head -0; }; done
+            exit 1
+          fi
           cp out/a/*.tar.gz out/ && rm -rf out/a out/b
       - name: Check the binaries (architecture, deployment target, install names)
         run: |
