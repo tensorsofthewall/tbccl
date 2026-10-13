@@ -4,8 +4,8 @@ Configurations that were actually exercised, not a benchmark report. Detailed ev
 
 | Configuration | What was run | Result |
 |---|---|---|
-| Linux, loopback (several processes on one host) | the full test suite (CTest), world sizes 1 to 4, mixed point-to-point and collective traffic, failure and lifecycle tests, AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer builds | passed (84 of 84 CTest cases with CUDA on Linux) |
-| macOS, loopback | the full test suite | passed (75 of 75 CTest cases) |
+| Linux, loopback (several processes on one host) | the full test suite (CTest), world sizes 1 to 4, mixed point-to-point and collective traffic, failure and lifecycle tests, AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer builds | passed (the host-only build 74 of 74 CTest cases and the CUDA 13 build 86 of 86 on Linux, rechecked on the development branch after the release candidate with no core change) |
+| macOS, loopback | the full test suite | passed (74 of 74 CTest cases, rechecked after the release candidate) |
 | Linux CUDA host with macOS, direct Thunderbolt 4 link, host buffers | release-candidate artifacts, both rank orientations | passed in both orientations; link health unchanged |
 | Linux CUDA with macOS Metal shared memory | release-candidate artifacts; CUDA staged through pinned host memory on one side and Metal shared memory on the other; both orientations | passed in both orientations; link health unchanged |
 | Two Linux machines over a physical network | not part of the recorded validation | not claimed |
