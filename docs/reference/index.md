@@ -5,8 +5,10 @@ Precise descriptions of the API, configuration and compatibility.
 ```{toctree}
 :maxdepth: 1
 
+compatibility-matrix
 versioning
 platform-capabilities
+api-boundary
 cpp-api-overview
 cpp-api
 c-abi

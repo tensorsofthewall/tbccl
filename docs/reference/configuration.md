@@ -1,4 +1,4 @@
-# Configuration
+# Configuration and environment variables
 
 ## Build options
 

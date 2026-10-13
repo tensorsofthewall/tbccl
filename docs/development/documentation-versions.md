@@ -6,9 +6,9 @@ The hosted documentation is built by Read the Docs from the configuration in `.r
 |---|---|---|
 | `latest` | the `main` branch | Development documentation. It is not a release, carries a banner that says so, and may describe behavior that no release contains yet. |
 | `stable` | the newest release tag | The documentation of the latest release. It does not exist until the first release is tagged; nothing unreleased is ever published as `stable`. |
-| a version such as `0.6.0` | a release tag `v0.6.0` | The documentation of that release. It is published only after the tag exists; 0.6.0 is a planned release and has not been tagged. |
+| a version such as `v0.6.0rc1` | a release-candidate tag | The documentation of that pre-release, frozen to the tag. Numbered documentation for the final `0.6.0` exists only after that tag does. |
 
-Links from other projects to the TBCCL documentation use the core `stable` site; see {doc}`../related-projects`.
+Until a final release exists, links between the four projects' sites point at `latest`; they switch to `stable` with the final releases. See the [ecosystem overview](../project/ecosystem.md).
 
 ## Building and checking locally
 

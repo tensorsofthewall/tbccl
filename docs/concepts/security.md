@@ -58,4 +58,4 @@ Authentication and encryption are not part of the current design.
 
 ## Reporting a vulnerability
 
-See the security policy (`SECURITY.md` in the repository, also reproduced under [security policy](../development/security-policy.md)).
+See the security policy (`SECURITY.md` in the repository, also reproduced under [security policy](../project/security-policy.md)).

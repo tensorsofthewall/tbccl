@@ -9,7 +9,7 @@ TBCCL tracks four independent versions. They change for different reasons and mu
 | Wire protocol version | `kWireProtocolVersion` in `include/tbccl/rank_directory.hpp` | 4 | what ranks exchange on the network changes incompatibly |
 | Endpoint blob format | `tbcclEndpointBlob.format_version` | 1 | the bootstrap blob layout changes |
 
-The machine-readable form of the first three rows is `compatibility.json` at the repository root; `scripts/check_compatibility_manifest.py` (run in CI and by `make check-compat`) fails if it disagrees with the sources. TBCCL owns this file; each adapter keeps its own manifest of the frameworks, Python versions and platforms it supports and refers to the C ABI and wire protocol versions defined here.
+The ecosystem-wide table of which project versions work together is the [compatibility matrix](compatibility-matrix.md). The machine-readable form of the first three rows is `compatibility.json` at the repository root; `scripts/check_compatibility_manifest.py` (run in CI and by `make check-compat`) fails if it disagrees with the sources. TBCCL owns this file; each adapter keeps its own manifest of the frameworks, Python versions and platforms it supports and refers to the C ABI and wire protocol versions defined here.
 
 Adapter packages (torch-tbccl, vllm-tbccl, exo-tbccl) have their own package versions and their own framework compatibility ranges; they declare which C ABI and wire protocol versions they were built and validated against.
 
@@ -18,7 +18,7 @@ Adapter packages (torch-tbccl, vllm-tbccl, exo-tbccl) have their own package ver
 - **C ABI.** Frozen at v1: constants are never renumbered, struct fields are never reordered or removed, exported functions are never removed or changed. Compatible growth only (append struct fields guarded by `struct_size`, add constants and functions). `tests/c_api/abi_symbols_v1.txt` pins the exported symbols. See [C ABI v1](c-abi.md).
 - **Wire protocol.** Every connection starts with a handshake carrying the wire version; a peer with a different version is rejected cleanly on both sides (see below). A change that alters what peers exchange bumps the wire version and therefore makes mixed worlds impossible by design.
 - **C++ API.** Source-compatible within a development line where possible, but it is not an ABI promise.
-- **Package version.** Bumped on release. A wire protocol change is a minor-version change at least: wire 4 is planned for the 0.6.0 release, because wire 4 does not interoperate with wire 3.
+- **Package version.** Bumped on release. A wire protocol change is a minor-version change at least: wire 4 ships with the 0.6.0 line, because wire 4 does not interoperate with wire 3.
 
 ## Wire 3 and wire 4 are incompatible
 

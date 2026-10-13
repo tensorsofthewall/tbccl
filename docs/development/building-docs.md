@@ -9,4 +9,4 @@ make docs-linkcheck  # check local links and anchors (external URLs are not fetc
 
 Requirements: Python 3.11 or newer and Doxygen 1.9 or newer on `PATH` (the C and C++ API reference is generated from the public headers).
 
-The pinned dependencies are in `docs/requirements.txt`. Warnings are treated as errors, so a build that prints a warning fails; the same command runs in continuous integration.
+The pinned dependencies are in `docs/requirements.txt`. Warnings are treated as errors, so a build that prints a warning fails; the same command runs in continuous integration. Open `docs/_build/html/index.html` to read the result.

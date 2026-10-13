@@ -2,6 +2,10 @@
 
 A TBCCL program needs two things the library deliberately does not provide: a way to start the ranks, and a way to exchange each rank's endpoint ([Communicators](../concepts/communicators.md)). Everything else is a normal asynchronous communication library.
 
+## Smallest possible programs
+
+Before writing real communication code, build and run the two tiny examples from [installing](install.md): `examples/version_check.c` (links `TBCCL::tbccl_c` and prints the version and C ABI) and `examples/two_rank_threads.cpp` (two ranks as two threads of one process, one `all_reduce`, on loopback). If both run, your installation, headers and linking are correct.
+
 ## From C
 
 The [C API quickstart](../guides/c-api-quickstart.md) is a complete, compiled and tested program (`examples/c_quickstart.c`): two processes on one machine exchange endpoint blobs through pipes, send a message and run a Float32 `all_reduce`. It uses only `<tbccl/tbccl.h>` and links `TBCCL::tbccl_c`.
@@ -17,8 +21,11 @@ async_allreduce --rank 1 --peers HOST0:PORT0,HOST1:PORT1 --backend host
 
 `--backend host` needs no device. `--backend cuda` needs a CUDA device and the CUDA component, and `--backend metal-shared` needs a Metal device on macOS, which is how a heterogeneous Linux/CUDA and macOS/Metal pair is exercised.
 
+Each rank's data endpoint is its control port plus 1000, so keep both ports free.
+
 ## What to read next
 
 - [C++ API overview](../reference/cpp-api-overview.md) and [Ordering domains](../concepts/ordering-domains.md) for the programming model.
 - [Failure handling](../concepts/failure-handling.md) before you use TBCCL in a long-running process.
 - [Thunderbolt link guide](../guides/thunderbolt-link.md) for a direct Mac-to-Linux connection.
+- [Troubleshooting](../guides/troubleshooting.md) and [diagnostics](../guides/diagnostics.md) if something does not connect.
