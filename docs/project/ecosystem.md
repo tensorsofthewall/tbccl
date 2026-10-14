@@ -40,7 +40,7 @@ This page is the canonical statement of the **current** ecosystem. It is built f
 | tbccl | 0.6.0 | `v0.6.0` | `29359adc12d0` | C ABI 1, wire protocol 4 |
 | torch-tbccl | 0.2.0 | `v0.2.0` | `0c40c7139d3a` | PyTorch 2.13.x |
 | vllm-tbccl | 0.2.0 | `v0.2.0` | `f0ebb7ca3794` | vLLM 0.31.0; `tensorsofthewall/vllm-metal@v0.31.0-tbccl1` (`fa4f934586bc`) |
-| exo-tbccl | 0.3.0 | `v0.3.0` | `84032089703b` | `tensorsofthewall/exo-fork@tbccl-integration-v1` (`1416807b46ef`) |
+| exo-tbccl | 0.3.0 | `v0.3.0` | `84032089703b` | `tensorsofthewall/exo-fork@tbccl-integration-v2` (`d1497b28b896`) |
 <!-- ecosystem-table:end -->
 
 All four are GitHub releases (nothing is on PyPI) and share **C ABI 1** and **wire protocol 4**. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The adapters pin their framework forks to immutable tags, never to a moving branch; the pins are checked automatically.
