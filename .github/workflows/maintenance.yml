@@ -1,0 +1,70 @@
+name: maintenance
+
+# Weekly, read-only health checks of the published release and of its pins. It builds nothing that is published, creates no tag or release, changes no
+# manifest and merges nothing. Each check reports its own category (INTEGRITY FAILURE, RELEASE SURFACE FAILURE, WARNING, ERROR) in the job summary:
+# an unreachable website is a WARNING, a tag that no longer resolves as recorded is an INTEGRITY FAILURE.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: maintenance
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: release state, pins, release surface and links
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Run the checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          FAIL=0
+          {
+            echo "### Maintenance checks"; echo
+            echo "| check | result |"; echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          check() {
+            name=$1; shift
+            echo "::group::$name"; "$@"; rc=$?; echo "::endgroup::"
+            case $rc in 0) s=OK;; 1) s="INTEGRITY FAILURE";; 2) s="RELEASE SURFACE FAILURE";; 3) s="WARNING";; 4) s="ERROR";; 5) s="DRIFT";; *) s="ERROR (exit $rc)";; esac
+            echo "| $name | $s |" >> "$GITHUB_STEP_SUMMARY"
+            case $rc in 0|3|5) ;; *) FAIL=1;; esac
+          }
+          page() { curl -fsS --retry 3 --retry-delay 5 -o /dev/null "$1" || return 3; }
+          check "release state (the version must be released)" python3 tools/check_release_state.py --require-released
+          check "maintenance tooling tests" python3 tests/maintenance_tools_test.py
+          check "ecosystem manifest (online)" python3 tools/check_ecosystem_manifest.py --online
+          check "stable GitHub Release, tag, artifacts and SBOMs" python3 tools/verify_public_release.py --metadata-only
+          check "links (repository-internal)" python3 tools/check_links.py
+          check "links (critical GitHub and documentation links, other links warn)" python3 tools/check_links.py --online
+          check "documentation host: stable" page https://tbccl.tensorsofthewall.com/en/stable/
+          check "documentation host: latest" page https://tbccl.tensorsofthewall.com/en/latest/
+          exit $FAIL
+
+  docs:
+    name: documentation build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends doxygen
+      - name: Build the documentation (warnings are errors)
+        run: make docs
+      - name: Check local links
+        run: make docs-linkcheck

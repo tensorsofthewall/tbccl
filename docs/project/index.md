@@ -7,5 +7,6 @@ ecosystem
 limitations
 validated-configurations
 changelog
+release-versioning
 security-policy
 ```

@@ -1,0 +1,71 @@
+name: release-preflight
+
+# Answers one question without publishing anything: is this repository, at this commit, ready to be released as the given tag? It checks version and manifest
+# consistency, the CHANGELOG, the framework pins, the tests of the tooling, the links and the documentation build, that the tag does not exist yet, and that a
+# successful release-artifacts run exists for exactly this commit whose built artifacts have the expected names, SBOMs and checksums. It creates no tag,
+# no release and no package, and it builds no artifacts itself: release-artifacts is the one place artifacts are built, so what is checked is what would be released.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Intended release tag, for example v1.2.3 or v1.2.3rc1"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  preflight:
+    name: release readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Run the checks
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INTENDED_TAG: ${{ inputs.tag }}
+        run: |
+          set +e
+          FAIL=0
+          {
+            echo "### Maintenance checks"; echo
+            echo "| check | result |"; echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          check() {
+            name=$1; shift
+            echo "::group::$name"; "$@"; rc=$?; echo "::endgroup::"
+            case $rc in 0) s=OK;; 1) s="INTEGRITY FAILURE";; 2) s="RELEASE SURFACE FAILURE";; 3) s="WARNING";; 4) s="ERROR";; 5) s="DRIFT";; *) s="ERROR (exit $rc)";; esac
+            echo "| $name | $s |" >> "$GITHUB_STEP_SUMMARY"
+            case $rc in 0|3|5) ;; *) FAIL=1;; esac
+          }
+          page() { curl -fsS --retry 3 --retry-delay 5 -o /dev/null "$1" || return 3; }
+          check "release state for $INTENDED_TAG" python3 tools/check_release_state.py --tag "$INTENDED_TAG"
+          check "maintenance tooling tests" python3 tests/maintenance_tools_test.py
+          check "ecosystem manifest (online)" python3 tools/check_ecosystem_manifest.py --online
+          check "links (repository-internal)" python3 tools/check_links.py
+          check "the tag does not exist yet" python3 tools/preflight_checks.py tag-free "$INTENDED_TAG"
+          check "built artifacts of this commit" python3 tools/preflight_checks.py artifacts "$INTENDED_TAG"
+          if [ $FAIL -eq 0 ]; then echo "READY: $INTENDED_TAG can be released from $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          else echo "NOT READY: $INTENDED_TAG at $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+          exit $FAIL
+
+  docs:
+    name: documentation build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install Doxygen
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends doxygen
+      - name: Build the documentation (warnings are errors)
+        run: make docs
+      - name: Check local links
+        run: make docs-linkcheck
