@@ -1,6 +1,11 @@
 {
   "schema_version": 1,
   "project": "tbccl",
+  "release_assets": [
+    "tbccl-{version}-linux-x86_64.tar.gz",
+    "tbccl-{version}-linux-x86_64-cuda13.tar.gz",
+    "tbccl-{version}-macos-arm64.tar.gz"
+  ],
   "package": {
     "development_version": "0.6.0",
     "public_version": "0.6.0",

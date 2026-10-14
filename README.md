@@ -43,7 +43,7 @@ The three adapters are independent of each other. Each one carries (or links) it
 | Reductions | `Sum`; Float32, Float64, Int32, Int64, Int8, UInt8 at any size; Float16 and BFloat16 at world size 2 |
 | Transport | TCP over IPv4, including Thunderbolt 4 |
 
-The full ecosystem table is the [compatibility matrix](docs/reference/compatibility-matrix.md).
+The current stable versions and framework pins of all four projects are on the [ecosystem page](docs/project/ecosystem.md) (source: [`release/ecosystem.json`](release/ecosystem.json)); the full compatibility table is the [compatibility matrix](docs/reference/compatibility-matrix.md). Maintenance and versioning policy: [MAINTENANCE.md](MAINTENANCE.md), [VERSIONING.md](VERSIONING.md).
 
 ## Quick start
 

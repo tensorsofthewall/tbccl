@@ -1,0 +1,122 @@
+name: Bug report
+description: Report a problem with tbccl
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Please fill in every required field; most problems in this ecosystem depend on the exact versions, the link and the machines involved.
+
+        **Before you post, remove anything private:** tokens and credentials, user names and home-directory paths, private model names if they are sensitive, and anything else you would not publish. `tools/collect_diagnostics.py` is written to avoid collecting these, but read its output first. Security problems do not belong here; see the security policy.
+  - type: input
+    id: tbccl_version
+    attributes:
+      label: "TBCCL version"
+      description: "Output of `tbccl-info`, or the version of the TBCCL your adapter wheel statically links."
+      placeholder: "0.6.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: "Operating system and version"
+      description: "Each machine, if more than one."
+      placeholder: "Ubuntu 24.04; macOS 15.1"
+    validations:
+      required: true
+  - type: input
+    id: arch
+    attributes:
+      label: "Architecture"
+      placeholder: "x86_64; arm64"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: "Python version"
+      placeholder: "3.13.1"
+    validations:
+      required: true
+  - type: input
+    id: framework
+    attributes:
+      label: "Calling language and build"
+      description: "C or C++, compiler, and whether you use a release archive or a source build."
+      placeholder: "C++20, clang 17, release archive"
+    validations:
+      required: false
+  - type: input
+    id: tb
+    attributes:
+      label: "Thunderbolt generation and link"
+      description: "Thunderbolt 3, 4 or 5, or `none` for plain TCP."
+      placeholder: "Thunderbolt 4, direct cable"
+    validations:
+      required: true
+  - type: input
+    id: topology
+    attributes:
+      label: "Link topology"
+      description: "Which machine is which rank, and how they are connected."
+      placeholder: "rank 0 Linux CUDA, rank 1 macOS Metal, one cable"
+    validations:
+      required: true
+  - type: input
+    id: mtu
+    attributes:
+      label: "MTU of the interfaces in use"
+      placeholder: "9000"
+    validations:
+      required: true
+  - type: input
+    id: world
+    attributes:
+      label: "World size"
+      placeholder: "2"
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: "Backend or provider"
+      description: "CPU, CUDA, MPS or Metal shared memory."
+      placeholder: "CUDA on rank 0, Metal shared on rank 1"
+    validations:
+      required: true
+  - type: textarea
+    id: info
+    attributes:
+      label: "`tbccl-info` and diagnostics output"
+      description: "Run `python tools/collect_diagnostics.py` (it prints versions, interface names and MTU, and environment variable names; it reads no prompts, files, tokens or variable values) and paste the result."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: "Minimal command or script"
+      description: "The smallest command that reproduces the problem."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Expected behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: "Observed behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Logs"
+      description: "Relevant lines only."
+      render: text
+    validations:
+      required: false

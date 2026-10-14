@@ -30,9 +30,24 @@ TBCCL is a family of four projects that let machines with different operating sy
 
 CUDA buffers are staged through pinned host memory; Metal shared (unified) memory is handed to the transport directly. There is no direct CUDA-to-Metal DMA, and the transport is TCP, not RDMA. See the [core architecture](https://tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html).
 
-## Versions
+## Current stable releases
 
-The current family is tbccl 0.6.0, torch-tbccl 0.2.0, vllm-tbccl 0.2.0 and exo-tbccl 0.3.0, all final releases sharing **C ABI 1** and **wire protocol 4**. These are GitHub releases; nothing is on PyPI. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The authoritative table is the [compatibility matrix](https://tbccl.tensorsofthewall.com/en/latest/reference/compatibility-matrix.html).
+This page is the canonical statement of the **current** ecosystem. It is built from `main`, so it stays correct as projects release; the machine-readable source is [`release/ecosystem.json`](https://github.com/tensorsofthewall/tbccl/blob/main/release/ecosystem.json), and the table below is checked against it in CI.
+
+<!-- ecosystem-table:begin -->
+| Project | Current stable | Tag | Commit | Pins |
+|---|---|---|---|---|
+| tbccl | 0.6.0 | `v0.6.0` | `29359adc12d0` | C ABI 1, wire protocol 4 |
+| torch-tbccl | 0.2.0 | `v0.2.0` | `0c40c7139d3a` | PyTorch 2.13.x |
+| vllm-tbccl | 0.2.0 | `v0.2.0` | `f0ebb7ca3794` | vLLM 0.31.0; `tensorsofthewall/vllm-metal@v0.31.0-tbccl1` (`fa4f934586bc`) |
+| exo-tbccl | 0.3.0 | `v0.3.0` | `84032089703b` | `tensorsofthewall/exo-fork@tbccl-integration-v1` (`1416807b46ef`) |
+<!-- ecosystem-table:end -->
+
+All four are GitHub releases (nothing is on PyPI) and share **C ABI 1** and **wire protocol 4**. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The adapters pin their framework forks to immutable tags, never to a moving branch; the pins are checked automatically.
+
+### Release-time compatibility and current status
+
+Documentation built from a release tag (for example the `v0.6.0` or `stable` version of a project) describes what that release supports, what was validated for it and its limitations. Those pages are historical by design: a tag is immutable, so they do not change when another project releases later, and any statement in them about other projects is true as of that release. For the current state of the family, use this page. The [compatibility matrix](../reference/compatibility-matrix.md) gives per-release detail.
 
 ## Hosted documentation
 
