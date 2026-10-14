@@ -10,7 +10,6 @@ Nothing is created or published; the run's artifacts are downloaded into a tempo
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path

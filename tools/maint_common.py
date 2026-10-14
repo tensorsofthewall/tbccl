@@ -147,6 +147,44 @@ def http_status(url, timeout=30):
         raise Network(f"{type(e).__name__}: {e}")
 
 
+ECOSYSTEM_URL = "https://raw.githubusercontent.com/tensorsofthewall/tbccl/{ref}/release/ecosystem.json"
+
+
+def load_ecosystem(file=None, ref="main"):
+    """The canonical CURRENT-ecosystem record (tbccl release/ecosystem.json): a local file, or the given ref of tensorsofthewall/tbccl. Raises Network when unavailable."""
+    try:
+        if file:
+            with open(file) as f:
+                return json.load(f)
+        req = urllib.request.Request(ECOSYSTEM_URL.format(ref=ref), headers={"User-Agent": "tbccl-maintenance"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except (OSError, ValueError) as e:
+        raise Network(f"{type(e).__name__}: {e}") from None
+
+
+def compare_current_ecosystem(rep, eco, key, mine, version, released):
+    """Compare this repository's recorded facts with its entry in the current-ecosystem record. This is CURRENT-ECOSYSTEM CONSISTENCY, never release-pin integrity.
+
+    The entry describes the currently published stable version. A disagreement is an INTEGRITY FAILURE only when this repository IS that published version
+    (released and the same version): the public ecosystem is then inconsistent. For an unreleased candidate, or an older release, the ecosystem record simply has not been
+    (or is no longer) updated for this version, which is a WARNING; the repository's own immutable pin stays authoritative.
+    """
+    entry = eco.get(key) if isinstance(eco, dict) else None
+    if not isinstance(entry, dict):
+        rep.add(WARNING, f"current ecosystem record has no {key!r} entry")
+        return
+    diffs = [f"{k}: ecosystem says {entry.get(k)!r}, this repository records {v!r}" for k, v in mine.items() if entry.get(k) != v]
+    if not diffs:
+        rep.ok(f"current-ecosystem consistency: the {key} entry agrees with this repository")
+    elif released and entry.get("version") == version:
+        for d in diffs:
+            rep.add(INTEGRITY, f"current-ecosystem inconsistency for the published {version}: {d}")
+    else:
+        why = "this repository is not the currently published stable version" if released else "this version is an unreleased candidate"
+        rep.add(WARNING, f"current ecosystem manifest has not been updated for this candidate ({why}); the repository's own immutable pin remains authoritative: " + "; ".join(diffs))
+
+
 def load_json(path):
     try:
         with open(path) as f:

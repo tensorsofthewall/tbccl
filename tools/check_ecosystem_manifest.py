@@ -54,7 +54,6 @@ def check_offline(eco, rep, root=ROOT):
             rep.add(mc.INTEGRITY, f"{name}: commit is not a full 40-character SHA")
         if not mc.REPO_NAME.match(str(p.get("repo", ""))):
             rep.add(mc.INTEGRITY, f"{name}: repo {p.get('repo')!r} is not owner/name")
-    v, e = eco.get("vllm_tbccl", {}), eco.get("exo_tbccl", {})
     for who, repo_key, tag_key, sha_key, base_key in (
         ("vllm_tbccl", "metal_repo", "metal_tag", "metal_sha", "metal_upstream_base"),
         ("exo_tbccl", "exo_repo", "exo_tag", "exo_sha", "exo_upstream_base"),
