@@ -16,22 +16,22 @@ If you only want to use PyTorch, vLLM or exo, you do not need this page: install
 
 ## Path 1: a prebuilt release archive
 
-Release archives are attached to the GitHub release of each version (currently the pre-release [`v0.6.0rc1`](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.6.0rc1)). They are static builds with no runtime dependency beyond the system C++ runtime.
+Release archives are attached to the GitHub release of each version (currently [`v0.6.0`](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.6.0)). They are static builds with no runtime dependency beyond the system C++ runtime.
 
 | Archive | Contents |
 |---|---|
-| `tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz` | Linux x86-64 with the CUDA memory provider (built with CUDA 13.0; `Host` and `Cuda` buffers) |
-| `tbccl-0.6.0rc1-linux-x86_64.tar.gz` | Linux x86-64, host buffers only |
-| `tbccl-0.6.0rc1-macos-arm64.tar.gz` | macOS Apple silicon (`Host` and `MetalShared` buffers) |
+| `tbccl-0.6.0-linux-x86_64-cuda13.tar.gz` | Linux x86-64 with the CUDA memory provider (built with CUDA 13.0; `Host` and `Cuda` buffers) |
+| `tbccl-0.6.0-linux-x86_64.tar.gz` | Linux x86-64, host buffers only |
+| `tbccl-0.6.0-macos-arm64.tar.gz` | macOS Apple silicon (`Host` and `MetalShared` buffers) |
 
 Download an archive together with `SHA256SUMS`, verify it, and optionally verify its build provenance:
 
 ```sh
-BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.6.0rc1
-curl -LO $BASE/tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz -LO $BASE/SHA256SUMS
+BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.6.0
+curl -LO $BASE/tbccl-0.6.0-linux-x86_64-cuda13.tar.gz -LO $BASE/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing                  # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
-gh attestation verify tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz --repo tensorsofthewall/tbccl    # optional; needs the GitHub CLI
-tar -xzf tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz
+gh attestation verify tbccl-0.6.0-linux-x86_64-cuda13.tar.gz --repo tensorsofthewall/tbccl    # optional; needs the GitHub CLI
+tar -xzf tbccl-0.6.0-linux-x86_64-cuda13.tar.gz
 ```
 
 The extracted directory is an install prefix:
@@ -48,7 +48,7 @@ share/tbccl/BUILDINFO.json  commit, version, CUDA toolkit
 Check that it works before anything else ([diagnostics](../guides/diagnostics.md)):
 
 ```sh
-tbccl-0.6.0rc1-linux-x86_64-cuda13/bin/tbccl-info
+tbccl-0.6.0-linux-x86_64-cuda13/bin/tbccl-info
 ```
 
 ### Use it from CMake
@@ -66,7 +66,7 @@ target_link_libraries(two_rank_threads PRIVATE TBCCL::tbccl)
 ```
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=$PWD/tbccl-0.6.0rc1-linux-x86_64-cuda13
+cmake -S . -B build -DCMAKE_PREFIX_PATH=$PWD/tbccl-0.6.0-linux-x86_64-cuda13
 cmake --build build && ./build/version_check
 ```
 
@@ -89,7 +89,7 @@ With the CUDA archive, CMake also finds the CUDA Toolkit and links the CUDA runt
 ### Use it from pkg-config
 
 ```sh
-export PKG_CONFIG_PATH=$PWD/tbccl-0.6.0rc1-linux-x86_64/lib/pkgconfig      # the .pc file locates its own prefix
+export PKG_CONFIG_PATH=$PWD/tbccl-0.6.0-linux-x86_64/lib/pkgconfig      # the .pc file locates its own prefix
 c++ -std=c++17 two_rank_threads.cpp $(pkg-config --cflags --libs tbccl) -pthread -o two_rank_threads
 cc version_check.c $(pkg-config --cflags --libs tbccl) -lstdc++ -o version_check
 ```
@@ -113,7 +113,7 @@ cmake --install build-release --prefix <prefix>
 | `-DTBCCL_CUDA_STATIC_RUNTIME=ON` | `OFF` | link the CUDA component against the static CUDA runtime so a program or wheel that uses it has no `libcudart.so` dependency. The release archives are built this way; leave it off for a normal local build |
 | `-DCMAKE_INSTALL_PREFIX=<prefix>` / `--prefix` | system default | where `cmake --install` puts the package |
 
-A source build is versioned as the release candidate by default (`TBCCL_PUBLIC_VERSION`, e.g. `0.6.0rc1`); `tbccl-info` shows what you built. Consumers link the **installed** prefix, not the source tree. The package exports:
+A source build is versioned as the release by default (`TBCCL_PUBLIC_VERSION`, e.g. `0.6.0`; a candidate build uses an `rcN` suffix); `tbccl-info` shows what you built. Consumers link the **installed** prefix, not the source tree. The package exports:
 
 | Target | Use |
 |---|---|

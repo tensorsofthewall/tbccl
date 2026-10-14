@@ -3,8 +3,8 @@
   "project": "tbccl",
   "package": {
     "development_version": "0.6.0",
-    "public_version": "0.6.0rc1",
-    "release_candidate": true,
+    "public_version": "0.6.0",
+    "release_candidate": false,
     "target_release": "0.6.0",
     "released": false
   },
