@@ -29,8 +29,22 @@ env:
   PUBLIC_VERSION: ${{ inputs.public_version }}
 
 jobs:
+  guard:
+    name: release guard (version, manifest, ABI and wire protocol)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Refuse a wrong-version build
+        run: |
+          ARGS=(); [ -z "$PUBLIC_VERSION" ] || ARGS+=(--tag "v$PUBLIC_VERSION")
+          python3 tools/check_release_state.py "${ARGS[@]}"
+
   host-tests:
     name: host tests (${{ matrix.os }})
+    needs: guard
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +64,7 @@ jobs:
 
   linux-archive:
     name: Linux ${{ matrix.variant }} archive
+    needs: guard
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +89,7 @@ jobs:
 
   macos-archive:
     name: macOS arm64 archive
+    needs: guard
     runs-on: macos-14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
