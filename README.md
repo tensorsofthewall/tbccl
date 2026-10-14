@@ -1,6 +1,6 @@
 # TBCCL
 
-[![docs](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml/badge.svg)](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![release](https://img.shields.io/github/v/release/tensorsofthewall/tbccl?include_prereleases&label=pre-release)](https://github.com/tensorsofthewall/tbccl/releases)
+[![docs](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml/badge.svg)](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![release](https://img.shields.io/github/v/release/tensorsofthewall/tbccl?label=release)](https://github.com/tensorsofthewall/tbccl/releases)
 
 TBCCL (Thunderbolt Collective Communication Library) is a C++17 runtime with a stable C ABI that moves tensors between machines that differ in operating system and memory type, for example a Linux host with an NVIDIA GPU and a Mac with Apple silicon, over TCP, including a direct Thunderbolt 4 link.
 
@@ -45,17 +45,23 @@ The three adapters are independent of each other. Each one carries (or links) it
 
 The current stable versions and framework pins of all four projects are on the [ecosystem page](docs/project/ecosystem.md) (source: [`release/ecosystem.json`](release/ecosystem.json)); the full compatibility table is the [compatibility matrix](docs/reference/compatibility-matrix.md). Maintenance and versioning policy: [MAINTENANCE.md](MAINTENANCE.md), [VERSIONING.md](VERSIONING.md).
 
-## Quick start
+## Installation
 
-Download a release archive from the [GitHub release](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.6.0), verify it and check the version:
+**If you only want PyTorch, vLLM or exo integration, install the corresponding adapter instead; its wheel already contains libtbccl and you do not install anything from this page** ([torch-tbccl](https://github.com/tensorsofthewall/torch-tbccl#installation), [vllm-tbccl](https://github.com/tensorsofthewall/vllm-tbccl#installation), [exo-tbccl](https://github.com/tensorsofthewall/exo-tbccl#installation)). The rest of this section is for programs written directly against TBCCL's C or C++ API.
+
+Download a prebuilt archive, verify it and check the runtime, in an empty directory:
 
 ```sh
+# Linux x86-64 (use tbccl-0.6.0-linux-x86_64-cuda13.tar.gz for CUDA buffers):
+mkdir tbccl-quickstart && cd tbccl-quickstart
+BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.6.0
+curl -fsSLO $BASE/tbccl-0.6.0-linux-x86_64.tar.gz -fsSLO $BASE/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf tbccl-0.6.0-linux-x86_64-cuda13.tar.gz        # or tbccl-0.6.0-linux-x86_64.tar.gz, tbccl-0.6.0-macos-arm64.tar.gz
-tbccl-0.6.0-linux-x86_64-cuda13/bin/tbccl-info
+tar -xzf tbccl-0.6.0-linux-x86_64.tar.gz
+./tbccl-0.6.0-linux-x86_64/bin/tbccl-info
 ```
 
-Then use it from CMake (`find_package(TBCCL CONFIG REQUIRED)`, target `TBCCL::tbccl_c` for C or `TBCCL::tbccl` for C++, with `-DCMAKE_PREFIX_PATH=<extracted directory>`) or through pkg-config. [Installing](docs/getting-started/install.md) covers both paths and building from source.
+On macOS (Apple silicon) use the archive `tbccl-0.6.0-macos-arm64.tar.gz` and `shasum -a 256 -c SHA256SUMS --ignore-missing`. Then use it from CMake (`find_package(TBCCL CONFIG REQUIRED)`, target `TBCCL::tbccl_c` for C or `TBCCL::tbccl` for C++, with `-DCMAKE_PREFIX_PATH=<extracted directory>`) or through pkg-config. [Installing](docs/getting-started/install.md) has the macOS commands, a complete minimal CMake consumer, pkg-config use, and building from source (developers only).
 
 ## Minimal example
 
@@ -76,7 +82,7 @@ int main(void) {
 
 ## Documentation
 
-Hosted documentation: https://tbccl.tensorsofthewall.com/ (`latest` is development documentation built from `main`; release-candidate versions appear as numbered versions; `stable` does not exist until the final release). Build it locally with `make docs`.
+Hosted documentation: https://tbccl.tensorsofthewall.com/ (`stable` is the latest final release, numbered versions are earlier releases, and `latest` is development documentation built from `main`). Build it locally with `make docs`.
 
 Start with [getting started](docs/getting-started/index.md). The [compatibility matrix](docs/reference/compatibility-matrix.md), [troubleshooting](docs/guides/troubleshooting.md), [known limitations](docs/project/limitations.md) and the [ecosystem overview](docs/project/ecosystem.md) answer most first questions.
 

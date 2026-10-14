@@ -45,6 +45,7 @@ jobs:
           page() { curl -fsS --retry 3 --retry-delay 5 -o /dev/null "$1" || return 3; }
           check "release state (the version must be released)" python3 tools/check_release_state.py --require-released
           check "maintenance tooling tests" python3 tests/maintenance_tools_test.py
+          check "installation documentation" python3 tests/install_docs_test.py
           check "ecosystem manifest (online)" python3 tools/check_ecosystem_manifest.py --online
           check "stable GitHub Release, tag, artifacts and SBOMs" python3 tools/verify_public_release.py --metadata-only
           check "links (repository-internal)" python3 tools/check_links.py

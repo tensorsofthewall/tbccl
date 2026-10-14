@@ -24,17 +24,31 @@ Release archives are attached to the GitHub release of each version (currently [
 | `tbccl-0.6.0-linux-x86_64.tar.gz` | Linux x86-64, host buffers only |
 | `tbccl-0.6.0-macos-arm64.tar.gz` | macOS Apple silicon (`Host` and `MetalShared` buffers) |
 
-Download an archive together with `SHA256SUMS`, verify it, and optionally verify its build provenance:
+Pick the archive for your machine, then run the commands for your operating system in an empty directory. They need only `curl`, a checksum tool and `tar`, and nothing else from this repository.
+
+**Linux x86-64** (host buffers only; use `linux-x86_64-cuda13` instead for CUDA buffers):
 
 ```sh
+mkdir tbccl-quickstart && cd tbccl-quickstart
 BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.6.0
-curl -LO $BASE/tbccl-0.6.0-linux-x86_64-cuda13.tar.gz -LO $BASE/SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing                  # macOS: shasum -a 256 -c SHA256SUMS --ignore-missing
-gh attestation verify tbccl-0.6.0-linux-x86_64-cuda13.tar.gz --repo tensorsofthewall/tbccl    # optional; needs the GitHub CLI
-tar -xzf tbccl-0.6.0-linux-x86_64-cuda13.tar.gz
+curl -fsSLO $BASE/tbccl-0.6.0-linux-x86_64.tar.gz -fsSLO $BASE/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+tar -xzf tbccl-0.6.0-linux-x86_64.tar.gz
+./tbccl-0.6.0-linux-x86_64/bin/tbccl-info
 ```
 
-The extracted directory is an install prefix:
+**macOS arm64** (Apple silicon):
+
+```sh
+mkdir tbccl-quickstart && cd tbccl-quickstart
+BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.6.0
+curl -fsSLO $BASE/tbccl-0.6.0-macos-arm64.tar.gz -fsSLO $BASE/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+tar -xzf tbccl-0.6.0-macos-arm64.tar.gz
+./tbccl-0.6.0-macos-arm64/bin/tbccl-info
+```
+
+`tbccl-info` prints the package version, C ABI and wire protocol, the platform and the memory providers (`host`, plus `cuda` for the CUDA archive, or `metal` on macOS). Optionally verify the build provenance too: `gh attestation verify tbccl-0.6.0-linux-x86_64.tar.gz --repo tensorsofthewall/tbccl` (needs the GitHub CLI). The extracted directory is an install prefix:
 
 ```text
 bin/tbccl-info              version and capability tool
@@ -45,39 +59,39 @@ lib/pkgconfig/tbccl.pc      pkg-config file
 share/tbccl/BUILDINFO.json  commit, version, CUDA toolkit
 ```
 
-Check that it works before anything else ([diagnostics](../guides/diagnostics.md)):
+See also the [diagnostics guide](../guides/diagnostics.md).
+
+### A minimal CMake consumer
+
+Still in `tbccl-quickstart`, create the two files below and build against the extracted prefix (the commands are the Linux ones; on macOS use the `tbccl-0.6.0-macos-arm64` directory). The Linux flow was verified in a clean directory with both Linux archives.
 
 ```sh
-tbccl-0.6.0-linux-x86_64-cuda13/bin/tbccl-info
-```
-
-### Use it from CMake
-
-```cmake
+cat > CMakeLists.txt <<'CMAKE'
 cmake_minimum_required(VERSION 3.20)
-project(app C CXX)
+project(tbccl_quickstart C)
 find_package(TBCCL CONFIG REQUIRED)
-
-add_executable(version_check version_check.c)               # C consumer
+add_executable(version_check version_check.c)
 target_link_libraries(version_check PRIVATE TBCCL::tbccl_c)
+CMAKE
+cat > version_check.c <<'SOURCE'
+#include <stdint.h>
+#include <stdio.h>
+#include <tbccl/tbccl.h>
 
-add_executable(two_rank_threads two_rank_threads.cpp)       # C++ consumer
-target_link_libraries(two_rank_threads PRIVATE TBCCL::tbccl)
+int main(void)
+{
+    uint32_t abi = 0, major = 0, minor = 0, patch = 0;
+    if (tbcclGetAbiVersion(&abi) != TBCCL_SUCCESS || tbcclGetPackageVersion(&major, &minor, &patch) != TBCCL_SUCCESS)
+        return 1;
+    printf("TBCCL %u.%u.%u, C ABI %u\n", major, minor, patch, abi);
+    return 0;
+}
+SOURCE
+cmake -S . -B build -DCMAKE_PREFIX_PATH=$PWD/tbccl-0.6.0-linux-x86_64
+cmake --build build && ./build/version_check          # TBCCL 0.6.0, C ABI 1
 ```
 
-```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=$PWD/tbccl-0.6.0-linux-x86_64-cuda13
-cmake --build build && ./build/version_check
-```
-
-A tiny C program (`examples/version_check.c`):
-
-```{literalinclude} ../../examples/version_check.c
-:language: c
-:start-at: "#include <stdint.h>"
-```
-
-A tiny C++ program that runs a two-rank `all_reduce` with two threads on loopback (`examples/two_rank_threads.cpp`):
+`TBCCL::tbccl_c` is the C ABI target; a C++ program links `TBCCL::tbccl` instead. A C++ program that runs a two-rank `all_reduce` with two threads on loopback (`examples/two_rank_threads.cpp` in the source repository):
 
 ```{literalinclude} ../../examples/two_rank_threads.cpp
 :language: cpp
