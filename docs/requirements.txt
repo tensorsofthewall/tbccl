@@ -2,7 +2,7 @@
 # Core also needs Doxygen (>= 1.9) on PATH for the C/C++ API reference.
 accessible-pygments==0.0.5
 alabaster==1.0.0
-astroid==4.3.3
+astroid==4.3.4
 babel==2.18.0
 beautifulsoup4==4.15.0
 breathe==5.1.0
