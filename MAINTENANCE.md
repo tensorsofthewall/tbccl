@@ -27,7 +27,7 @@ Two kinds of authority are kept apart, in the code and in every diagnostic:
 
 ## Framework fork pins
 
-vllm-tbccl pins `tensorsofthewall/vllm-metal` at the immutable tag `v0.31.0-tbccl1`; exo-tbccl pins `tensorsofthewall/exo-fork` at `tbccl-integration-v1`. A stable release never pins a moving `main`. Each adapter has `tools/check_framework_pin.py`: a tag that resolves to a different commit than the recorded one is an integrity failure and is never "fixed" by updating the recorded SHA. Moving a pin means a new immutable tag, a compatibility validation and a new adapter release (see the matrix below). The `vllm-metal` reference patch kept in vllm-tbccl is provenance only: automation checks that the diff from the upstream base to the fork tag still equals it; users never apply it.
+vllm-tbccl pins `tensorsofthewall/vllm-metal` at the immutable tag `v0.31.0-tbccl1`; exo-tbccl pins `tensorsofthewall/exo-fork` at `tbccl-integration-v2`. A stable release never pins a moving `main`. Each adapter has `tools/check_framework_pin.py`: a tag that resolves to a different commit than the recorded one is an integrity failure and is never "fixed" by updating the recorded SHA. Moving a pin means a new immutable tag, a compatibility validation and a new adapter release (see the matrix below). The `vllm-metal` reference patch kept in vllm-tbccl is provenance only: automation checks that the diff from the upstream base to the fork tag still equals it; users never apply it.
 
 ## Release cadence
 
