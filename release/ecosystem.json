@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "description": "The current stable TBCCL ecosystem. This is the one canonical statement of which releases and framework pins are current; versioned documentation records only what was true when it was written.",
+  "c_abi": 1,
+  "wire_protocol": 4,
+  "tbccl": {
+    "repo": "tensorsofthewall/tbccl",
+    "version": "0.6.0",
+    "tag": "v0.6.0",
+    "commit": "29359adc12d0a806db4b659653f8c2470f4a8279"
+  },
+  "torch_tbccl": {
+    "repo": "tensorsofthewall/torch-tbccl",
+    "version": "0.2.0",
+    "tag": "v0.2.0",
+    "commit": "0c40c7139d3adca9f07b08aa167406eb8093ee5a",
+    "torch": "2.13"
+  },
+  "vllm_tbccl": {
+    "repo": "tensorsofthewall/vllm-tbccl",
+    "version": "0.2.0",
+    "tag": "v0.2.0",
+    "commit": "f0ebb7ca379470a6d449c24aeabfa86c1884ea75",
+    "vllm": "0.31.0",
+    "metal_repo": "tensorsofthewall/vllm-metal",
+    "metal_tag": "v0.31.0-tbccl1",
+    "metal_sha": "fa4f934586bc27ac974a54183237594d1dc28fc5",
+    "metal_upstream_base": "e7a0c90bec180e5dd4275c473fd7a36e709a930e"
+  },
+  "exo_tbccl": {
+    "repo": "tensorsofthewall/exo-tbccl",
+    "version": "0.3.0",
+    "tag": "v0.3.0",
+    "commit": "84032089703b8ed6d1503fc67ebfc9e92a2301fd",
+    "exo_repo": "tensorsofthewall/exo-fork",
+    "exo_tag": "tbccl-integration-v1",
+    "exo_sha": "1416807b46efd87c3601c69ce5784f51c9dd4c75",
+    "exo_upstream_base": "75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6"
+  }
+}

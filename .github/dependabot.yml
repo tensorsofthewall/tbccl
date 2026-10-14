@@ -1,0 +1,16 @@
+version: 2
+# Runtime dependencies and framework pins are qualification boundaries and are changed by hand, so they are deliberately absent here. Only the build and
+# documentation tooling is updated automatically, once a month, as pull requests that a person reviews and merges.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels: [dependencies]
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels: [dependencies]

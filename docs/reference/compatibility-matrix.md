@@ -2,19 +2,19 @@
 
 This is the canonical statement of what works with what across the TBCCL ecosystem. The adapter documentation links here for core transport compatibility and adds its own, smaller matrix. The machine-readable sources are the `compatibility.json` files in each repository; the numbers below come from them.
 
-## Release-candidate family
+## Current stable family
 
-| Project | Version | Role | Distribution |
-|---|---|---|---|
-| tbccl | 0.6.0 | runtime: C++ library, C ABI, TCP transport | native archives (Linux host, Linux CUDA 13, macOS arm64) |
-| torch-tbccl | 0.2.0 | PyTorch `torch.distributed` backend | platform wheels (CPython 3.13) |
-| vllm-tbccl | 0.2.0 | vLLM platform plugin | platform wheels (CPython 3.12 and 3.13) and an sdist |
-| exo-tbccl | 0.3.0 | exo pipeline data plane | platform wheels (CPython 3.13 or newer) |
+| Project | Role | Distribution |
+|---|---|---|
+| tbccl | runtime: C++ library, C ABI, TCP transport | native archives (Linux host, Linux CUDA 13, macOS arm64) |
+| torch-tbccl | PyTorch `torch.distributed` backend | platform wheels (CPython 3.13) |
+| vllm-tbccl | vLLM platform plugin | platform wheels (CPython 3.12 and 3.13) and an sdist |
+| exo-tbccl | exo pipeline data plane | platform wheels (CPython 3.13 or newer) |
 
-All four are final releases attached to GitHub releases. None is published on PyPI or TestPyPI.
+All four are final releases attached to GitHub releases; none is published on PyPI or TestPyPI. The current versions, tags and framework pins are on the [ecosystem page](../project/ecosystem.md), built from `release/ecosystem.json`, which is the one place that changes when a project releases. The sections below describe the current stable family.
 
 ```{note}
-vllm-tbccl 0.2.0rc1 has a known correctness defect for CUDA and Metal pipelines under concurrent requests (the stages' activation row order); it is fixed on the development branch and will be in the final 0.2.0. The CUDA and CPU pairing, sequential requests and the other adapters are not affected. See the [vllm-tbccl changelog](https://vllm-tbccl.tensorsofthewall.com/en/latest/).
+vllm-tbccl 0.2.0rc1 has a known correctness defect for CUDA and Metal pipelines under concurrent requests (the stages' activation row order); it is superseded by vllm-tbccl 0.2.0, which fixes it. Do not use 0.2.0rc1. The CUDA and CPU pairing, sequential requests and the other adapters were not affected.
 ```
 
 **Interface versions shared by the whole family:** C ABI **1**, wire protocol **4**. See [versioning](versioning.md) for what each version number means. Ranks that speak different wire protocols cannot communicate, and every adapter wheel bundles the libtbccl it was built with, so all ranks of one job must use adapters built against wire protocol 4.
@@ -33,10 +33,10 @@ vllm-tbccl 0.2.0rc1 has a known correctness defect for CUDA and Metal pipelines 
 
 | | tbccl | torch-tbccl | vllm-tbccl | exo-tbccl |
 |---|---|---|---|---|
-| Python | n/a (C/C++) | 3.13 only | 3.12 and 3.13 (the Metal pairing runs on 3.12 on the Mac; the 0.2.0rc1 wheels are 3.13 only) | 3.13 or newer |
+| Python | n/a (C/C++) | 3.13 only | 3.12 and 3.13 (the Metal pairing runs on 3.12 on the Mac) | 3.13 or newer |
 | PyTorch | n/a | 2.13.x (CUDA 13 build on Linux; macOS wheel on Mac) | 2.13.x | not used |
-| vLLM | n/a | n/a | 0.31.0 for both pairings; the CUDA and Metal pairing needs vllm-metal 0.31.0 with the transport patch shipped by vllm-tbccl. 0.30.0 is the historical version of 0.2.0rc1 | n/a |
-| exo | n/a | n/a | n/a | the exo integration (`PipelineComm` seam, `MlxTbccl`, runner byte exchange), unpublished, re-derived on upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6` (2026-10-12) |
+| vLLM | n/a | n/a | 0.31.0 for both pairings; the CUDA and Metal pairing needs the maintained fork `tensorsofthewall/vllm-metal` at the immutable tag `v0.31.0-tbccl1` (upstream vllm-metal 0.31.0 plus the transport seam). 0.30.0 is historical | n/a |
+| exo | n/a | n/a | n/a | the maintained fork `tensorsofthewall/exo-fork` at the immutable tag `tbccl-integration-v1` (the integration on upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6`, 2026-10-12) |
 | MLX | n/a | n/a | via vllm-metal 0.31.0 (MLX 0.32.1, Metal pairing) | 0.32.x: Linux CUDA 0.32.0; macOS the 0.32.4 development build that exo pins (and the earlier 0.32.0 development build) |
 | TBCCL C ABI / wire | defines 1 / 4 | requires 1 / 4 | requires 1 / 4 (bundled) | requires C ABI 1; minimum package 0.6.0 |
 
