@@ -8,10 +8,14 @@ This is the canonical statement of what works with what across the TBCCL ecosyst
 |---|---|---|---|
 | tbccl | 0.6.0rc1 | runtime: C++ library, C ABI, TCP transport | native archives (Linux host, Linux CUDA 13, macOS arm64) |
 | torch-tbccl | 0.2.0rc1 | PyTorch `torch.distributed` backend | platform wheels (CPython 3.13) |
-| vllm-tbccl | 0.2.0rc1 | vLLM platform plugin | platform wheels and an sdist (CPython 3.13) |
+| vllm-tbccl | 0.2.0rc1 | vLLM platform plugin | platform wheels and an sdist (CPython 3.13 in the release candidate; 3.12 and 3.13 on `main`) |
 | exo-tbccl | 0.3.0rc1 | exo pipeline data plane | platform wheels (CPython 3.13 or newer) |
 
 All four are pre-release candidates attached to GitHub pre-releases. None is published on PyPI or TestPyPI. The final versions (0.6.0, 0.2.0, 0.2.0, 0.3.0) do not exist yet.
+
+```{note}
+vllm-tbccl 0.2.0rc1 has a known correctness defect for CUDA and Metal pipelines under concurrent requests (the stages' activation row order); it is fixed on the development branch and will be in the final 0.2.0. The CUDA and CPU pairing, sequential requests and the other adapters are not affected. See the [vllm-tbccl changelog](https://vllm-tbccl.tensorsofthewall.com/en/latest/).
+```
 
 **Interface versions shared by the whole family:** C ABI **1**, wire protocol **4**. See [versioning](versioning.md) for what each version number means. Ranks that speak different wire protocols cannot communicate, and every adapter wheel bundles the libtbccl it was built with, so all ranks of one job must use adapters built against wire protocol 4.
 
@@ -29,11 +33,11 @@ All four are pre-release candidates attached to GitHub pre-releases. None is pub
 
 | | tbccl | torch-tbccl | vllm-tbccl | exo-tbccl |
 |---|---|---|---|---|
-| Python | n/a (C/C++) | 3.13 only | 3.13 only | 3.13 or newer |
+| Python | n/a (C/C++) | 3.13 only | 3.12 and 3.13 (the Metal pairing runs on 3.12 on the Mac; the 0.2.0rc1 wheels are 3.13 only) | 3.13 or newer |
 | PyTorch | n/a | 2.13.x (CUDA 13 build on Linux; macOS wheel on Mac) | 2.13.x | not used |
-| vLLM | n/a | n/a | 0.30.0 (CUDA and Metal pairing, needs vllm-metal) and 0.31.0 (CUDA and CPU pairing) | n/a |
-| exo | n/a | n/a | n/a | the exo integration with the `PipelineComm` seam and the runner byte exchange |
-| MLX | n/a | n/a | via vllm-metal (Metal pairing) | 0.32 |
+| vLLM | n/a | n/a | 0.31.0 for both pairings; the CUDA and Metal pairing needs vllm-metal 0.31.0 with the transport patch shipped by vllm-tbccl. 0.30.0 is the historical version of 0.2.0rc1 | n/a |
+| exo | n/a | n/a | n/a | the exo integration (`PipelineComm` seam, `MlxTbccl`, runner byte exchange), unpublished, re-derived on upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6` (2026-10-12) |
+| MLX | n/a | n/a | via vllm-metal 0.31.0 (MLX 0.32.1, Metal pairing) | 0.32.x: Linux CUDA 0.32.0; macOS the 0.32.4 development build that exo pins (and the earlier 0.32.0 development build) |
 | TBCCL C ABI / wire | defines 1 / 4 | requires 1 / 4 | requires 1 / 4 (bundled) | requires C ABI 1; minimum package 0.6.0 |
 
 ## World sizes
