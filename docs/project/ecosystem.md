@@ -32,11 +32,11 @@ CUDA buffers are staged through pinned host memory; Metal shared (unified) memor
 
 ## Versions
 
-The current family is tbccl 0.6.0 (final) with the release candidates torch-tbccl 0.2.0rc1, vllm-tbccl 0.2.0rc2 and exo-tbccl 0.3.0rc2, all sharing **C ABI 1** and **wire protocol 4**. The adapters are pre-releases published as GitHub releases; nothing is on PyPI. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The authoritative table is the [compatibility matrix](https://tbccl.tensorsofthewall.com/en/latest/reference/compatibility-matrix.html).
+The current family is tbccl 0.6.0, torch-tbccl 0.2.0, vllm-tbccl 0.2.0 and exo-tbccl 0.3.0, all final releases sharing **C ABI 1** and **wire protocol 4**. These are GitHub releases; nothing is on PyPI. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The authoritative table is the [compatibility matrix](https://tbccl.tensorsofthewall.com/en/latest/reference/compatibility-matrix.html).
 
 ## Hosted documentation
 
-Each project has its own site. `latest` is development documentation built from `main`; release-candidate versions appear as numbered versions (for example `v0.6.0rc1`); `stable` does not exist until the final release of that project.
+Each project has its own site. `latest` is development documentation built from `main`; released versions appear as numbered versions (for example `v0.6.0`) and `stable` is the latest final release of that project.
 
 ## Where a change belongs
 
