@@ -6,7 +6,7 @@
     "public_version": "0.6.0",
     "release_candidate": false,
     "target_release": "0.6.0",
-    "released": false
+    "released": true
   },
   "c_abi": {
     "version": 1
