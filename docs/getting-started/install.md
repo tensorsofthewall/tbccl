@@ -48,7 +48,7 @@ tar -xzf tbccl-0.6.0-macos-arm64.tar.gz
 ./tbccl-0.6.0-macos-arm64/bin/tbccl-info
 ```
 
-`tbccl-info` prints the package version, C ABI and wire protocol, the platform and the memory providers (`host`, plus `cuda` for the CUDA archive, or `metal` on macOS). Optionally verify the build provenance too: `gh attestation verify tbccl-0.6.0-linux-x86_64.tar.gz --repo tensorsofthewall/tbccl` (needs the GitHub CLI). The extracted directory is an install prefix:
+`tbccl-info` prints the package version, C ABI and wire protocol, the platform and the memory providers (`host`, plus `cuda` for the CUDA archive, or `metal_shared` on macOS). Optionally verify the build provenance too: `gh attestation verify tbccl-0.6.0-linux-x86_64.tar.gz --repo tensorsofthewall/tbccl` (needs the GitHub CLI). The extracted directory is an install prefix:
 
 ```text
 bin/tbccl-info              version and capability tool
