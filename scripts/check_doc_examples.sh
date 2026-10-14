@@ -16,7 +16,7 @@ target_link_libraries(version_check PRIVATE TBCCL::tbccl_c)
 add_executable(two_rank_threads @SRC@/two_rank_threads.cpp)
 target_link_libraries(two_rank_threads PRIVATE TBCCL::tbccl)
 EOF
-sed -i "s#@SRC@#$SRC#g" "$B/CMakeLists.txt"
+sed -i.bak "s#@SRC@#$SRC#g" "$B/CMakeLists.txt"
 cmake -S "$B" -B "$B/cmake" -DCMAKE_PREFIX_PATH="$PREFIX" -DCMAKE_BUILD_TYPE=Release > "$B/cfg.txt" 2>&1 || { cat "$B/cfg.txt"; exit 1; }
 cmake --build "$B/cmake" -j > "$B/build.txt" 2>&1 || { cat "$B/build.txt"; exit 1; }
 "$B/cmake/version_check"

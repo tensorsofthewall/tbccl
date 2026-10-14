@@ -7,11 +7,11 @@ This is the canonical statement of what works with what across the TBCCL ecosyst
 | Project | Version | Role | Distribution |
 |---|---|---|---|
 | tbccl | 0.6.0 | runtime: C++ library, C ABI, TCP transport | native archives (Linux host, Linux CUDA 13, macOS arm64) |
-| torch-tbccl | 0.2.0rc1 (release candidate) | PyTorch `torch.distributed` backend | platform wheels (CPython 3.13) |
-| vllm-tbccl | 0.2.0rc2 (release candidate) | vLLM platform plugin | platform wheels (CPython 3.12 and 3.13) and an sdist |
-| exo-tbccl | 0.3.0rc2 (release candidate) | exo pipeline data plane | platform wheels (CPython 3.13 or newer) |
+| torch-tbccl | 0.2.0 | PyTorch `torch.distributed` backend | platform wheels (CPython 3.13) |
+| vllm-tbccl | 0.2.0 | vLLM platform plugin | platform wheels (CPython 3.12 and 3.13) and an sdist |
+| exo-tbccl | 0.3.0 | exo pipeline data plane | platform wheels (CPython 3.13 or newer) |
 
-tbccl 0.6.0 is a final release; the three adapters are release candidates attached to GitHub pre-releases and their final versions (0.2.0, 0.2.0, 0.3.0) follow. None is published on PyPI or TestPyPI.
+All four are final releases attached to GitHub releases. None is published on PyPI or TestPyPI.
 
 ```{note}
 vllm-tbccl 0.2.0rc1 has a known correctness defect for CUDA and Metal pipelines under concurrent requests (the stages' activation row order); it is fixed on the development branch and will be in the final 0.2.0. The CUDA and CPU pairing, sequential requests and the other adapters are not affected. See the [vllm-tbccl changelog](https://vllm-tbccl.tensorsofthewall.com/en/latest/).
