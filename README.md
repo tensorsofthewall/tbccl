@@ -4,7 +4,7 @@
 
 TBCCL (Thunderbolt Collective Communication Library) is a C++17 runtime with a stable C ABI that moves tensors between machines that differ in operating system and memory type, for example a Linux host with an NVIDIA GPU and a Mac with Apple silicon, over TCP, including a direct Thunderbolt 4 link.
 
-> **Status:** release candidate **0.6.0rc1** (pre-release; not for production use). **C ABI 1**, **wire protocol 4**. The final 0.6.0 has not been released. Wire protocol 4 does not interoperate with wire protocol 3.
+> **Status:** **0.6.0** (first release; experimental). **C ABI 1**, **wire protocol 4**. Wire protocol 4 does not interoperate with wire protocol 3.
 
 ## Why it exists
 
@@ -47,12 +47,12 @@ The full ecosystem table is the [compatibility matrix](docs/reference/compatibil
 
 ## Quick start
 
-Download a release archive from the [GitHub release](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.6.0rc1), verify it and check the version:
+Download a release archive from the [GitHub release](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.6.0), verify it and check the version:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf tbccl-0.6.0rc1-linux-x86_64-cuda13.tar.gz        # or tbccl-0.6.0rc1-linux-x86_64.tar.gz, tbccl-0.6.0rc1-macos-arm64.tar.gz
-tbccl-0.6.0rc1-linux-x86_64-cuda13/bin/tbccl-info
+tar -xzf tbccl-0.6.0-linux-x86_64-cuda13.tar.gz        # or tbccl-0.6.0-linux-x86_64.tar.gz, tbccl-0.6.0-macos-arm64.tar.gz
+tbccl-0.6.0-linux-x86_64-cuda13/bin/tbccl-info
 ```
 
 Then use it from CMake (`find_package(TBCCL CONFIG REQUIRED)`, target `TBCCL::tbccl_c` for C or `TBCCL::tbccl` for C++, with `-DCMAKE_PREFIX_PATH=<extracted directory>`) or through pkg-config. [Installing](docs/getting-started/install.md) covers both paths and building from source.

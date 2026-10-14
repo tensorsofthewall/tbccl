@@ -3,7 +3,7 @@
 TBCCL (Thunderbolt Collective Communication Library) is a C++17 runtime with a stable C ABI that moves tensors between machines that differ in operating system and memory type, for example a Linux host with an NVIDIA GPU and a Mac with Apple silicon, over TCP, including a direct Thunderbolt 4 link.
 
 ```{note}
-**Release candidate.** The current release candidate is 0.6.0rc1 (C ABI 1, wire protocol 4). It is a pre-release for validation, not for production use. The final 0.6.0 has not been released.
+**Release.** The current release is 0.6.0 (C ABI 1, wire protocol 4). It is the first release and is experimental.
 ```
 
 ## Which project do I need?

@@ -32,7 +32,7 @@ CUDA buffers are staged through pinned host memory; Metal shared (unified) memor
 
 ## Versions
 
-The current release-candidate family is tbccl 0.6.0rc1, torch-tbccl 0.2.0rc1, vllm-tbccl 0.2.0rc1 and exo-tbccl 0.3.0rc1, all sharing **C ABI 1** and **wire protocol 4**. These are pre-releases published as GitHub releases; nothing is on PyPI. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The authoritative table is the [compatibility matrix](https://tbccl.tensorsofthewall.com/en/latest/reference/compatibility-matrix.html).
+The current family is tbccl 0.6.0 (final) with the release candidates torch-tbccl 0.2.0rc1, vllm-tbccl 0.2.0rc2 and exo-tbccl 0.3.0rc2, all sharing **C ABI 1** and **wire protocol 4**. The adapters are pre-releases published as GitHub releases; nothing is on PyPI. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The authoritative table is the [compatibility matrix](https://tbccl.tensorsofthewall.com/en/latest/reference/compatibility-matrix.html).
 
 ## Hosted documentation
 

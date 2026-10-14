@@ -1,6 +1,6 @@
 # Validated configurations
 
-Configurations that were actually exercised, not a benchmark report. Detailed evidence is in the [validation reports](../validation/index.md). "Release-candidate artifacts" means the published 0.6.0rc1 archives were used, not a local build.
+Configurations that were actually exercised, not a benchmark report. Detailed evidence is in the [validation reports](../validation/index.md). "Release-candidate artifacts" means the published 0.6.0rc1 archives were used and "release artifacts" the published 0.6.0 archives, not a local build.
 
 | Configuration | What was run | Result |
 |---|---|---|

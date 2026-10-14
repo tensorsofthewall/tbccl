@@ -22,7 +22,7 @@ def first(pattern: str, path: str) -> str:
 manifest = json.loads((ROOT / "compatibility.json").read_text())
 actual = {
     "package.development_version": first(r"project\(.*?VERSION\s+(\d+\.\d+\.\d+)", "CMakeLists.txt"),
-    "package.public_version": first(r'set\(TBCCL_PUBLIC_VERSION\s+"\$\{PROJECT_VERSION\}(rc\d+)"', "CMakeLists.txt"),
+    "package.public_version": first(r'set\(TBCCL_PUBLIC_VERSION\s+"\$\{PROJECT_VERSION\}((?:rc\d+)?)"', "CMakeLists.txt"),
     "c_abi.version": int(first(r"#define\s+TBCCL_C_ABI_VERSION\s+(\d+)u", "include/tbccl/tbccl.h")),
     "wire_protocol.version": int(first(r"kWireProtocolVersion\s*=\s*(\d+)", "include/tbccl/rank_directory.hpp")),
 }
