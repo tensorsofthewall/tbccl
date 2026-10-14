@@ -4,6 +4,7 @@ skipped elsewhere. Nothing here needs the network: GitHub access is replaced by 
 import copy
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -14,6 +15,10 @@ ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 import maint_common as mc  # noqa: E402
+
+# The tests provoke failures on purpose; under GitHub Actions they must not turn into error annotations on the run page.
+os.environ.pop("GITHUB_ACTIONS", None)
+os.environ.pop("GITHUB_STEP_SUMMARY", None)
 
 
 def load(name):
