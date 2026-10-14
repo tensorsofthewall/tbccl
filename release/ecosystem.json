@@ -33,8 +33,8 @@
     "tag": "v0.3.0",
     "commit": "84032089703b8ed6d1503fc67ebfc9e92a2301fd",
     "exo_repo": "tensorsofthewall/exo-fork",
-    "exo_tag": "tbccl-integration-v1",
-    "exo_sha": "1416807b46efd87c3601c69ce5784f51c9dd4c75",
-    "exo_upstream_base": "75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6"
+    "exo_tag": "tbccl-integration-v2",
+    "exo_sha": "d1497b28b89618172d273e70e9ac7992811635f5",
+    "exo_upstream_base": "bc412e2230f395e652c23426a5eb88dfa515769b"
   }
 }

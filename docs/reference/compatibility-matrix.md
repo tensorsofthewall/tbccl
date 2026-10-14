@@ -36,7 +36,7 @@ vllm-tbccl 0.2.0rc1 has a known correctness defect for CUDA and Metal pipelines 
 | Python | n/a (C/C++) | 3.13 only | 3.12 and 3.13 (the Metal pairing runs on 3.12 on the Mac) | 3.13 or newer |
 | PyTorch | n/a | 2.13.x (CUDA 13 build on Linux; macOS wheel on Mac) | 2.13.x | not used |
 | vLLM | n/a | n/a | 0.31.0 for both pairings; the CUDA and Metal pairing needs the maintained fork `tensorsofthewall/vllm-metal` at the immutable tag `v0.31.0-tbccl1` (upstream vllm-metal 0.31.0 plus the transport seam). 0.30.0 is historical | n/a |
-| exo | n/a | n/a | n/a | the maintained fork `tensorsofthewall/exo-fork` at the immutable tag `tbccl-integration-v1` (the integration on upstream exo `75d8ad2bc1eac25aaf7adb39c0784ad0def8c1b6`, 2026-10-12) |
+| exo | n/a | n/a | n/a | the maintained fork `tensorsofthewall/exo-fork` at the immutable tag `tbccl-integration-v2` (the integration on upstream exo `bc412e2230f395e652c23426a5eb88dfa515769b`, 2026-10-13) |
 | MLX | n/a | n/a | via vllm-metal 0.31.0 (MLX 0.32.1, Metal pairing) | 0.32.x: Linux CUDA 0.32.0; macOS the 0.32.4 development build that exo pins (and the earlier 0.32.0 development build) |
 | TBCCL C ABI / wire | defines 1 / 4 | requires 1 / 4 | requires 1 / 4 (bundled) | requires C ABI 1; minimum package 0.6.0 |
 
