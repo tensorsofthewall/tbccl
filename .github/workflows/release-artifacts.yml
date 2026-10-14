@@ -148,30 +148,30 @@ jobs:
       - name: SBOMs and SHA256SUMS
         run: |
           python -m pip install --quiet spdx-tools==0.8.5
-          mkdir release
-          cp parts/*.tar.gz release/
-          cp parts/cuda-toolkit-packages.txt release/ || true
+          mkdir staging
+          cp parts/*.tar.gz staging/
+          cp parts/cuda-toolkit-packages.txt staging/ || true
           EPOCH=$(date -u -d "@$(git log -1 --format=%ct)" +%Y-%m-%dT%H:%M:%SZ)
-          for a in release/tbccl-*.tar.gz; do
+          for a in staging/tbccl-*.tar.gz; do
             python tools/release_metadata.py sbom "$a" --out "$a.spdx.json" --repo tbccl --commit "$GITHUB_SHA" --epoch "$EPOCH" --homepage https://tbccl.tensorsofthewall.com/
             python tools/release_metadata.py check-sbom "$a.spdx.json" "$a"
           done
-          python tools/release_metadata.py sums release
-          (cd release && sha256sum -c SHA256SUMS)
+          python tools/release_metadata.py sums staging
+          (cd staging && sha256sum -c SHA256SUMS)
       - name: Artifact table
         run: |
           {
             echo "### Release artifacts for $GITHUB_SHA"
             echo '| artifact | bytes | SHA-256 |'; echo '|---|---|---|'
-            (cd release && for f in tbccl-*.tar.gz; do echo "| $f | $(stat -c %s "$f") | $(sha256sum "$f" | cut -d' ' -f1) |"; done)
+            (cd staging && for f in tbccl-*.tar.gz; do echo "| $f | $(stat -c %s "$f") | $(sha256sum "$f" | cut -d' ' -f1) |"; done)
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Attest the artifacts (GitHub build provenance)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: release/*
+          subject-path: staging/*
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts-${{ github.sha }}
-          path: release/
+          path: staging/
           retention-days: 14
           if-no-files-found: error
