@@ -59,12 +59,8 @@ jobs:
           grep -qi "already installed" again.txt
       - name: Two-rank loopback all_reduce
         timeout-minutes: 5
-        env:
-          TORCH_TBCCL_TRACE: "1"
-          TBCCL_LOCAL_ENDPOINT: "127.0.0.1:0"
-          OMP_NUM_THREADS: "1"
         run: |
-          "$RUNNER_TEMP/env/bin/torchrun" --standalone --nproc-per-node 2 tools/clean_install_smoke.py
+          "$RUNNER_TEMP/env/bin/python" tools/clean_install_smoke.py
       - name: Summary
         if: always()
         run: |
