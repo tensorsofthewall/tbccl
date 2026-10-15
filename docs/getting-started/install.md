@@ -5,7 +5,7 @@ There are two ways to get TBCCL, and you only need one:
 - **A prebuilt release archive** (recommended): download, verify, extract, and point CMake or pkg-config at it.
 - **Building from source**, when no archive matches your platform or you want to change the code.
 
-If you only want to use PyTorch, vLLM or exo, you do not need this page: install the adapter wheel instead ([torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html)). The wheels contain libtbccl.
+If you only want to use PyTorch, vLLM or exo, you do not need this page: install the adapter wheel instead ([torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html)). The wheels contain libtbccl. A [helper script](install-adapters.md) can pick, verify and install the right wheel for an environment.
 
 ## Requirements
 
