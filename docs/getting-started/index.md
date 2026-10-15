@@ -13,4 +13,5 @@ overview
 install
 install-adapters
 first-program
+examples
 ```
