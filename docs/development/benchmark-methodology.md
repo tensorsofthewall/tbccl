@@ -44,3 +44,15 @@ against this convention:
   disabled (or moved outside the timed region) and confirm the timing
   does not change meaningfully -- if it does, verification was
   contaminating the measurement.
+
+## Reporting rules for any TBCCL measurement
+
+Added with the shared harness `tools/benchmark_allreduce.py`, which follows the rule above and writes a machine-readable result file.
+
+1. **Say what it was.** Record the TBCCL, adapter and framework versions, the platform, the backend, the dtype, the sizes, the warmup, iteration and repeat counts, and whether the ranks shared one machine. The harness writes all of this into its JSON file; a number without it is not a result.
+2. **Name the transport honestly.** TBCCL is TCP over IPv4, and over a Thunderbolt link it is IP over Thunderbolt. It is not RDMA, and results must never be described as RDMA or compared to RDMA figures.
+3. **Loopback is for comparing builds, not for claiming speed.** Two processes on one host measure that host's software and memory overhead. They can show that a change made a loop faster or slower; they say nothing about a network.
+4. **Compare like with like.** The baseline runs the same sizes, the same loop, the same machine and the same moment (for example `--backend gloo`), not a figure from another setup or a vendor's page.
+5. **Report spread, not one number.** Use the median of several timed loops and keep the minimum and maximum. Repeat on another day before believing a difference.
+6. **Physical runs follow the hardware rules.** Check the link's health and the GPU's thermal state before timed runs and the link again afterwards; stop on new errors. A throttled GPU or a degraded link invalidates the numbers, and a run that stopped early is reported as stopped.
+7. **No numbers from verification loops or from runs that failed.** A result file whose verified `all_reduce` did not match is a failure, not a slow result.

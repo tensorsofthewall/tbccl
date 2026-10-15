@@ -15,6 +15,8 @@ on:
       - release/wheels.json
       - release/ecosystem.json
       - tools/clean_install_*.py
+      - tools/benchmark_allreduce.py
+      - tests/benchmark_allreduce_test.py
       - .github/workflows/clean-install.yml
 
 permissions:
@@ -61,6 +63,10 @@ jobs:
         timeout-minutes: 5
         run: |
           "$RUNNER_TEMP/env/bin/python" tools/clean_install_smoke.py
+      - name: Benchmark harness on loopback (tiny sizes; checks the method, not performance)
+        timeout-minutes: 10
+        run: |
+          "$RUNNER_TEMP/env/bin/python" tests/benchmark_allreduce_test.py
       - name: Summary
         if: always()
         run: |
