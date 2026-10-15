@@ -29,6 +29,12 @@ The three adapters are independent of each other. Each one carries (or links) it
  exo --------- exo-tbccl -----+
 ```
 
+## Start here
+
+- **Install an adapter:** [install helper](https://tbccl.tensorsofthewall.com/en/latest/getting-started/install-adapters.html), which selects, verifies and installs the right wheel for an environment you name (optional; the manual commands keep working).
+- **Try it without special hardware:** the [five-minute demo](https://tbccl.tensorsofthewall.com/en/latest/getting-started/examples.html).
+- **Get help or give feedback:** [getting help](https://tbccl.tensorsofthewall.com/en/latest/project/getting-help.html) (issue forms for bugs, install problems and tested configurations). The projects collect [no telemetry](https://tbccl.tensorsofthewall.com/en/latest/project/privacy.html).
+
 ## What is supported
 
 - Point-to-point `send` / `recv` and the collectives `barrier`, `broadcast`, `all_gather` and `Sum` `all_reduce`, validated at 1 to 4 ranks, with nonblocking submission: every call returns a `Work` handle immediately.

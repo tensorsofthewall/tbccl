@@ -2,6 +2,17 @@
 
 Thank you for contributing. This document describes how to set up, test and submit changes. Technical rules for the code base are in `AGENTS.md`.
 
+## Where to start
+
+You do not need hardware to be useful. Good first contributions, roughly in order of effort:
+
+1. **Documentation fixes.** Follow a guide in a clean environment and fix the first thing that is wrong or unclear (`docs/`, built with `make docs`).
+2. **A tested-configuration report.** Run an install and the five-minute demo on a machine that is not already listed (`docs/getting-started/examples.md`) and file it with the Tested configuration form.
+3. **Install and diagnostics tooling.** `scripts/install_adapter.py` and `tools/clean_install_*.py` are plain Python with hermetic tests (`python3 tests/install_adapter_test.py`).
+4. **Runtime changes.** Read "where should this change go?" (`docs/development/where-should-this-change-go.md`) first: the runtime knows nothing about frameworks, and most feature requests belong in an adapter.
+
+Questions and feedback channels: `docs/project/getting-help.md`. The project collects no telemetry (`docs/project/privacy.md`) and neither should a contribution.
+
 ## Development setup
 
 You need a C++17 compiler, CMake >= 3.20 and Python 3 (for some tests and tools). CUDA builds need the CUDA Toolkit (`-DTBCCL_ENABLE_CUDA=ON`); Metal builds need macOS (`-DTBCCL_ENABLE_METAL=ON`). A host-only build needs neither.
@@ -76,4 +87,4 @@ tbccl is licensed under the Apache License, Version 2.0. By submitting a contrib
 
 Security problems: do not open an issue; follow `SECURITY.md`.
 
-Open an issue with the version, platform, how to reproduce, and the observed and expected behavior. Please do not include credentials or private network details.
+Use the issue forms: bug report, installation problem, tested configuration, or documentation feedback (see `docs/project/getting-help.md`). Include the version, platform, how to reproduce, and the observed and expected behavior. Please do not include credentials or private network details.

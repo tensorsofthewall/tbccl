@@ -1,0 +1,57 @@
+name: Installation problem
+description: An install failed, or the install helper refused or accepted something it should not have
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Please check the [ecosystem status](https://tbccl.tensorsofthewall.com/en/latest/project/ecosystem.html): the supported platforms and framework versions are narrow. Remove anything private (user names, home paths, tokens) from what you paste.
+  - type: dropdown
+    id: what
+    attributes:
+      label: "What were you installing?"
+      options: ["tbccl release archive", "torch-tbccl", "vllm-tbccl", "vllm-metal fork wheel", "Exo with the tbccl extra", "other"]
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: "How?"
+      options: ["scripts/install_adapter.py", "the manual commands in the guide", "uv sync (Exo)", "a source build", "other"]
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: "Operating system, architecture, Python version"
+      placeholder: "Ubuntu 24.04 x86_64, Python 3.13.1; or macOS 15.1 arm64, Python 3.12.7"
+    validations:
+      required: true
+  - type: input
+    id: framework
+    attributes:
+      label: "Framework version and build already installed (PyTorch, vLLM)"
+      placeholder: "torch 2.13.0+cu130; vllm 0.31.0"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: "The exact commands you ran"
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: "The full output, including the error and the exit code"
+      description: "For the install helper also paste the output of the same command with `--dry-run`."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: "Output of tools/collect_diagnostics.py (read it before pasting)"
+      render: text
+    validations:
+      required: false

@@ -9,4 +9,6 @@ validated-configurations
 changelog
 release-versioning
 security-policy
+getting-help
+privacy
 ```
