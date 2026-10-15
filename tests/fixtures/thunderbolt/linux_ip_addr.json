@@ -1,0 +1,161 @@
+[
+ {
+  "ifindex": 1,
+  "ifname": "lo",
+  "flags": [
+   "LOOPBACK",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 65536,
+  "qdisc": "noqueue",
+  "operstate": "UNKNOWN",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "loopback",
+  "address": "02:00:00:00:00:0a",
+  "broadcast": "02:00:00:00:00:0a",
+  "addr_info": [
+   {
+    "family": "inet",
+    "local": "127.0.0.1",
+    "prefixlen": 8,
+    "scope": "host",
+    "label": "lo",
+    "valid_life_time": 4294967295,
+    "preferred_life_time": 4294967295
+   },
+   {
+    "family": "inet6",
+    "local": "::1",
+    "prefixlen": 128,
+    "scope": "host",
+    "noprefixroute": true,
+    "valid_life_time": 4294967295,
+    "preferred_life_time": 4294967295
+   }
+  ]
+ },
+ {
+  "ifindex": 2,
+  "ifname": "enp6s0",
+  "flags": [
+   "BROADCAST",
+   "MULTICAST",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 1500,
+  "qdisc": "fq_codel",
+  "operstate": "UP",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "ether",
+  "address": "02:00:00:00:00:0b",
+  "broadcast": "02:00:00:00:00:0c",
+  "addr_info": [
+   {
+    "family": "inet",
+    "local": "192.168.0.121",
+    "prefixlen": 24,
+    "broadcast": "192.168.0.255",
+    "scope": "global",
+    "dynamic": true,
+    "noprefixroute": true,
+    "label": "enp6s0",
+    "valid_life_time": 6868,
+    "preferred_life_time": 6868
+   },
+   {
+    "family": "inet6",
+    "local": "fe80::1111:2222:3333:4444",
+    "prefixlen": 64,
+    "scope": "link",
+    "noprefixroute": true,
+    "valid_life_time": 4294967295,
+    "preferred_life_time": 4294967295
+   }
+  ]
+ },
+ {
+  "ifindex": 3,
+  "ifname": "wlan0",
+  "flags": [
+   "BROADCAST",
+   "MULTICAST",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 1500,
+  "qdisc": "noqueue",
+  "operstate": "UP",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "ether",
+  "address": "02:00:00:00:00:0d",
+  "broadcast": "02:00:00:00:00:0c",
+  "addr_info": [
+   {
+    "family": "inet",
+    "local": "192.168.0.100",
+    "prefixlen": 24,
+    "broadcast": "192.168.0.255",
+    "scope": "global",
+    "dynamic": true,
+    "noprefixroute": true,
+    "label": "wlan0",
+    "valid_life_time": 6690,
+    "preferred_life_time": 6690
+   },
+   {
+    "family": "inet6",
+    "local": "fe80::1111:2222:3333:4444",
+    "prefixlen": 64,
+    "scope": "link",
+    "noprefixroute": true,
+    "valid_life_time": 4294967295,
+    "preferred_life_time": 4294967295
+   }
+  ]
+ },
+ {
+  "ifindex": 4,
+  "ifname": "thunderbolt0",
+  "flags": [
+   "BROADCAST",
+   "MULTICAST",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 9000,
+  "qdisc": "fq_codel",
+  "operstate": "UP",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "ether",
+  "address": "02:00:00:00:00:0e",
+  "broadcast": "02:00:00:00:00:0c",
+  "addr_info": [
+   {
+    "family": "inet",
+    "local": "192.168.3.2",
+    "prefixlen": 24,
+    "broadcast": "192.168.3.255",
+    "scope": "global",
+    "noprefixroute": true,
+    "label": "thunderbolt0",
+    "valid_life_time": 4294967295,
+    "preferred_life_time": 4294967295
+   },
+   {
+    "family": "inet6",
+    "local": "fe80::1111:2222:3333:4444",
+    "prefixlen": 64,
+    "scope": "link",
+    "noprefixroute": true,
+    "valid_life_time": 4294967295,
+    "preferred_life_time": 4294967295
+   }
+  ]
+ }
+]

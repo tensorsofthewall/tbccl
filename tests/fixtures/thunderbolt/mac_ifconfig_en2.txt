@@ -1,0 +1,5 @@
+en2: flags=8963<UP,BROADCAST,SMART,RUNNING,PROMISC,SIMPLEX,MULTICAST> mtu 9000
+	options=460<TSO4,TSO6,CHANNEL_IO>
+	ether 02:00:00:00:00:00
+	media: autoselect <full-duplex>
+	status: inactive

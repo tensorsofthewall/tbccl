@@ -37,3 +37,5 @@ jobs:
         run: python3 tests/install_adapter_test.py
       - name: Benchmark harness tests (statistics and report structure)
         run: python3 tests/benchmark_allreduce_test.py
+      - name: Thunderbolt link doctor tests (recorded fixtures, no hardware)
+        run: python3 tests/thunderbolt_link_doctor_test.py
