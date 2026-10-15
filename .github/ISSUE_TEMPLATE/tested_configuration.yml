@@ -1,0 +1,61 @@
+name: Tested configuration
+description: Report a hardware or software combination that worked, or did not
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Reports like this are the most useful feedback the project can get: almost everything was qualified on one Linux CUDA host and one Apple-silicon Mac over Thunderbolt 4. A report does not change the supported matrix by itself; maintainers add to the validated configurations only after they can check the evidence. Please report what you actually ran, and say what you did not.
+  - type: dropdown
+    id: result
+    attributes:
+      label: "Result"
+      options: ["worked", "worked with a workaround", "did not work", "partly worked"]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: "Versions"
+      description: "TBCCL and the adapter(s), and PyTorch / vLLM / Exo versions."
+      placeholder: "tbccl 0.6.0, torch-tbccl 0.2.0, torch 2.13.0+cu130"
+    validations:
+      required: true
+  - type: textarea
+    id: machines
+    attributes:
+      label: "Machines (one per line)"
+      description: "Operating system and version, CPU or SoC, GPU, memory, which rank each one was."
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: "Link"
+      description: "Cable or network, Thunderbolt generation, interface names and MTU, or plain Ethernet or Wi-Fi."
+      placeholder: "Thunderbolt 4 cable, thunderbolt0 and bridge0, MTU 9000"
+    validations:
+      required: true
+  - type: textarea
+    id: ran
+    attributes:
+      label: "What you ran"
+      description: "The commands or scripts, the model if any (use an existing local copy; do not post private model names), the number of runs."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: "What you observed"
+      description: "Correctness first (was the output identical to a reference?), then anything odd. Please do not include performance numbers unless you ran the benchmark harness and attach its result file."
+    validations:
+      required: true
+  - type: checkboxes
+    id: health
+    attributes:
+      label: "Checks"
+      options:
+        - label: "I checked the link for errors before and after the run (or the run did not use a physical link)"
+        - label: "I removed anything private from this report"
+          required: true

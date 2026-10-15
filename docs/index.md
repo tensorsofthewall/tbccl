@@ -25,13 +25,17 @@ This site is the entry point for the whole TBCCL ecosystem. Four projects share 
 
 torch-tbccl, vllm-tbccl and exo-tbccl are independent adapters. Each carries or links its own libtbccl, and none requires another adapter. The [ecosystem overview](project/ecosystem.md) explains how the projects fit together and the [compatibility matrix](reference/compatibility-matrix.md) lists exactly which versions work together.
 
+**New here?** Install an adapter with the [install helper](getting-started/install-adapters.md), try the [five-minute demo](getting-started/examples.md), then read what is [supported and validated](project/validated-configurations.md). Questions and feedback: [getting help](project/getting-help.md); there is [no telemetry](project/privacy.md).
+
 ```{toctree}
 :maxdepth: 2
 :caption: Getting started
 
 getting-started/overview
 getting-started/install
+getting-started/install-adapters
 getting-started/first-program
+getting-started/examples
 ```
 
 ```{toctree}
