@@ -94,6 +94,9 @@ class InstallAdapter(unittest.TestCase):
         d = Path(purelib) / f"{name}-{version.split('+')[0]}.dist-info"
         d.mkdir(exist_ok=True)
         (d / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        if name == "torch":
+            (Path(purelib) / "torch").mkdir(exist_ok=True)
+            (Path(purelib) / "torch" / "__init__.py").write_text(f"import types\n__version__ = {version!r}\nversion = types.SimpleNamespace(cuda={'13.0' if 'cu' in version else None!r})\n")
 
     def release(self, corrupt=False, sums_hash=None, listed=True, python=PY, version=VERSION):
         name, good = make_wheel(self.serve, version, corrupt)
@@ -175,6 +178,11 @@ class InstallAdapter(unittest.TestCase):
         env = {"platform": "linux", "machine": "x86_64", "torch": "2.13.0+cpu"}
         with self.assertRaisesRegex(ia.Fail, "not a CUDA build"):
             ia.check_device("torch", "cuda", env, cuda="")
+        with self.assertRaisesRegex(ia.Fail, "not a CUDA build"):
+            ia.check_device("torch", "cpu", env, cuda="")
+        with self.assertRaisesRegex(ia.Fail, "not a CUDA build"):
+            ia.check_device("torch", None, env, cuda="")
+        ia.check_device("torch", "cpu", {"platform": "darwin", "machine": "arm64", "torch": "2.13.0"}, cuda=None)
         with self.assertRaisesRegex(ia.Fail, "CUDA is supported on Linux x86-64 only"):
             ia.check_device("torch", "cuda", {"platform": "darwin", "machine": "arm64", "torch": "2.13.0"})
         with self.assertRaisesRegex(ia.Fail, "needs Apple silicon"):
