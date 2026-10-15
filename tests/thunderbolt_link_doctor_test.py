@@ -364,6 +364,19 @@ class Tcp(unittest.TestCase):
         srv.close()
         self.assertTrue(ok)
 
+    def test_refused_and_timeout_get_different_advice(self):
+        rep = doc.Report()
+        real = doc.tcp_check
+        try:
+            doc.tcp_check = lambda *a, **k: (False, "ConnectionRefusedError: [Errno 111] Connection refused")
+            doc.check_tcp(rep, "192.168.77.2", 5)
+            doc.tcp_check = lambda *a, **k: (False, "TimeoutError: timed out")
+            doc.check_tcp(rep, "192.168.77.2", 5)
+        finally:
+            doc.tcp_check = real
+        self.assertIn("firewalld", rep.results[0]["advice"])
+        self.assertIn("silently drops", rep.results[1]["advice"])
+
     def test_refused(self):
         s = socket.socket()
         s.bind(("127.0.0.1", 0))

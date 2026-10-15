@@ -51,7 +51,8 @@ class Onboarding(unittest.TestCase):
         self.assertIn("leave gateway and dns empty", GUIDE.lower().replace("**", ""))
 
     def test_validation_status_is_stated_not_implied(self):
-        self.assertIn("not yet been run from scratch on real hardware", GUIDE)
+        self.assertIn("was **not** a first-time setup", GUIDE)
+        self.assertIn("Nobody who had never seen TBCCL", GUIDE)
         self.assertNotIn("independently validated", GUIDE.lower())
 
 

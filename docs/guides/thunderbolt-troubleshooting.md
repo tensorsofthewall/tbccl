@@ -151,6 +151,8 @@ ip -4 route ; netstat -rn -f inet # all routes
 
 **Check.** `sudo firewall-cmd --get-active-zones`, `sudo ufw status`, or `sudo nft list ruleset` (these read, they do not change). Look for a rule dropping input on the Thunderbolt interface.
 
+**What it looks like.** `Connection refused` (an immediate answer, not a timeout) while ping works and a listener is running on that machine means its firewall actively rejects the connection. On the tested Linux machine a new NetworkManager profile for the Thunderbolt interface fell into firewalld's default `public` zone and the Mac's connection was refused; pointing the profile at a zone that was already trusted for this cable (`nmcli connection modify <profile> connection.zone <zone>`, then `nmcli connection up <profile>`) fixed it. A firewall that silently drops packets shows up as a timeout instead.
+
 **Safe next step.** Allow traffic from the peer's link address on the Thunderbolt interface only, with your firewall's own tool. The rule's form depends on your tool; this is not scripted and not tested here. Do not disable the firewall.
 
 ## 11. IPv4 works, IPv6 link-local does not

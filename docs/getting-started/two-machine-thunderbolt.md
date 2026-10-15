@@ -5,7 +5,9 @@ This tutorial takes two computers that have never been connected and ends with a
 It sets up the network only. It does not need TBCCL, PyTorch or a GPU, and nothing in it requires an administrator password except where a step says so.
 
 ```{note}
-**What has been tested.** The procedure was written from, and checked against, one pair: an Apple silicon Mac mini (macOS 26) and an x86-64 Linux desktop (kernel 6.18, NetworkManager 1.56) with an Intel Thunderbolt 4 controller, joined by a Thunderbolt cable. That pair was already configured when the tutorial was written, so the *configuration* steps below (the new `192.168.77.x` addresses, the new NetworkManager profile, running with the default MTU) are written from the tools' documented behaviour and offline syntax checks and have **not yet been run from scratch on real hardware**. Mac to Mac and Linux to Linux are not covered. Windows is not supported. Where a step is unverified, it says so. If something here does not match what you see, please [report it](../project/getting-help.md).
+**What has been tested.** The procedure was run once on one pair: an Apple silicon Mac mini (macOS 26.5.1) and an x86-64 Linux desktop (kernel 6.18, NetworkManager 1.56.1, firewalld) with an Intel Thunderbolt 4 controller, joined by a Thunderbolt cable, at the default MTU (1500) with the `192.168.77.x` addresses below. Ping and TCP passed in both directions, a two-host PyTorch all-reduce passed on CPU tensors and with CUDA on Linux plus MPS on the Mac, and about 4.2 MB per direction showed up on the Thunderbolt interface counters for a 4 MiB tensor (section 4 of the PyTorch two-host quickstart).
+
+That run was **not** a first-time setup: the machines already had a working Thunderbolt link, so the Mac address was set with `networksetup -setmanual` instead of the Settings window, the existing Linux profile was taken down first, and the existing firewall zone had to be reused (section 8). Nobody who had never seen TBCCL has followed these pages yet. **Not tested:** the Settings-window steps, adding a missing Thunderbolt Bridge service, authorization on a `user` or `secure` Thunderbolt security level, a clean machine, Thunderbolt 3 or 5, other controllers, Mac to Mac, Linux to Linux. Windows is not supported. If something here does not match what you see, please [report it](../project/getting-help.md).
 ```
 
 ## 0. How to read this page
@@ -128,6 +130,15 @@ Use the graphical settings; they give the same result on every recent macOS.
 3. Click **Thunderbolt Bridge → Details… → TCP/IP**.
 4. Set **Configure IPv4** to **Manually**, **IP Address** `192.168.77.1`, **Subnet Mask** `255.255.255.0`. **Leave Router empty.**
 5. Click **DNS** and leave it empty. Click **OK**. Leave IPv6 on its default (Automatic): Exo uses IPv6 link-local addresses on this link.
+
+**Command-line equivalent** (this is what was run on the tested Mac; the service name is the one printed by `networksetup -listallnetworkservices`):
+
+```sh
+# Mac
+networksetup -setmanual "Thunderbolt Bridge" 192.168.77.1 255.255.255.0
+```
+
+It sets a manual IPv4 address and subnet mask and no router. Leave the MTU alone; if the service was previously set to a custom MTU, `networksetup -getMTU "Thunderbolt Bridge"` shows it.
 
 Check it:
 
@@ -271,7 +282,23 @@ Once ping and TCP pass in both directions, the link is ready. The next step is a
 
 ### Linux
 
-A host firewall that blocks incoming TCP on the Thunderbolt interface makes ping work and TCP fail. TBCCL and PyTorch's rendezvous pick ports at run time, so rather than opening one port, allow traffic **from the peer's address on the Thunderbolt interface only**, using your firewall's own tool. For example, with `firewalld` the interface can be placed in a trusted zone, or with `nftables` a rule can accept `iifname "<thunderbolt interface>" ip saddr 192.168.77.1`. Pick the narrowest form your tool offers. These are pointers, not a tested recipe; see your distribution's firewall documentation. Do not disable the firewall.
+**Expect this to matter on Linux.** If the machine runs a firewall such as `firewalld`, a new profile for the Thunderbolt interface lands in the default zone, which normally rejects incoming connections. The symptom seen on the tested machine: ping works, the link doctor reports `PASS ping` but `FAIL tcp ... Connection refused` when the **other** machine connects to a listener on this one (the Linux-to-Mac direction still passed, because the Mac accepted it). Check which zone the interface is in:
+
+```sh
+# Linux
+firewall-cmd --get-active-zones        # is your $TB_IF under "public" (the default) or a zone you trust?
+nmcli -g connection.zone connection show thunderbolt-direct
+```
+
+On `firewalld`, the interface of a NetworkManager profile follows the profile's zone, so the change is made on the profile. On the tested machine the older profile used a dedicated zone named `thunderbolt`; the new profile was pointed at it with
+
+```sh
+# Linux
+nmcli connection modify thunderbolt-direct connection.zone thunderbolt
+nmcli connection up thunderbolt-direct
+```
+
+and the TCP check then passed. That is a change to what the firewall allows on this interface, so decide it yourself: use a zone you already trust for this cable, or create one that allows only the peer (for example with `sudo firewall-cmd --permanent --new-zone=thunderbolt`, then add a source of `192.168.77.1/32` and the services you need, then `sudo firewall-cmd --reload`). Assigning an existing zone was tested; creating a zone and using `trusted` were not. TBCCL and PyTorch's rendezvous pick ports at run time, so allowing one port is not enough: allow traffic from the peer's address on this interface only. With `ufw` or plain `nftables` use the equivalent rule for the interface and the peer's address. Do not disable the firewall.
 
 ## 9. Disconnect cleanly
 

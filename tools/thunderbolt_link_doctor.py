@@ -573,8 +573,13 @@ def check_tcp(report, peer, port, facts=None):
     if ok:
         report.add(PASS, "tcp", "TCP connect to %s:%d and echo succeeded" % (peer, port))
     else:
-        report.add(FAIL, "tcp", "TCP to %s:%d failed (%s)" % (peer, port, detail),
-                   advice="Make sure the listener runs on the peer (--listen <its Thunderbolt IP> --tcp-port %d). If ping works but this fails, a host firewall is the usual cause." % port)
+        if "refused" in detail.lower():
+            advice = ("Connection refused although the peer answers: either no listener is running on the peer (--listen <its Thunderbolt IP> --tcp-port %d), or its firewall "
+                      "rejects connections from this address (on Linux with firewalld, check `firewall-cmd --get-active-zones` and the zone of the Thunderbolt profile)." % port)
+        else:
+            advice = ("No answer to the TCP connection: start the listener on the peer (--listen <its Thunderbolt IP> --tcp-port %d) and check the peer's host firewall; "
+                      "a firewall that silently drops traffic looks like a timeout." % port)
+        report.add(FAIL, "tcp", "TCP to %s:%d failed (%s)" % (peer, port, detail), advice=advice)
 
 
 def listen(bind, port, seconds):
