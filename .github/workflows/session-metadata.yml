@@ -1,0 +1,51 @@
+name: session-metadata
+
+# Rejects private AI-assistant session links, trailers and identifiers in text that becomes public Git history: pull request titles and descriptions, the commits of a
+# pull request, commits pushed to main, annotated release tags and the CHANGELOG (the source of release notes). It is read-only, builds nothing and publishes nothing.
+# A finding is reported by category and line; the matching text is never printed. Pushing a tag can only be checked after the fact: this job then fails visibly.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: no private session metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Self-test of the checker
+        run: python3 tests/session_metadata_check_test.py
+      - name: Pull request title, description and commits
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '%s\n' "$PR_TITLE" > "$RUNNER_TEMP/pr_title.txt"
+          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr_body.txt"
+          python3 tools/check_session_metadata.py --message-file "$RUNNER_TEMP/pr_title.txt" "$RUNNER_TEMP/pr_body.txt" --commits "$BASE..$HEAD"
+      - name: Commits pushed to main
+        if: github.event_name == 'push' && github.ref_type == 'branch'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          case "$BEFORE" in 0000000*) range="$GITHUB_SHA^!";; *) range="$BEFORE..$GITHUB_SHA";; esac
+          python3 tools/check_session_metadata.py --commits "$range"
+      - name: Annotated release tag
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          python3 tools/check_session_metadata.py --tag "$GITHUB_REF_NAME"
+      - name: Release notes source
+        run: python3 tools/check_session_metadata.py --message-file CHANGELOG.md

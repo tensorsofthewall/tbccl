@@ -48,6 +48,7 @@ jobs:
           check "maintenance tooling tests" python3 tests/maintenance_tools_test.py
           check "ecosystem manifest (online)" python3 tools/check_ecosystem_manifest.py --online
           check "links (repository-internal)" python3 tools/check_links.py
+          check "release notes carry no private session metadata" python3 tools/check_session_metadata.py --message-file CHANGELOG.md
           check "the tag does not exist yet" python3 tools/preflight_checks.py tag-free "$INTENDED_TAG"
           check "built artifacts of this commit" python3 tools/preflight_checks.py artifacts "$INTENDED_TAG"
           if [ $FAIL -eq 0 ]; then echo "READY: $INTENDED_TAG can be released from $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
