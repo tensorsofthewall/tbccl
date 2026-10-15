@@ -160,15 +160,15 @@ def torch_cuda(python):
 
 
 def check_device(adapter, device, env, cuda=None):
-    if device is None:
-        return
     plat = target_platform(env)
     torch = env["torch"] or ""
+    if plat == "linux_x86_64" and cuda == "":
+        raise Fail("unsupported", f"the installed PyTorch ({torch}) is not a CUDA build. The Linux wheels are linked against libtorch_cuda and libc10_cuda, so they cannot be imported with a CPU-only PyTorch (no GPU is needed, only the CUDA build). Install it with `uv pip install --python <env> --torch-backend cu130 torch==2.13.0`. PyTorch was not changed.")
+    if device is None:
+        return
     if device == "cuda":
         if plat != "linux_x86_64":
             raise Fail("unsupported", "CUDA is supported on Linux x86-64 only. On macOS use --device mps (or cpu); the CPU wheel is the same file.")
-        if cuda == "":
-            raise Fail("unsupported", f"--device cuda but the installed PyTorch ({torch}) is not a CUDA build. Install the CUDA build (`uv pip install --python <env> --torch-backend cu130 torch`) or use --device cpu. PyTorch was not changed.")
         if not os.path.exists("/proc/driver/nvidia") and not shutil.which("nvidia-smi") and not os.environ.get("TBCCL_SKIP_GPU_CHECK"):
             raise Fail("unsupported", "--device cuda but no NVIDIA driver was found on this machine (/proc/driver/nvidia, nvidia-smi). Install the driver, or use --device cpu. Set TBCCL_SKIP_GPU_CHECK=1 to skip this check (for example inside a container).")
     elif device in ("mps", "metal"):
@@ -236,7 +236,7 @@ def cmd_install(args):
         say(f"warning: {args.python} is not a virtual environment; it will modify that Python's packages.")
     wheel = select_wheel(args.adapter, entry, env)
     fw = check_framework(args.adapter, entry, env)
-    check_device(args.adapter, args.device, env, torch_cuda(args.python) if args.device in ("cuda", "cpu") and env["torch"] and target_platform(env) == "linux_x86_64" else None)
+    check_device(args.adapter, args.device, env, torch_cuda(args.python) if env["torch"] and target_platform(env) == "linux_x86_64" else None)
     current = env["installed"][DIST_NAME[args.adapter]]
     say(f"adapter     {DIST_NAME[args.adapter]} {entry['version']} ({entry['tag']})")
     say(f"wheel       {wheel['filename']}")

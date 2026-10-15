@@ -25,7 +25,7 @@ python3 install_adapter.py install --adapter torch --python .venv/bin/python --d
 
 1. The environment's Python, platform and glibc/macOS version against the one matching wheel (it never guesses a filename).
 2. The installed framework against the recorded pin. A missing or different PyTorch/vLLM stops the install; the framework is never installed, upgraded or removed.
-3. For `--device cuda`: that the installed PyTorch is a CUDA build and an NVIDIA driver is present.
+3. On Linux: that the installed PyTorch is a CUDA build (the wheels are linked against `libtorch_cuda`, so a CPU-only PyTorch cannot import them; no GPU is needed). For `--device cuda` also that an NVIDIA driver is present.
 4. That the environment is writable.
 5. After downloading to a temporary file: the SHA-256 must equal both the inventory and the release's own `SHA256SUMS`, and the wheel's tags and version must match.
 
