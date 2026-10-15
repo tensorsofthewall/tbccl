@@ -94,6 +94,9 @@ class InstallAdapter(unittest.TestCase):
         d = Path(purelib) / f"{name}-{version.split('+')[0]}.dist-info"
         d.mkdir(exist_ok=True)
         (d / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        if name == "torch":
+            (Path(purelib) / "torch").mkdir(exist_ok=True)
+            (Path(purelib) / "torch" / "__init__.py").write_text(f"import types\n__version__ = {version!r}\nversion = types.SimpleNamespace(cuda={'13.0' if 'cu' in version else None!r})\n")
 
     def release(self, corrupt=False, sums_hash=None, listed=True, python=PY, version=VERSION):
         name, good = make_wheel(self.serve, version, corrupt)
@@ -101,7 +104,7 @@ class InstallAdapter(unittest.TestCase):
             (self.serve / name).unlink()
         (self.serve / "SHA256SUMS").write_text(f"{sums_hash or good}  {name}\n")
         inv = {"schema_version": 1, "adapters": {"torch": {"repo": "x/y", "version": version, "tag": f"v{version}", "commit": "0" * 40, "sums_url": f"{self.base}/SHA256SUMS",
-               "framework": {"name": "torch", "series": "2.13"}, "wheels": [{"filename": name, "url": f"{self.base}/{name}", "sha256": good, "python": python, "platform": PLAT[0]}]},
+               "framework": {"name": "torch", "series": "2.13"}, "wheels": [{"filename": name, "url": f"{self.base}/{name}", "sha256": good, "python": python, "platform": PLAT[0], **({"min_macos": "14.0"} if PLAT[0] == "macos_arm64" else {})}]},
                "vllm": {"repo": "x/z", "version": version, "tag": f"v{version}", "commit": "0" * 40, "sums_url": f"{self.base}/SHA256SUMS", "framework": {"name": "vllm", "exact": "0.31.0"}, "wheels": []}}}
         path = self.tmp / "inv.json"
         path.write_text(json.dumps(inv))
@@ -175,6 +178,11 @@ class InstallAdapter(unittest.TestCase):
         env = {"platform": "linux", "machine": "x86_64", "torch": "2.13.0+cpu"}
         with self.assertRaisesRegex(ia.Fail, "not a CUDA build"):
             ia.check_device("torch", "cuda", env, cuda="")
+        with self.assertRaisesRegex(ia.Fail, "not a CUDA build"):
+            ia.check_device("torch", "cpu", env, cuda="")
+        with self.assertRaisesRegex(ia.Fail, "not a CUDA build"):
+            ia.check_device("torch", None, env, cuda="")
+        ia.check_device("torch", "cpu", {"platform": "darwin", "machine": "arm64", "torch": "2.13.0"}, cuda=None)
         with self.assertRaisesRegex(ia.Fail, "CUDA is supported on Linux x86-64 only"):
             ia.check_device("torch", "cuda", {"platform": "darwin", "machine": "arm64", "torch": "2.13.0"})
         with self.assertRaisesRegex(ia.Fail, "needs Apple silicon"):
