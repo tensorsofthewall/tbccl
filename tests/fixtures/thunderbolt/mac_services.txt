@@ -1,0 +1,5 @@
+An asterisk (*) denotes that a network service is disabled.
+Ethernet
+Thunderbolt Bridge
+Wi-Fi
+NordVPN - NordLynx

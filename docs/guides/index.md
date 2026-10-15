@@ -9,6 +9,7 @@ orphan: true
 
 c-api-quickstart
 thunderbolt-link
+thunderbolt-troubleshooting
 diagnostics
 troubleshooting
 ```

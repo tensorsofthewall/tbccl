@@ -1,0 +1,21 @@
+bridge0: flags=8863<UP,BROADCAST,SMART,RUNNING,SIMPLEX,MULTICAST> mtu 9000
+	options=63<RXCSUM,TXCSUM,TSO4,TSO6>
+	ether 02:00:00:00:00:00
+	inet6 fe80::1111:2222:3333:4444%bridge0 prefixlen 64 secured scopeid 0x11 
+	inet 192.168.3.1 netmask 0xffffff00 broadcast 192.168.3.255
+	Configuration:
+		id 02:00:00:00:00:01 priority 0 hellotime 0 fwddelay 0
+		maxage 0 holdcnt 0 proto stp maxaddr 100 timeout 1200
+		root id 02:00:00:00:00:01 priority 0 ifcost 0 port 0
+		ipfilter disabled flags 0x0
+	member: en2 flags=3<LEARNING,DISCOVER>
+	        ifmaxaddr 0 port 11 priority 0 path cost 0
+	member: en3 flags=3<LEARNING,DISCOVER>
+	        ifmaxaddr 0 port 12 priority 0 path cost 0
+	member: en4 flags=3<LEARNING,DISCOVER>
+	        ifmaxaddr 0 port 13 priority 0 path cost 0
+	Address cache:
+		02:00:00:00:00:02 Vlan1 en4 1196 flags=0<>
+	nd6 options=201<PERFORMNUD,DAD>
+	media: autoselect
+	status: active

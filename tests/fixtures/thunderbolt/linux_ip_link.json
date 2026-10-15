@@ -1,0 +1,77 @@
+[
+ {
+  "ifindex": 1,
+  "ifname": "lo",
+  "flags": [
+   "LOOPBACK",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 65536,
+  "qdisc": "noqueue",
+  "operstate": "UNKNOWN",
+  "linkmode": "DEFAULT",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "loopback",
+  "address": "02:00:00:00:00:0a",
+  "broadcast": "02:00:00:00:00:0a"
+ },
+ {
+  "ifindex": 2,
+  "ifname": "enp6s0",
+  "flags": [
+   "BROADCAST",
+   "MULTICAST",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 1500,
+  "qdisc": "fq_codel",
+  "operstate": "UP",
+  "linkmode": "DEFAULT",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "ether",
+  "address": "02:00:00:00:00:0b",
+  "broadcast": "02:00:00:00:00:0c"
+ },
+ {
+  "ifindex": 3,
+  "ifname": "wlan0",
+  "flags": [
+   "BROADCAST",
+   "MULTICAST",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 1500,
+  "qdisc": "noqueue",
+  "operstate": "UP",
+  "linkmode": "DORMANT",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "ether",
+  "address": "02:00:00:00:00:0d",
+  "broadcast": "02:00:00:00:00:0c"
+ },
+ {
+  "ifindex": 4,
+  "ifname": "thunderbolt0",
+  "flags": [
+   "BROADCAST",
+   "MULTICAST",
+   "UP",
+   "LOWER_UP"
+  ],
+  "mtu": 9000,
+  "qdisc": "fq_codel",
+  "operstate": "UP",
+  "linkmode": "DEFAULT",
+  "group": "default",
+  "txqlen": 1000,
+  "link_type": "ether",
+  "address": "02:00:00:00:00:0e",
+  "broadcast": "02:00:00:00:00:0c"
+ }
+]

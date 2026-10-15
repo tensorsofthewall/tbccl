@@ -1,0 +1,50 @@
+Thunderbolt/USB4:
+
+    Thunderbolt/USB4 Bus 3:
+
+      Vendor Name: Apple Inc.
+      Device Name: Mac mini
+      UID: 0x0000000000000000
+      Route String: 0
+      Domain UUID: 00000000-0000-0000-0000-000000000000
+      Port:
+          Status: Device connected
+          Link Status: 0x7
+          Speed: 20 Gb/s
+          Receptacle: 4
+          Micro Firmware Version: 0.0.0
+
+        linuxhost:
+
+          Vendor Name: Linux
+          Device Name: linuxhost
+          Device ID: 0x4
+          Vendor ID: 0x1D6B
+          Domain UUID: 00000000-0000-0000-0000-000000000000
+          Services:
+            Internet Protocol:
+              Protocol ID: 1
+              Protocol Version: 1
+              Protocol Revision: 1
+              Service UUID: 00000000-0000-0000-0000-000000000000
+
+    Thunderbolt/USB4 Bus 1:
+
+      Vendor Name: Apple Inc.
+      Device Name: Mac mini
+      UID: 0x0000000000000000
+      Route String: 0
+      Domain UUID: 00000000-0000-0000-0000-000000000000
+      Port:
+          Status: No device connected
+          Link Status: 0x100
+          Speed: Up to 40 Gb/s
+          Receptacle: 2
+
+    Thunderbolt/USB4 Bus 0:
+
+      Vendor Name: Apple Inc.
+      Device Name: Mac mini
+      UID: 0x0000000000000000
+      Route String: 0
+      Domain UUID: 00000000-0000-0000-0000-000000000000
