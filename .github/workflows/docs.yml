@@ -27,6 +27,8 @@ jobs:
         run: python3 tests/maintenance_tools_test.py
       - name: Test the installation documentation
         run: python3 tests/install_docs_test.py
+      - name: Test the issue forms and the help and privacy pages
+        run: python3 tests/community_docs_test.py
       - name: Check the ecosystem manifest (offline)
         run: python3 tools/check_ecosystem_manifest.py
       - name: Check the wheel inventory (offline)

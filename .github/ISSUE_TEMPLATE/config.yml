@@ -6,3 +6,9 @@ contact_links:
   - name: Current ecosystem status and compatibility
     url: https://tbccl.tensorsofthewall.com/en/latest/project/ecosystem.html
     about: Check the current stable versions and framework pins before you report a version mismatch.
+  - name: Getting help and what to include
+    url: https://tbccl.tensorsofthewall.com/en/latest/project/getting-help.html
+    about: Which form to use, what to run before you post, and what to expect (best effort, no support contract).
+  - name: A problem in an adapter (torch-tbccl, vllm-tbccl, exo-tbccl)
+    url: https://tbccl.tensorsofthewall.com/en/latest/project/ecosystem.html
+    about: Report adapter problems in the adapter's own repository; the ecosystem page links to all of them.
