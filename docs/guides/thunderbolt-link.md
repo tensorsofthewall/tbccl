@@ -1,6 +1,10 @@
 # Connecting a Mac and a Linux host over Thunderbolt 4
 
-TBCCL carries ordinary TCP over whatever network path connects the ranks. A direct Thunderbolt 4 cable between a Mac and a Linux host gives a private, low-latency IP link. This guide describes the setup and the checks that were used when validating TBCCL on such a link. The addresses below are examples.
+```{note}
+**This page describes a link that is already configured.** It records the validated setup and the checks used on it. To establish a link from two computers that have never been connected, start with [Two machines over Thunderbolt](../getting-started/two-machine-thunderbolt.md). Interface names (`thunderbolt0`, `bridge0`), the example addresses and the MTU below belong to the validated pair; read the real values from your own machines.
+```
+
+TBCCL carries ordinary TCP over whatever network path connects the ranks. A direct Thunderbolt 4 cable between a Mac and a Linux host gives a private, low-latency IP link. This guide describes the validated setup and the checks that were used when validating TBCCL on such a link. The addresses below are examples.
 
 ## The link
 
@@ -8,7 +12,7 @@ TBCCL carries ordinary TCP over whatever network path connects the ranks. A dire
 |---|---|---|
 | Interface | `thunderbolt0` (the `thunderbolt-net` driver) | `bridge0` |
 | Example address | `192.168.3.2` | `192.168.3.1` |
-| MTU | 9000 | 9000 |
+| MTU | 9000 (optional; both ends must match) | 9000 |
 
 A healthy round trip is about 0.3 to 0.5 ms. Check from Linux:
 
@@ -44,7 +48,7 @@ Practices that worked for validation:
 - Do not reset controllers, rescan PCI devices, unload modules or change power settings as an automatic fix. Verify the current hardware identity first; bus addresses can change across reboots.
 - Prefer loopback tests for exhaustive sweeps and keep real-link runs small and focused.
 
-If the link is missing, work through it in order: cable and device enumeration on both hosts (`/sys/bus/thunderbolt/devices/` on Linux), interface and address configuration, ping in both directions bound to the expected addresses, the listener address and port of your application, then per-application firewall permissions on the Mac.
+If the link is missing, use the [Thunderbolt troubleshooting guide](thunderbolt-troubleshooting.md) and the read-only `tools/thunderbolt_link_doctor.py`. In outline, work through it in order: cable and device enumeration on both hosts (`/sys/bus/thunderbolt/devices/` on Linux), interface and address configuration, ping in both directions bound to the expected addresses, the listener address and port of your application, then per-application firewall permissions on the Mac.
 
 ## Latency: SO_BUSY_POLL
 

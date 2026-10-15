@@ -25,7 +25,15 @@ This site is the entry point for the whole TBCCL ecosystem. Four projects share 
 
 torch-tbccl, vllm-tbccl and exo-tbccl are independent adapters. Each carries or links its own libtbccl, and none requires another adapter. The [ecosystem overview](project/ecosystem.md) explains how the projects fit together and the [compatibility matrix](reference/compatibility-matrix.md) lists exactly which versions work together.
 
-**New here?** Install an adapter with the [install helper](getting-started/install-adapters.md), try the [five-minute demo](getting-started/examples.md), then read what is [supported and validated](project/validated-configurations.md). Questions and feedback: [getting help](project/getting-help.md); there is [no telemetry](project/privacy.md).
+**Get started.**
+
+1. **One machine, five minutes:** the [demo](getting-started/examples.md) runs a real two-rank collective on loopback.
+2. **Two machines over Thunderbolt:** [connect and verify the link](getting-started/two-machine-thunderbolt.md), with a [troubleshooting guide](guides/thunderbolt-troubleshooting.md).
+3. **PyTorch `torch.distributed`:** install with the [install helper](getting-started/install-adapters.md), then the torch-tbccl [two-host all-reduce](https://torch-tbccl.tensorsofthewall.com/en/latest/getting-started/quickstart.html).
+4. **Heterogeneous vLLM** (CUDA node and a Mac): the vllm-tbccl [install guide](https://vllm-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html).
+5. **Exo:** the exo-tbccl [two-host guide](https://exo-tbccl.tensorsofthewall.com/en/latest/guides/two-host.html).
+
+Then read what is [supported and validated](project/validated-configurations.md). Questions and feedback: [getting help](project/getting-help.md); there is [no telemetry](project/privacy.md).
 
 ```{toctree}
 :maxdepth: 2
@@ -34,6 +42,7 @@ torch-tbccl, vllm-tbccl and exo-tbccl are independent adapters. Each carries or 
 getting-started/overview
 getting-started/install
 getting-started/install-adapters
+getting-started/two-machine-thunderbolt
 getting-started/first-program
 getting-started/examples
 ```
@@ -44,6 +53,7 @@ getting-started/examples
 
 guides/c-api-quickstart
 guides/thunderbolt-link
+guides/thunderbolt-troubleshooting
 reference/platform-capabilities
 reference/configuration
 ```

@@ -12,6 +12,7 @@ New to TBCCL? Read the overview, install a release archive (or build from source
 overview
 install
 install-adapters
+two-machine-thunderbolt
 first-program
 examples
 ```

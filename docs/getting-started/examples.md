@@ -30,7 +30,7 @@ Expected: two lines, `rank 0: backend=tbccl result=[3.0, 30.0] OK` and the same 
 | Serve a model split across two hosts with vLLM | two hosts, a link, a local copy of the model | `examples/serve_pp2.sh` in `vllm-tbccl` ([guide](https://vllm-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html)) | Qwen3-0.6B, Linux CUDA with Mac Metal over Thunderbolt 4 (see its [validated configurations](https://vllm-tbccl.tensorsofthewall.com/en/latest/project/validated-configurations.html)) |
 | Run an Exo cluster across two hosts | two hosts, a link, a local copy of the model | the `exo-tbccl` [guide](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html) with exo-fork `tbccl-integration-v2` | once with Qwen3-0.6B-8bit on the current integration tag, and a larger model on earlier ones (see its [validated configurations](https://exo-tbccl.tensorsofthewall.com/en/latest/project/validated-configurations.html)) |
 
-The two-host rows are not part of any automated check. They need the hardware, the link set up as in the [Thunderbolt link guide](../guides/thunderbolt-link.md), and model files you already have: none of these tools downloads weights.
+The two-host rows are not part of any automated check. They need the hardware, the link set up as in [Two machines over Thunderbolt](two-machine-thunderbolt.md) (the [Thunderbolt link guide](../guides/thunderbolt-link.md) describes an already configured link), and model files you already have: none of these tools downloads weights.
 
 ## Measuring it properly
 

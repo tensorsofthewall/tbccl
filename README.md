@@ -33,6 +33,7 @@ The three adapters are independent of each other. Each one carries (or links) it
 
 - **Install an adapter:** [install helper](https://tbccl.tensorsofthewall.com/en/latest/getting-started/install-adapters.html), which selects, verifies and installs the right wheel for an environment you name (optional; the manual commands keep working).
 - **Try it without special hardware:** the [five-minute demo](https://tbccl.tensorsofthewall.com/en/latest/getting-started/examples.html).
+- **Connect two machines over Thunderbolt:** [first-time setup](https://tbccl.tensorsofthewall.com/en/latest/getting-started/two-machine-thunderbolt.html) (addresses, verification, [troubleshooting](https://tbccl.tensorsofthewall.com/en/latest/guides/thunderbolt-troubleshooting.html)), then the [PyTorch two-host all-reduce](https://torch-tbccl.tensorsofthewall.com/en/latest/getting-started/quickstart.html).
 - **Get help or give feedback:** [getting help](https://tbccl.tensorsofthewall.com/en/latest/project/getting-help.html) (issue forms for bugs, install problems and tested configurations). The projects collect [no telemetry](https://tbccl.tensorsofthewall.com/en/latest/project/privacy.html).
 
 ## What is supported
