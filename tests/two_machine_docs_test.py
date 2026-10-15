@@ -39,7 +39,8 @@ class Pages(unittest.TestCase):
             self.assertRegex(TROUBLE, r"(?m)^## %d\. " % n)
 
     def test_known_untested_steps_are_labelled(self):
-        self.assertIn("have **not yet been run from scratch on real hardware**", GUIDE)
+        self.assertIn("was **not** a first-time setup", GUIDE)
+        self.assertIn("Nobody who had never seen TBCCL", GUIDE)
 
 
 if __name__ == "__main__":

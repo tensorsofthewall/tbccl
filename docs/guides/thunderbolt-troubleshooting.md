@@ -10,7 +10,7 @@ Start with the checker on both machines. It only reads state:
 python3 thunderbolt_link_doctor.py --peer <peer-link-address>
 ```
 
-Its report names the failing area; jump to the matching entry.
+Its report names the failing area; jump to the matching entry. The final **Summary** lists the detected interface, the selected route, ping and TCP results and the checks that were **not performed**; a verdict of `INCOMPLETE` (exit status 3) means nothing failed but the link was not verified end to end, and only `READY` (exit status 0) means interface, route, ping and TCP all ran and passed.
 
 ## Which entry do I need?
 
@@ -150,6 +150,8 @@ ip -4 route ; netstat -rn -f inet # all routes
 **Symptom.** Same as entry 8, and the machine runs `firewalld`, `ufw`, `nftables` or `iptables` rules.
 
 **Check.** `sudo firewall-cmd --get-active-zones`, `sudo ufw status`, or `sudo nft list ruleset` (these read, they do not change). Look for a rule dropping input on the Thunderbolt interface.
+
+**What it looks like.** `Connection refused` (an immediate answer, not a timeout) while ping works and a listener is running on that machine means its firewall actively rejects the connection. On the tested Linux machine a new NetworkManager profile for the Thunderbolt interface fell into firewalld's default `public` zone and the Mac's connection was refused; pointing the profile at a zone that was already trusted for this cable (`nmcli connection modify <profile> connection.zone <zone>`, then `nmcli connection up <profile>`) fixed it. A firewall that silently drops packets shows up as a timeout instead.
 
 **Safe next step.** Allow traffic from the peer's link address on the Thunderbolt interface only, with your firewall's own tool. The rule's form depends on your tool; this is not scripted and not tested here. Do not disable the firewall.
 
