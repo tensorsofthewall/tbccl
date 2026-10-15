@@ -1,0 +1,3 @@
+#!/bin/sh
+# Rejects private AI session metadata in a commit message. Enable once per clone with: git config core.hooksPath .githooks
+exec python3 "$(git rev-parse --show-toplevel)/tools/check_session_metadata.py" --message-file "$1" --strip-comments

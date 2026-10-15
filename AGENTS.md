@@ -60,3 +60,12 @@ Changes under `include/tbccl/`, `src/core/`, `src/transport/`, `src/collectives/
 - Match the surrounding code. Add comments only for non-obvious constraints, and avoid referring to internal project history.
 - Validate at real boundaries (network input, caller buffers); trust internal invariants.
 - Add explicit paths when staging files. Build directories are not tracked.
+
+## Commit, tag and pull request metadata
+
+- Never include AI assistant session URLs, conversation identifiers, private chat references, or agent-generated session metadata (for example a `Claude-Session:` trailer) in commit messages, annotated tags, pull request titles or descriptions, or release notes. If a tool or harness adds such a line, remove it before committing, pushing or opening the pull request.
+- Commit messages describe the technical change and its motivation. Disclosure of AI assistance is allowed and, where a contribution needs it, should be a plain statement (for example a `Co-Authored-By:` trailer or a sentence in the pull request) that does not link a private work session. The generic product link is fine; a link to a specific session is not.
+- Enable the local hook once per clone: `git config core.hooksPath .githooks`. It runs `tools/check_session_metadata.py` on each commit message. Hooks can be bypassed, so the `session-metadata` workflow repeats the check on pull request text and commits, on commits pushed to `main`, on release tags and on the CHANGELOG.
+- Before creating an annotated release tag, check its message: `python3 tools/check_session_metadata.py --message-file <tag message file>`.
+- The checker reports the category and line but never prints the matching text. Tests use synthetic identifiers; never put a real session link in a test, a log or an issue.
+- Existing history is not rewritten for this: published releases are signed and attested, so some old commits still carry session references. Do not rewrite `main` or move release tags to remove them.
