@@ -19,8 +19,10 @@ give it and exits by itself):
 
     python3 tools/thunderbolt_link_doctor.py --listen 192.168.77.1 --tcp-port 50555
 
-Exit status: 0 when no check failed (warnings allowed), 1 when a check failed,
-2 for a usage error.
+Exit status: 0 when no check failed AND the link was verified end to end (interface,
+route, ping and TCP all ran and passed), 3 when nothing failed but something required
+was not checked (no --peer, no --tcp-port, or a check was skipped), 1 when a check
+failed, 2 for a usage error. The summary at the end lists the checks not performed.
 """
 
 import argparse
@@ -82,14 +84,33 @@ class Host:
 
 
 class Report:
-    def __init__(self):
+    def __init__(self, facts=None):
         self.results = []
+        self.facts = facts if facts is not None else {}
 
     def add(self, status, check, summary, detail=None, advice=None):
         self.results.append({"status": status, "check": check, "summary": summary, "detail": detail or [], "advice": advice})
 
     def failed(self):
         return any(r["status"] == FAIL for r in self.results)
+
+    def status_of(self, check):
+        return [r["status"] for r in self.results if r["check"] == check]
+
+    def readiness(self):
+        """"not ready" on any failure; "ready" only if interface, route, ping and tcp each ran and passed; otherwise "incomplete"."""
+        if self.failed():
+            return "not ready"
+        needed = ("interface", "route", "ping", "tcp")
+        if all(PASS in self.status_of(c) and SKIP not in self.status_of(c) for c in needed):
+            return "ready"
+        return "incomplete"
+
+    def not_performed(self):
+        return [r["check"] + ": " + r["summary"] for r in self.results if r["status"] == SKIP]
+
+    def concerns(self):
+        return [r["check"] + ": " + r["summary"] for r in self.results if r["status"] in (WARN, FAIL)]
 
     def render(self):
         out = []
@@ -102,8 +123,21 @@ class Report:
         counts = {s: sum(1 for r in self.results if r["status"] == s) for s in (PASS, WARN, FAIL, INFO, SKIP)}
         out.append("")
         out.append("%d passed, %d warnings, %d failed, %d informational, %d skipped" % (counts[PASS], counts[WARN], counts[FAIL], counts[INFO], counts[SKIP]))
-        if counts[FAIL] == 0 and counts[WARN] == 0:
-            out.append("No problem found. This does not prove the link is healthy under load; see docs/guides/thunderbolt-troubleshooting.md.")
+        out.append("")
+        out.append("Summary")
+        f = self.facts
+        out.append("  link interface : %s" % (f.get("interface", {}).get("name") or "not detected"))
+        out.append("  local address  : %s" % (", ".join(f.get("interface", {}).get("ipv4", [])) or "none"))
+        out.append("  peer address   : %s" % (f.get("peer") or "not given"))
+        out.append("  selected route : %s" % (f.get("route_interface") or "not checked"))
+        out.append("  reachability   : ping %s, tcp %s" % (f.get("ping", "not run"), f.get("tcp", "not run")))
+        out.append("  link concerns  : %s" % ("; ".join(self.concerns()) or "none found"))
+        out.append("  not performed  : %s" % ("; ".join(self.not_performed()) or "nothing"))
+        out.append("  verdict        : %s" % self.readiness().upper())
+        if self.readiness() == "ready":
+            out.append("The link passed every check that was run. This does not prove it is healthy under load; see docs/guides/thunderbolt-troubleshooting.md.")
+        elif self.readiness() == "incomplete":
+            out.append("Nothing failed, but the link was not verified end to end: run with --peer <address> and --tcp-port <port> (listener on the peer).")
         out.append("This tool only reads state. It changed nothing on this machine.")
         return "\n".join(out)
 
@@ -124,19 +158,27 @@ def sanitize_json(value):
 
 
 def json_report(report, facts):
-    return sanitize_json({"schema": SCHEMA, "facts": facts, "results": report.results})
+    summary = {"verdict": report.readiness(), "link_interface": facts.get("interface", {}).get("name"), "local_ipv4": facts.get("interface", {}).get("ipv4", []),
+               "peer": facts.get("peer"), "route_interface": facts.get("route_interface"), "ping": facts.get("ping", "not run"), "tcp": facts.get("tcp", "not run"),
+               "concerns": report.concerns(), "not_performed": report.not_performed()}
+    return sanitize_json({"schema": SCHEMA, "summary": summary, "facts": facts, "results": report.results})
 
 
 # ---------------------------------------------------------------- Linux
 
 
-def _ip_json(host, argv):
-    rc, out, _ = host.run(argv)
+def _ip_json(host, argv, reason=None):
+    """Parsed JSON of an `ip -j` command, or None; the reason (missing tool, permission, unparsable output) is appended to `reason` when given."""
+    rc, out, err = host.run(argv)
     if rc != 0:
+        if reason is not None:
+            reason.append("`%s` not available" % argv[0] if rc == 127 else "`%s` failed (%s)" % (" ".join(argv[:3]), err.strip() or rc))
         return None
     try:
         return json.loads(out)
     except ValueError:
+        if reason is not None:
+            reason.append("output of `%s` could not be parsed" % " ".join(argv[:3]))
         return None
 
 
@@ -218,7 +260,7 @@ def linux_interface(host, report, facts, name, addrs, peer):
     mtu = e.get("mtu") or _int(host.read(sys_dir + "/mtu"))
     v4 = ["%s/%s" % (a["local"], a["prefixlen"]) for a in e.get("addr_info", []) if a.get("family") == "inet"]
     v6 = [a["local"] for a in e.get("addr_info", []) if a.get("family") == "inet6" and a["local"].lower().startswith("fe80")]
-    facts["interface"] = {"os": "linux", "mtu": mtu, "operstate": oper, "carrier": carrier, "ipv4": v4, "ipv6_link_local": bool(v6)}
+    facts["interface"] = {"os": "linux", "name": name, "mtu": mtu, "operstate": oper, "carrier": carrier, "ipv4": v4, "ipv6_link_local": bool(v6)}
     if oper == "up" and carrier == "1":
         report.add(PASS, "interface", "%s is up with carrier" % name)
     elif carrier == "0" or oper in ("down", "lowerlayerdown"):
@@ -312,12 +354,17 @@ def scan_dmesg(host, report):
         report.add(PASS, "kernel-log", "no Thunderbolt/PCIe warnings in the kernel log")
 
 
-def linux_route(host, report, name, peer):
-    data = _ip_json(host, ["ip", "-j", "route", "get", peer])
+def linux_route(host, report, facts, name, peer):
+    why = []
+    data = _ip_json(host, ["ip", "-j", "route", "get", peer], why)
     if not data:
-        report.add(FAIL, "route", "no route to %s" % peer, advice="Configure an address in the peer's subnet on the Thunderbolt interface.")
+        if why and "not available" in why[0] or why and "parsed" in why[0]:
+            report.add(SKIP, "route", "route check not performed: " + why[0])
+        else:
+            report.add(FAIL, "route", "no route to %s" % peer, advice="Configure an address in the peer's subnet on the Thunderbolt interface.")
         return None
     dev = data[0].get("dev")
+    facts["route_interface"] = dev
     gw = data[0].get("gateway")
     if dev == name and not gw:
         report.add(PASS, "route", "traffic to %s leaves through %s directly" % (peer, dev))
@@ -335,18 +382,24 @@ def run_linux(host, report, facts, peer, interface):
     cands = [interface] if interface else linux_candidates(host)
     facts["candidate_interfaces"] = len(cands)
     if not cands:
-        report.add(FAIL, "interface", "no Thunderbolt network interface (driver thunderbolt-net) exists",
-                   advice="It is created when the cable is connected and the peer is authorized and ready. Check the controller results above.")
+        attached = facts.get("tb_peers")
+        report.add(FAIL, "interface", ("a Thunderbolt peer is attached but no network interface (driver thunderbolt-net) exists" if attached
+                                       else "no Thunderbolt network interface (driver thunderbolt-net) exists"),
+                   advice=("Check the driver result above (thunderbolt_net) and that the peer is authorized and has its own Thunderbolt networking enabled; "
+                           "then look at `ip -br link`." if attached else
+                           "It is created when the cable is connected and the peer is authorized and ready. Check the controller results above."))
         return
-    addrs = _ip_json(host, ["ip", "-j", "addr", "show"])
+    why = []
+    addrs = _ip_json(host, ["ip", "-j", "addr", "show"], why)
     if addrs is None:
-        report.add(SKIP, "interface", "`ip -j` is unavailable; install iproute2 to enable interface checks")
+        report.add(SKIP, "interface", "interface details unavailable: " + (why[0] if why else "unknown reason"),
+                   advice="Install iproute2 (`ip`) or run the tool where it can use it; interface, address and route checks were not performed.")
         return
     name = cands[0]
     if len(cands) > 1:
         report.add(WARN, "interface", "several Thunderbolt interfaces: %s; examining %s (pick with --interface)" % (", ".join(cands), name))
     if peer:
-        routed = linux_route(host, report, name, peer)
+        routed = linux_route(host, report, facts, name, peer)
         if routed and not interface and routed in cands:
             name = routed
     linux_interface(host, report, facts, name, addrs, peer)
@@ -394,7 +447,7 @@ def parse_thunderbolt_profile(text):
 def run_macos(host, report, facts, peer, interface):
     rc, out, err = host.run(["networksetup", "-listallhardwareports"])
     if rc != 0:
-        report.add(SKIP, "services", "`networksetup` failed: %s" % (err.strip() or rc))
+        report.add(SKIP, "services", "`networksetup` failed: %s" % (err.strip() or rc), advice="Port and bridge detection were not performed.")
         ports = []
     else:
         ports = parse_hardware_ports(out)
@@ -423,11 +476,15 @@ def run_macos(host, report, facts, peer, interface):
         return
     name = interface or bridge["device"]
     rc, out, err = host.run(["ifconfig", name])
+    if rc == 127:
+        report.add(SKIP, "interface", "interface details unavailable: `ifconfig` not found")
+        return
     if rc != 0:
-        report.add(FAIL, "interface", "`ifconfig %s` failed: %s" % (name, err.strip() or rc))
+        report.add(FAIL, "interface", "`ifconfig %s` failed: %s" % (name, err.strip() or rc),
+                   advice="Check the interface name (it comes from `networksetup -listallhardwareports`) or pass --interface.")
         return
     info = parse_ifconfig(out)
-    facts["interface"] = {"os": "macos", "mtu": info["mtu"], "status": info["status"], "ipv4": info["ipv4"], "ipv6_link_local": info["link_local"], "members": len(info["members"])}
+    facts["interface"] = {"os": "macos", "name": name, "mtu": info["mtu"], "status": info["status"], "ipv4": info["ipv4"], "ipv6_link_local": info["link_local"], "members": len(info["members"])}
     if info["status"] == "active":
         report.add(PASS, "interface", "%s is active" % name)
     elif info["status"] == "inactive":
@@ -453,7 +510,10 @@ def run_macos(host, report, facts, peer, interface):
                        advice="Both computers need addresses in one subnet, for example 192.168.77.1/24 and 192.168.77.2/24.")
         rc, out, _ = host.run(["route", "-n", "get", peer])
         routed = parse_route_interface(out) if rc == 0 else None
-        if routed == name:
+        facts["route_interface"] = routed
+        if rc == 127:
+            report.add(SKIP, "route", "route check not performed: `route` not available")
+        elif routed == name:
             report.add(PASS, "route", "traffic to %s leaves through %s" % (peer, routed))
         elif routed:
             report.add(FAIL, "route", "traffic to %s would leave through %s, not %s" % (peer, routed, name),
@@ -469,14 +529,16 @@ def run_macos(host, report, facts, peer, interface):
 # ---------------------------------------------------------------- reachability
 
 
-def check_ping(host, report, peer, system):
+def check_ping(host, report, facts, peer, system):
     wait = ["-W", "2"] if system == "Linux" else ["-t", "5"]
     rc, out, err = host.run(["ping", "-c", "3"] + wait + [peer], timeout=20)
     if rc == 127:
+        facts["ping"] = "not run"
         report.add(SKIP, "ping", "`ping` is not installed")
         return
     m = re.search(r"(\d+) (?:packets )?received", out)
     got = int(m.group(1)) if m else 0
+    facts["ping"] = "ok" if got == 3 else ("partial" if got else "failed")
     if got == 3:
         report.add(PASS, "ping", "3/3 replies from %s" % peer)
     elif got:
@@ -504,8 +566,10 @@ def tcp_check(peer, port, timeout=5.0, connect=socket.create_connection):
     return got == token, "echoed %d bytes" % len(got)
 
 
-def check_tcp(report, peer, port):
+def check_tcp(report, peer, port, facts=None):
     ok, detail = tcp_check(peer, port)
+    if facts is not None:
+        facts["tcp"] = "ok" if ok else "failed"
     if ok:
         report.add(PASS, "tcp", "TCP connect to %s:%d and echo succeeded" % (peer, port))
     else:
@@ -546,10 +610,15 @@ def listen(bind, port, seconds):
 
 
 def diagnose(host, peer=None, tcp_port=None, interface=None, tcp=check_tcp):
-    report, facts = Report(), {}
+    facts = {"peer": peer}
+    report = Report(facts)
     system = host.system()
     facts["os"] = system
     facts["arch"] = host.machine()
+    tested = {("Linux", "x86_64"), ("Linux", "AMD64"), ("Darwin", "arm64")}
+    if system in ("Linux", "Darwin") and (system, host.machine()) not in tested:
+        report.add(WARN, "platform", "%s on %s is not a tested combination (tested: Linux x86-64, macOS Apple silicon)" % (system, host.machine()),
+                   advice="The checks below still run, but results on this platform are not validated.")
     if system == "Linux":
         report.add(INFO, "platform", "Linux %s" % host.machine())
         run_linux(host, report, facts, peer, interface)
@@ -560,9 +629,9 @@ def diagnose(host, peer=None, tcp_port=None, interface=None, tcp=check_tcp):
         report.add(FAIL, "platform", "%s is not supported by this tool (Linux and macOS only)" % system)
         return report, facts
     if peer:
-        check_ping(host, report, peer, system)
+        check_ping(host, report, facts, peer, system)
         if tcp_port:
-            tcp(report, peer, tcp_port)
+            tcp(report, peer, tcp_port, facts) if tcp is check_tcp else tcp(report, peer, tcp_port)
         else:
             report.add(SKIP, "tcp", "no --tcp-port given; ping alone does not prove TCP works",
                        advice="Start the bundled listener on the peer and pass --tcp-port.")
@@ -602,7 +671,7 @@ def main(argv=None, host=None):
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(json_report(report, facts), f, indent=2)
         print("sanitized report written to %s" % args.json)
-    return 1 if report.failed() else 0
+    return {"not ready": 1, "incomplete": 3, "ready": 0}[report.readiness()]
 
 
 if __name__ == "__main__":

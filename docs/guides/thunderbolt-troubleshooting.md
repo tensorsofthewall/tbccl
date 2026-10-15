@@ -10,7 +10,7 @@ Start with the checker on both machines. It only reads state:
 python3 thunderbolt_link_doctor.py --peer <peer-link-address>
 ```
 
-Its report names the failing area; jump to the matching entry.
+Its report names the failing area; jump to the matching entry. The final **Summary** lists the detected interface, the selected route, ping and TCP results and the checks that were **not performed**; a verdict of `INCOMPLETE` (exit status 3) means nothing failed but the link was not verified end to end, and only `READY` (exit status 0) means interface, route, ping and TCP all ran and passed.
 
 ## Which entry do I need?
 

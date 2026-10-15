@@ -53,32 +53,32 @@ class FakeHost:
         return self.links.get(path)
 
 
-def linux_host(peer_attached=True, carrier="1", module=True, ping=None, aer=None, route=None):
+def linux_host(peer_attached=True, carrier="1", module=True, ping=None, aer=None, route=None, ifname="thunderbolt0", with_interface=True):
     tb = "/sys/bus/thunderbolt/devices"
     files = {tb + "/domain0/security": "none", tb + "/0-0/device_name": "host", "/proc/modules": "thunderbolt_net 1 0 - Live 0x0\n" if module else "x 1 0 - Live 0x0\n",
-             "/sys/class/net/thunderbolt0/carrier": carrier, "/sys/class/net/thunderbolt0/operstate": "up" if carrier == "1" else "down",
+             "/sys/class/net/%s/carrier" % ifname: carrier, "/sys/class/net/%s/operstate" % ifname: "up" if carrier == "1" else "down",
              "/sys/bus/pci/devices/0000:0a:00.0/class": "0x0c0340"}
     if peer_attached:
         files[tb + "/0-1/device_name"] = "Mac16,10"
         files[tb + "/0-1/authorized"] = "1"
     for kind, n in (aer or {"correctable": 0, "nonfatal": 0, "fatal": 0}).items():
         files["/sys/bus/pci/devices/0000:0a:00.0/aer_dev_" + kind] = "RxErr 0\nTOTAL_ERR_X %d\n" % n
-    links = {"/sys/class/net/thunderbolt0/device/driver": "../../../bus/thunderbolt/drivers/thunderbolt-net"}
+    links = {"/sys/class/net/%s/device/driver" % ifname: "../../../bus/thunderbolt/drivers/thunderbolt-net"} if with_interface else {}
     cmds = {
-        ("ip", "-j", "addr"): (0, fx("linux_ip_addr.json"), ""),
-        ("ip", "-j", "route"): (0, route if route is not None else fx("linux_route_get.json"), ""),
+        ("ip", "-j", "addr"): (0, fx("linux_ip_addr.json").replace("thunderbolt0", ifname), ""),
+        ("ip", "-j", "route"): (0, (route if route is not None else fx("linux_route_get.json")).replace("thunderbolt0", ifname), ""),
         ("ping",): ping or (0, fx("linux_ping.txt"), ""),
         ("dmesg",): (1, "", "dmesg: read kernel buffer failed: Operation not permitted"),
     }
     return FakeHost("Linux", files, links, cmds)
 
 
-def mac_host(profile=None, ifconfig=None, route=None, ping=None):
+def mac_host(profile=None, ifconfig=None, route=None, ping=None, bridge="bridge0"):
     cmds = {
-        ("networksetup", "-listallhardwareports"): (0, fx("mac_hardware_ports.txt"), ""),
+        ("networksetup", "-listallhardwareports"): (0, fx("mac_hardware_ports.txt").replace("bridge0", bridge), ""),
         ("system_profiler",): (0, profile if profile is not None else fx("mac_system_profiler.txt"), ""),
-        ("ifconfig",): (0, ifconfig if ifconfig is not None else fx("mac_ifconfig_bridge0.txt"), ""),
-        ("route",): (0, route if route is not None else fx("mac_route_get.txt"), ""),
+        ("ifconfig",): (0, (ifconfig if ifconfig is not None else fx("mac_ifconfig_bridge0.txt")).replace("bridge0", bridge), ""),
+        ("route",): (0, (route if route is not None else fx("mac_route_get.txt")).replace("bridge0", bridge), ""),
         ("ping",): ping or (0, fx("mac_ping.txt"), ""),
         (doc.MAC_FIREWALL,): (0, fx("mac_firewall.txt"), ""),
     }
@@ -190,6 +190,126 @@ class MacOS(unittest.TestCase):
         text = fx("mac_route_get.txt").replace("bridge0", "utun4")
         rep, _ = doc.diagnose(mac_host(route=text), peer="192.168.3.2")
         self.assertIn(doc.FAIL, status_of(rep, "route"))
+
+
+def ok_tcp(report, peer, port):
+    report.add(doc.PASS, "tcp", "stub")
+
+
+def bad_tcp(report, peer, port):
+    report.add(doc.FAIL, "tcp", "stub")
+
+
+class Readiness(unittest.TestCase):
+    def test_ready_only_when_route_ping_and_tcp_all_ran(self):
+        rep, facts = doc.diagnose(linux_host(), peer="192.168.3.1", tcp_port=5, tcp=ok_tcp)
+        self.assertEqual(rep.readiness(), "ready")
+        self.assertEqual(facts["route_interface"], "thunderbolt0")
+        self.assertIn("verdict        : READY", rep.render())
+
+    def test_success_without_tcp_or_peer_is_incomplete_not_ready(self):
+        rep, _ = doc.diagnose(linux_host(), peer="192.168.3.1")
+        self.assertEqual((rep.failed(), rep.readiness()), (False, "incomplete"))
+        self.assertIn("tcp", " ".join(rep.not_performed()))
+        rep, _ = doc.diagnose(linux_host())
+        self.assertEqual(rep.readiness(), "incomplete")
+        self.assertIn("INCOMPLETE", rep.render())
+
+    def test_exit_codes(self):
+        self.assertEqual(doc.main(["--peer", "192.168.3.1"], host=linux_host()), 3)
+        self.assertEqual(doc.main(["--peer", "192.168.3.1"], host=linux_host(peer_attached=False)), 1)
+
+    def test_partial_connectivity_ping_ok_tcp_failed(self):
+        rep, facts = doc.diagnose(linux_host(), peer="192.168.3.1", tcp_port=5, tcp=bad_tcp)
+        self.assertEqual((rep.readiness(), status_of(rep, "ping"), status_of(rep, "tcp")), ("not ready", [doc.PASS], [doc.FAIL]))
+
+    def test_json_summary_lists_what_was_not_performed(self):
+        rep, facts = doc.diagnose(linux_host(), peer="192.168.3.1")
+        s = doc.json_report(rep, facts)["summary"]
+        self.assertEqual((s["verdict"], s["link_interface"], s["peer"], s["route_interface"], s["ping"], s["tcp"]), ("incomplete", "thunderbolt0", "192.168.3.1", "thunderbolt0", "ok", "not run"))
+        self.assertTrue(any(x.startswith("tcp") for x in s["not_performed"]))
+        self.assertNotIn("skynet", json.dumps(doc.json_report(rep, facts)))
+
+
+class Names(unittest.TestCase):
+    def test_renamed_linux_interfaces(self):
+        for name in ("enx02aabbccddee", "tb-direct", "thunderbolt1"):
+            rep, facts = doc.diagnose(linux_host(ifname=name), peer="192.168.3.1")
+            self.assertFalse(rep.failed(), (name, rep.render()))
+            self.assertEqual(facts["interface"]["name"], name)
+
+    def test_other_macos_bridge_identifiers(self):
+        for name in ("bridge1", "bridge102"):
+            rep, facts = doc.diagnose(mac_host(bridge=name), peer="192.168.3.2")
+            self.assertFalse(rep.failed(), (name, rep.render()))
+            self.assertEqual((facts["interface"]["name"], facts["route_interface"]), (name, name))
+
+    def test_interface_override_on_linux(self):
+        rep, facts = doc.diagnose(linux_host(ifname="tb-direct"), peer="192.168.3.1", interface="tb-direct")
+        self.assertEqual(facts["interface"]["name"], "tb-direct")
+
+    def test_multiple_linux_interfaces_warn(self):
+        host = linux_host()
+        host.links["/sys/class/net/thunderbolt1/device/driver"] = "../../../bus/thunderbolt/drivers/thunderbolt-net"
+        rep, _ = doc.diagnose(host, peer="192.168.3.1")
+        self.assertTrue(any("several Thunderbolt interfaces" in r["summary"] for r in rep.results))
+
+
+class DegradedEnvironments(unittest.TestCase):
+    def test_missing_ip_utility_skips_instead_of_guessing(self):
+        host = linux_host()
+        host.commands.pop(("ip", "-j", "addr"))
+        rep, _ = doc.diagnose(host, peer="192.168.3.1")
+        self.assertEqual(status_of(rep, "interface"), [doc.SKIP])
+        self.assertNotEqual(rep.readiness(), "ready")
+
+    def test_malformed_json_is_reported_not_crashed_on(self):
+        host = linux_host()
+        host.commands[("ip", "-j", "addr")] = (0, "{not json", "")
+        rep, _ = doc.diagnose(host, peer="192.168.3.1")
+        self.assertEqual(status_of(rep, "interface"), [doc.SKIP])
+        self.assertIn("parsed", rep.results[[r["check"] for r in rep.results].index("interface")]["summary"])
+        host = linux_host(route="garbage")
+        rep, _ = doc.diagnose(host, peer="192.168.3.1")
+        self.assertEqual(status_of(rep, "route"), [doc.SKIP])
+
+    def test_route_permission_error_is_skipped(self):
+        host = linux_host()
+        host.commands[("ip", "-j", "route")] = (127, "", "command not found: ip")
+        rep, _ = doc.diagnose(host, peer="192.168.3.1")
+        self.assertEqual(status_of(rep, "route"), [doc.SKIP])
+
+    def test_missing_ping_is_skipped(self):
+        host = linux_host()
+        host.commands[("ping",)] = (127, "", "command not found: ping")
+        rep, facts = doc.diagnose(host, peer="192.168.3.1")
+        self.assertEqual((status_of(rep, "ping"), facts["ping"]), ([doc.SKIP], "not run"))
+
+    def test_macos_missing_networksetup_and_ifconfig(self):
+        host = mac_host()
+        host.commands.pop(("networksetup", "-listallhardwareports"))
+        rep, _ = doc.diagnose(host)
+        self.assertIn(doc.SKIP, status_of(rep, "services"))
+        self.assertNotEqual(rep.readiness(), "ready")
+        host = mac_host()
+        host.commands[("ifconfig",)] = (127, "", "command not found: ifconfig")
+        rep, _ = doc.diagnose(host, peer="192.168.3.2")
+        self.assertEqual(status_of(rep, "interface"), [doc.SKIP])
+
+    def test_macos_garbled_ifconfig_does_not_crash(self):
+        rep, _ = doc.diagnose(mac_host(ifconfig="???"), peer="192.168.3.2")
+        self.assertIn(doc.FAIL, status_of(rep, "address"))
+
+    def test_untested_architecture_warns(self):
+        host = linux_host()
+        host._machine = "aarch64"
+        rep, _ = doc.diagnose(host, peer="192.168.3.1")
+        self.assertIn(doc.WARN, status_of(rep, "platform"))
+
+    def test_peer_attached_without_interface_is_named_precisely(self):
+        rep, _ = doc.diagnose(linux_host(with_interface=False), peer="192.168.3.1")
+        text = " ".join(r["summary"] for r in rep.results if r["check"] == "interface")
+        self.assertIn("peer is attached but no network interface", text)
 
 
 class Platforms(unittest.TestCase):

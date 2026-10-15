@@ -41,3 +41,5 @@ jobs:
         run: python3 tests/thunderbolt_link_doctor_test.py
       - name: Two-machine Thunderbolt pages (commands, safety rules, index)
         run: python3 tests/two_machine_docs_test.py
+      - name: Onboarding path consistency (named files, entry points, addresses, validation status)
+        run: python3 tests/onboarding_consistency_test.py
