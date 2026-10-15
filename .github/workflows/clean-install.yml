@@ -58,7 +58,9 @@ jobs:
           python scripts/install_adapter.py install --adapter torch --python "$RUNNER_TEMP/env/bin/python" --device cpu 2>&1 | tee again.txt
           grep -qi "already installed" again.txt
       - name: Two-rank loopback all_reduce
+        timeout-minutes: 5
         env:
+          TORCH_TBCCL_TRACE: "1"
           TBCCL_LOCAL_ENDPOINT: "127.0.0.1:0"
           OMP_NUM_THREADS: "1"
         run: |
