@@ -104,7 +104,7 @@ class InstallAdapter(unittest.TestCase):
             (self.serve / name).unlink()
         (self.serve / "SHA256SUMS").write_text(f"{sums_hash or good}  {name}\n")
         inv = {"schema_version": 1, "adapters": {"torch": {"repo": "x/y", "version": version, "tag": f"v{version}", "commit": "0" * 40, "sums_url": f"{self.base}/SHA256SUMS",
-               "framework": {"name": "torch", "series": "2.13"}, "wheels": [{"filename": name, "url": f"{self.base}/{name}", "sha256": good, "python": python, "platform": PLAT[0]}]},
+               "framework": {"name": "torch", "series": "2.13"}, "wheels": [{"filename": name, "url": f"{self.base}/{name}", "sha256": good, "python": python, "platform": PLAT[0], **({"min_macos": "14.0"} if PLAT[0] == "macos_arm64" else {})}]},
                "vllm": {"repo": "x/z", "version": version, "tag": f"v{version}", "commit": "0" * 40, "sums_url": f"{self.base}/SHA256SUMS", "framework": {"name": "vllm", "exact": "0.31.0"}, "wheels": []}}}
         path = self.tmp / "inv.json"
         path.write_text(json.dumps(inv))
