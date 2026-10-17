@@ -1,0 +1,29 @@
+# B3C preset: local device staging on the CUDA host (single process, no network traffic). The real paths and launcher live in a git-ignored overlay.
+schema: tbccl-bench-config/1
+name: b3c-staging-linux
+description: "local CUDA staging: host, pageable and pinned memory, device-to-host and host-to-device, no network"
+defaults:
+  warmup: 20
+  iterations: 200
+  repetitions: 3
+  timeout_s: 120
+  startup_wait_s: 20
+  lease_s: 30
+  term_grace_s: 3
+  port_range: [<PORT_RANGE_START>, <PORT_RANGE_END>]
+  failure_policy: {on_failure: abort_run}
+  provenance: {require_same_version: true, require_stamped: true}
+  health: {strict: true, snapshot_each_point: true, max_load_fraction: 0.75}
+limits: {max_processes: 1, max_campaign_s: 900}
+topology: {kind: loopback, interconnect: local, transport: tcp, physical: false}
+hosts:
+  host-a:
+    launcher: {kind: local}
+    address: 127.0.0.1
+    executables_dir: <HOST_A_BUILD_DIR>
+ranks:
+  - {rank: 0, host: host-a, memory_backend: host}
+workloads:
+  - {name: staging, benchmark: tensor_staging, operations: [staging_d2h, staging_h2d], sizes: [4096, 65536, 262144, 1048576, 4194304, 16777216], rank_counts: [1], memory_backend: [host]}
+  - {name: staging-cuda-pageable, benchmark: tensor_staging, operations: [staging_d2h, staging_h2d], sizes: [4096, 65536, 262144, 1048576, 4194304, 16777216], rank_counts: [1], memory_backend: [cuda-pageable]}
+  - {name: staging-cuda-pinned, benchmark: tensor_staging, operations: [staging_d2h, staging_h2d], sizes: [4096, 65536, 262144, 1048576, 4194304, 16777216], rank_counts: [1], memory_backend: [cuda-pinned]}

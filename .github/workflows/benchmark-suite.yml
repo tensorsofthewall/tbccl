@@ -1,0 +1,37 @@
+name: benchmark-suite
+# The shared benchmark suite's offline tests. They install no framework (no PyTorch, vLLM, Exo or MLX), need no GPU, no
+# second host, no model and no physical link, and assert no performance threshold.
+on:
+  pull_request:
+    paths:
+      - "benchmarks/suite/**"
+      - "docs/benchmarks/**"
+      - ".github/workflows/benchmark-suite.yml"
+  push:
+    branches: [main]
+    paths:
+      - "benchmarks/suite/**"
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install the suite's one dependency for YAML configurations
+        run: python -m pip install pyyaml==6.0.3
+      - name: The suite starts and lists its providers with no framework installed
+        run: |
+          python -m benchmarks.suite list > /dev/null
+          python -m benchmarks.suite providers
+          python -m benchmarks.suite profiles
+      - name: Suite tests (offline)
+        run: python -m unittest discover -s benchmarks/suite/tests -t .

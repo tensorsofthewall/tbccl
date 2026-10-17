@@ -1,0 +1,102 @@
+{
+ "instances": {
+  "03b6f61a-2ba3-490c-a977-fd050c2a58b0": {
+   "MlxRingInstance": {
+    "instanceId": "03b6f61a-2ba3-490c-a977-fd050c2a58b0",
+    "shardAssignments": {
+     "modelId": "mlx-community/Qwen3-0.6B-8bit",
+     "runnerToShard": {
+      "42a310ab-1e51-468d-a457-5b51c955d4f1": {
+       "PipelineShardMetadata": {
+        "modelCard": {
+         "modelId": "mlx-community/Qwen3-0.6B-8bit",
+         "storageSize": {
+          "inBytes": 698351616
+         },
+         "nLayers": 28,
+         "hiddenSize": 1024,
+         "supportsTensor": false,
+         "numKeyValueHeads": 8,
+         "tasks": [
+          "TextGeneration"
+         ],
+         "components": null,
+         "family": "qwen",
+         "quantization": "8bit",
+         "baseModel": "Qwen3 0.6B",
+         "capabilities": [
+          "text",
+          "thinking",
+          "thinking_toggle"
+         ],
+         "backends": [
+          "MlxMetal",
+          "MlxCuda",
+          "MlxCpu"
+         ],
+         "reasoningDialect": "none",
+         "contextLength": 32768,
+         "usesCfg": false,
+         "trustRemoteCode": true,
+         "isCustom": false,
+         "vision": null,
+         "samplingDefaults": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "topK": 20,
+          "minP": 0.0,
+          "repetitionPenalty": null,
+          "presencePenalty": null,
+          "frequencyPenalty": null,
+          "thinking": null,
+          "nonThinking": {
+           "temperature": 0.7,
+           "topP": 0.8,
+           "topK": 20,
+           "minP": 0.0,
+           "repetitionPenalty": null,
+           "presencePenalty": null,
+           "frequencyPenalty": null
+          }
+         }
+        },
+        "deviceRank": 0,
+        "worldSize": 1,
+        "immediateException": false,
+        "shouldTimeout": null,
+        "startLayer": 0,
+        "endLayer": 28,
+        "nLayers": 28
+       }
+      }
+     },
+     "nodeToRunner": {
+      "f9186982a93c1ef3db20120c5868f43a": "42a310ab-1e51-468d-a457-5b51c955d4f1"
+     }
+    },
+    "hostsByNode": {
+     "f9186982a93c1ef3db20120c5868f43a": [
+      {
+       "ip": "0.0.0.0",
+       "port": 1
+      }
+     ]
+    },
+    "ephemeralPort": 55852
+   }
+  }
+ },
+ "runners": {
+  "42a310ab-1e51-468d-a457-5b51c955d4f1": {
+   "RunnerReady": {
+    "prefillServerPort": null
+   }
+  }
+ },
+ "topology": {
+  "nodes": [
+   "f9186982a93c1ef3db20120c5868f43a"
+  ],
+  "connections": {}
+ }
+}

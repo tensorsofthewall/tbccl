@@ -1,0 +1,4 @@
+(MainProcess pid=73034) INFO 10-17 07:46:04 [serve.py:221] Launching vLLM (v0.31.0) headless multiproc executor, with head node address 192.0.2.1:36038 for torch.distributed process group.
+(Worker pid=73044) INFO 10-17 07:46:08 [parallel_state.py:1825] world_size=2 rank=1 local_rank=0 distributed_init_method=tcp://192.0.2.1:36038 backend=tbccl
+(Worker pid=73044) INFO 10-17 07:46:20 [parallel_state.py:2269] rank 1 in world size 2 is assigned as DP rank 0, PP rank 1, PCP rank 0, TP rank 0, ETP rank 0, EP rank N/A, EPLB rank N/A
+(Worker pid=73044) INFO 10-17 07:46:20 [pipeline.py:175] Pipeline transport vllm_tbccl.backends.metal.TBCCLMetalPipelineTransport: rank=1/2

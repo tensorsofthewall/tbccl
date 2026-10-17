@@ -1,0 +1,15 @@
+{
+  "label": "suite",
+  "rank": 0,
+  "role": "sender",
+  "bucket_bytes": 262144,
+  "bucket_count": 4,
+  "compute_rounds": 20,
+  "compute_only_us": 27837.5,
+  "comm_only_us": 574.892,
+  "serial_us": 19291.2,
+  "async_overlap_us": 18971.4,
+  "hidden_us": 319.842,
+  "hidden_fraction": 0.556351,
+  "speedup": 1.01686
+}

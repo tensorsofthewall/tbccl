@@ -1,0 +1,22 @@
+{
+  "label": "suite",
+  "rank": 0,
+  "role": "sender",
+  "backend": "cuda-chunked",
+  "metal_async_path": "adapter",
+  "bytes": 1048576,
+  "chunk_bytes": 262144,
+  "pipeline_depth": 2,
+  "warmup": 2,
+  "iterations": 8,
+  "verify_ok": true,
+  "negotiated_transport": "tcp",
+  "completion_median_us": 502.424,
+  "completion_p95_us": 625.538,
+  "completion_p99_us": 625.538,
+  "completion_max_us": 625.538,
+  "completion_mean_us": 521.46,
+  "gib_per_s": 1.87275,
+  "enqueue_median_us": 1.847,
+  "completion_samples_us": [625.538, 531.682, 432.52, 455.163, 501.104, 502.424, 532.851, 590.399]
+}

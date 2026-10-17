@@ -1,0 +1,441 @@
+{
+ "schema_version": "tbccl-bench-baseline/1",
+ "kind": "definitions",
+ "catalog_id": "native",
+ "description": "Native TBCCL case definitions",
+ "created_utc": null,
+ "cases": [
+  {
+   "case_id": "native.tcp-rtt.64B",
+   "campaign_id": "b3b",
+   "family": "raw_network",
+   "benchmark_adapter": "tcp_pingpong",
+   "metric_name": "round_trip_time",
+   "unit": "us",
+   "aggregation": "mean_per_repetition_then_median",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [
+     "mean round trip per iteration; not comparable with a median"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tcp-pingpong",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 64,
+   "operation": "pingpong",
+   "benchmark_mode": "pingpong",
+   "timing_scope": "native_round_trip_echo",
+   "completion_semantics": "the client has received the full echo",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.p2p-rtt.64B",
+   "campaign_id": "b3b",
+   "family": "native_p2p",
+   "benchmark_adapter": "small_message_latency",
+   "metric_name": "round_trip_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "exploratory",
+    "conditions": [
+     "small messages show two latency modes per process pair; the cause is undetermined"
+    ],
+    "caveats": [
+     "report both modes; a single overhead figure does not exist at this size"
+    ]
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 64,
+   "operation": "p2p",
+   "benchmark_mode": "p2p_rtt",
+   "timing_scope": "native_round_trip_echo",
+   "completion_semantics": "every posted operation has completed (wait() returned) on rank 0",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.tcp-rtt.4KiB",
+   "campaign_id": "b3b",
+   "family": "raw_network",
+   "benchmark_adapter": "tcp_pingpong",
+   "metric_name": "round_trip_time",
+   "unit": "us",
+   "aggregation": "mean_per_repetition_then_median",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [
+     "mean round trip per iteration; not comparable with a median"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tcp-pingpong",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 4096,
+   "operation": "pingpong",
+   "benchmark_mode": "pingpong",
+   "timing_scope": "native_round_trip_echo",
+   "completion_semantics": "the client has received the full echo",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.p2p-rtt.4KiB",
+   "campaign_id": "b3b",
+   "family": "native_p2p",
+   "benchmark_adapter": "small_message_latency",
+   "metric_name": "round_trip_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "exploratory",
+    "conditions": [
+     "small messages show two latency modes per process pair; the cause is undetermined"
+    ],
+    "caveats": [
+     "report both modes; a single overhead figure does not exist at this size"
+    ]
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 4096,
+   "operation": "p2p",
+   "benchmark_mode": "p2p_rtt",
+   "timing_scope": "native_round_trip_echo",
+   "completion_semantics": "every posted operation has completed (wait() returned) on rank 0",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.transfer.e2e.16MiB.host-host.a-to-b",
+   "campaign_id": "b3c",
+   "family": "native_p2p",
+   "benchmark_adapter": "tensor_transfer",
+   "metric_name": "completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 16777216,
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.iperf3.tcp-stream.a-to-b",
+   "campaign_id": "b3b",
+   "family": "raw_network",
+   "benchmark_adapter": "iperf3",
+   "metric_name": "tcp_goodput_receiver",
+   "unit": "Gbit/s",
+   "aggregation": "median_of_repetitions",
+   "direction": "higher_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "iperf3",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 131072,
+   "operation": "tcp_stream",
+   "benchmark_mode": "single_stream",
+   "timing_scope": "iperf3_receiver_interval",
+   "completion_semantics": "test duration elapsed; receiver-side goodput (TCP payload, not link bandwidth)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.transfer.e2e.16MiB.host-host.b-to-a",
+   "campaign_id": "b3c",
+   "family": "native_p2p",
+   "benchmark_adapter": "tensor_transfer",
+   "metric_name": "completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "b-to-a",
+   "rank_count": 2,
+   "payload_bytes": 16777216,
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.iperf3.tcp-stream.b-to-a",
+   "campaign_id": "b3b",
+   "family": "raw_network",
+   "benchmark_adapter": "iperf3",
+   "metric_name": "tcp_goodput_receiver",
+   "unit": "Gbit/s",
+   "aggregation": "median_of_repetitions",
+   "direction": "higher_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "iperf3",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "b-to-a",
+   "rank_count": 2,
+   "payload_bytes": 131072,
+   "operation": "tcp_stream",
+   "benchmark_mode": "single_stream",
+   "timing_scope": "iperf3_receiver_interval",
+   "completion_semantics": "test duration elapsed; receiver-side goodput (TCP payload, not link bandwidth)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.allreduce.ring.1MiB.2r",
+   "campaign_id": "b3b",
+   "family": "native_collective",
+   "benchmark_adapter": "collective_bench",
+   "metric_name": "collective_duration_max_across_ranks",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 1048576,
+   "operation": "all_reduce",
+   "benchmark_mode": "collective",
+   "algorithm": "ring",
+   "datatype": "float32",
+   "timing_scope": "collective_slowest_rank",
+   "completion_semantics": "the collective call has returned on every rank (slowest rank per iteration)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.allreduce.reference.1MiB.2r",
+   "campaign_id": "b3b",
+   "family": "native_collective",
+   "benchmark_adapter": "collective_bench",
+   "metric_name": "collective_duration_max_across_ranks",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 1048576,
+   "operation": "all_reduce",
+   "benchmark_mode": "collective",
+   "algorithm": "reference",
+   "datatype": "float32",
+   "timing_scope": "collective_slowest_rank",
+   "completion_semantics": "the collective call has returned on every rank (slowest rank per iteration)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.staging.cuda-pinned.d2h.16MiB",
+   "campaign_id": "b3c",
+   "family": "native_staging",
+   "benchmark_adapter": "tensor_staging",
+   "metric_name": "device_to_host_staging_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cuda-local",
+   "memory_kind": "cuda-pinned",
+   "data_direction": "device-to-host",
+   "rank_count": 1,
+   "payload_bytes": 16777216,
+   "operation": "staging_d2h",
+   "benchmark_mode": "local_staging",
+   "timing_scope": "staging_call",
+   "completion_semantics": "the backend's staging call has returned",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.transfer.e2e.16MiB.cuda-pinned-metal-shared.a-to-b",
+   "campaign_id": "b3c",
+   "family": "native_p2p",
+   "benchmark_adapter": "tensor_transfer",
+   "metric_name": "completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cuda-metal",
+   "memory_kind": "cuda-pinned>metal-shared",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 16777216,
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination accelerator's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.async.cuda-chunked.256KiB.16MiB.a-to-b",
+   "campaign_id": "b3c",
+   "family": "native_async",
+   "benchmark_adapter": "async_transfer",
+   "metric_name": "completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cuda-metal",
+   "memory_kind": "cuda-pinned>metal-shared",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 16777216,
+   "operation": "transfer",
+   "benchmark_mode": "chunked_async",
+   "timing_scope": "async_completion_confirmed",
+   "completion_semantics": "the destination has committed the tensor and its ACK has been observed by the source; enqueue() return is not completion",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  }
+ ]
+}

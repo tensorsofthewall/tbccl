@@ -1,0 +1,131 @@
+{
+  "availability": {
+    "detected": {
+      "native_modules": null,
+      "platform": "linux-x86_64",
+      "psutil": null,
+      "python": "3.13.0",
+      "torch": null,
+      "torch-tbccl": null
+    },
+    "reasons": [
+      "Python package 'torch' (module 'torch') is not installed in this interpreter",
+      "Python package 'torch-tbccl' (module 'torch_tbccl') is not installed in this interpreter"
+    ],
+    "status": "environment_missing"
+  },
+  "benchmark_configuration_schema": {
+    "properties": {
+      "backend": {
+        "enum": [
+          "tbccl",
+          "gloo"
+        ],
+        "type": "string"
+      },
+      "batch": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "bucket_cap_mb": {
+        "minimum": 0,
+        "type": "number"
+      },
+      "bytes": {
+        "minimum": 4,
+        "type": "integer"
+      },
+      "devices": {
+        "type": "string"
+      },
+      "iterations": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "layers": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "steps": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "warmup": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "width": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "workload": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "workload"
+    ],
+    "type": "object"
+  },
+  "entry_point_sha256": {
+    "communication": "51c468e9845821e3cd08cd13108fe873ad0a50cdfa69cd19c41e0cf93435829d",
+    "ddp": "ccd3f9445511ac7340dc8a725280d4bf6898f6fe49cd5723f984c40c539dcadf"
+  },
+  "entry_points": {
+    "communication": "comm_bench.py",
+    "ddp": "ddp_bench.py"
+  },
+  "optional_dependencies": [
+    "psutil"
+  ],
+  "provider_id": "torch-tbccl",
+  "provider_protocol_version": 1,
+  "provider_version": "source-checkout",
+  "required_framework_versions": {
+    "libtbccl": {
+      "c_abi": [
+        1
+      ],
+      "wire_protocol": [
+        4
+      ]
+    },
+    "python": ">=3.13,<3.14",
+    "torch": ">=2.13,<2.14",
+    "torch-tbccl": ">=0.2,<0.3"
+  },
+  "required_model_configuration": {
+    "note": "ddp builds a synthetic MLP from layers/width/batch; no model files are used",
+    "required": false
+  },
+  "required_runtime_capabilities": [
+    "torch.distributed process group 'tbccl' (registered by torch_tbccl)",
+    "Gloo for the CPU baseline (cpu-cpu only)",
+    "CUDA device for cuda pairings",
+    "MPS device for mps pairings"
+  ],
+  "supported_device_pairings": [
+    "cpu-cpu",
+    "cpu-cuda",
+    "cpu-mps",
+    "cuda-mps"
+  ],
+  "supported_memory_kinds": [
+    "host",
+    "cuda",
+    "mps"
+  ],
+  "supported_platforms": [
+    "linux",
+    "darwin"
+  ],
+  "supported_result_schema_versions": [
+    "tbccl-bench-result/1"
+  ],
+  "supported_workloads": [
+    "collectives",
+    "p2p",
+    "async",
+    "ddp"
+  ]
+}

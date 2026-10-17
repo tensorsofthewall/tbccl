@@ -64,3 +64,10 @@ docs/_build/
 .local/
 dist/
 .pytest_cache/
+
+# Benchmark suite: machine-specific overlays and local output
+benchmarks/suite/configs/*.local.yaml
+benchmarks/suite/configs/*.local.json
+benchmarks/suite/profiles/*.local.yaml
+benchmarks/suite/profiles/*.local.json
+benchmarks/suite/local/

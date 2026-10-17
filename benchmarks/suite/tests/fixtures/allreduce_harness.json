@@ -1,0 +1,7 @@
+{"schema": "tbccl-benchmark/1", "created_utc": "2026-10-01T00:00:00Z", "label": "fixture",
+ "environment": {"python": "3.13.0", "platform": "Linux x86_64", "cpu_count": 8, "backend": "tbccl", "world_size": 2, "master_addr_is_loopback": true, "torch": "2.13.0", "torch_tbccl": "0.6.0", "libtbccl": "0.6.0"},
+ "settings": {"sizes": "1024,65536", "warmup": 10, "iters": 50, "repeats": 5, "dtype": "float32", "op": "all_reduce SUM", "device": "cpu"},
+ "results": [
+  {"bytes": 1024, "repeats": 5, "seconds_per_op_median": 0.0001, "seconds_per_op_min": 0.00009, "seconds_per_op_max": 0.00012, "algbw_gbps_median": 0.01024, "verified": true},
+  {"bytes": 65536, "repeats": 5, "seconds_per_op_median": 0.0002, "seconds_per_op_min": 0.00019, "seconds_per_op_max": 0.00024, "algbw_gbps_median": 0.32768, "verified": false}],
+ "note": "fixture"}

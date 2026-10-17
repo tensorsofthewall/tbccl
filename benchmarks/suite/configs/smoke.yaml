@@ -1,0 +1,42 @@
+# Quick, lightweight loopback check of every integrated benchmark. Two ranks on this machine; measures software overhead, not a network.
+#   python3 -m benchmarks.suite run benchmarks/suite/configs/smoke.yaml --dry-run
+#   python3 -m benchmarks.suite run benchmarks/suite/configs/smoke.yaml --label smoke
+schema: tbccl-bench-config/1
+name: smoke
+description: Loopback smoke test of the core benchmarks (2 ranks, small iteration counts)
+defaults:
+  warmup: 5
+  iterations: 30
+  repetitions: 2
+  timeout_s: 60
+topology:
+  kind: loopback
+  interconnect: loopback
+  transport: tcp
+  physical: false
+hosts:
+  local:
+    launcher: {kind: local}
+    address: 127.0.0.1
+ranks:
+  - {rank: 0, host: local, memory_backend: host}
+  - {rank: 1, host: local, memory_backend: host}
+workloads:
+  - name: tcp
+    benchmark: tcp_pingpong
+    operations: [pingpong]
+    sizes: smoke
+  - name: small-message
+    benchmark: small_message_latency
+    operations: [p2p, allgather]
+    sizes: smoke
+  - name: tensor-p2p
+    benchmark: tensor_transfer
+    operations: [latency_floor, network_only]
+    sizes: smoke
+  - name: collectives
+    benchmark: collective_bench
+    operations: [all_reduce, all_gather, reduce_scatter]
+    algorithms: [reference, ring, auto]
+    datatype: float32
+    sizes: smoke

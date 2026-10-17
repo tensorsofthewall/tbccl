@@ -1,0 +1,51 @@
+# EXAMPLE for two hosts joined by a direct Thunderbolt IP link (the first physical target; the suite itself is not tied to it).
+# Copy to tb4-core.local.yaml (git-ignored) or put the real values in an overlay; fill every <PLACEHOLDER>. Nothing private belongs in this tracked file.
+# Physical runs are opt-in:  python3 -m benchmarks.suite doctor tb4-core.local.yaml --probe --allow-physical   (read-only), then run ... --allow-physical
+# The launcher must reach host-b over a MANAGEMENT path (ordinary LAN), never over the link under test: heartbeats, relayed output and cleanup checks
+# would otherwise share the interface being measured (the preflight warns when the launcher uses a data address).
+# Open the benchmark port range (defaults.port_range) in each host's firewall yourself; the suite never changes a firewall.
+schema: tbccl-bench-config/1
+name: tb4-core
+description: Core benchmarks between a CUDA host and a Metal host over a direct link, both rank orientations
+defaults:
+  warmup: 20
+  iterations: 200
+  repetitions: 5
+  timeout_s: 300
+  startup_wait_s: 20
+  lease_s: 30
+  term_grace_s: 3
+  port_range: [<PORT_RANGE_START>, <PORT_RANGE_END>]
+  failure_policy: {on_failure: abort_run}
+  provenance: {require_same_version: true, require_stamped: true}
+limits: {max_processes: 2}
+topology:
+  kind: direct-link
+  interconnect: thunderbolt4-ip      # a label for reports; TBCCL's transport is TCP over IPv4, never RDMA
+  transport: tcp
+  physical: true
+hosts:
+  host-a:                            # the machine you run the suite on (CUDA)
+    launcher: {kind: local}
+    address: <HOST_A_LINK_ADDRESS>
+    interface: <HOST_A_LINK_INTERFACE>
+    interfaces: {link: <HOST_A_LINK_ADDRESS>}
+    executables_dir: <HOST_A_BUILD_DIR>
+    health_snapshot: true            # scripts/tb4_health_snapshot.py (read-only, no sudo)
+    expect: {mtu: <EXPECTED_MTU>, gpu_max_temp_c: <GPU_TEMP_LIMIT_C>}
+  host-b:                            # reached through a management-path launcher (Metal)
+    launcher: {kind: prefix, argv: ["<REMOTE_LAUNCH_PREFIX>", "<REMOTE_HOST_NAME>"], shell_join: true}
+    python: <HOST_B_PYTHON>          # the same CPython the adapters use (a uv-managed 3.13)
+    address: <HOST_B_LINK_ADDRESS>
+    interface: <HOST_B_LINK_INTERFACE>
+    interfaces: {link: <HOST_B_LINK_ADDRESS>}
+    executables_dir: <HOST_B_BUILD_DIR>
+    health_script: <HOST_B_REPOSITORY>/scripts/tb4_health_snapshot.py
+    expect: {mtu: <EXPECTED_MTU>}
+ranks:
+  - {rank: 0, host: host-a, memory_backend: cuda-pinned, interface: link}
+  - {rank: 1, host: host-b, memory_backend: metal-shared, interface: link}
+workloads:
+  # host-only benchmarks use host memory on every rank whatever the ranks' own backends are
+  - {name: tcp, benchmark: tcp_pingpong, operations: [pingpong], sizes: smoke, memory_backend: host, orientations: [forward, reverse]}
+  - {name: tensor-device, benchmark: tensor_transfer, operation: end_to_end, sizes: [4096], orientations: [forward, reverse]}

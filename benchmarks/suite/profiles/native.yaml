@@ -1,0 +1,55 @@
+# Native TBCCL between two hosts over TCP: raw TCP, small-message latency, host-memory transfers and a collective, both rank orientations.
+# Profile: native. Needs a TBCCL build on both hosts and a network or direct link between them. Physical: opt in with --allow-physical.
+# Copy this file to native.local.yaml (git-ignored) or keep your real values in an overlay passed with --overlay; fill every <PLACEHOLDER>. Nothing private belongs in this tracked file.
+#   python3 -m benchmarks.suite doctor native.local.yaml --probe --allow-physical      # read-only checks
+#   python3 -m benchmarks.suite run native.local.yaml --dry-run
+#   python3 -m benchmarks.suite run native.local.yaml --allow-physical
+schema: tbccl-bench-config/1
+name: native
+description: "Native TBCCL benchmarks between two hosts, host memory, both orientations"
+defaults:
+  warmup: 20
+  iterations: 100
+  repetitions: 3
+  timeout_s: 300
+  startup_wait_s: 20
+  lease_s: 30                        # a remote rank is terminated if the controller is silent this long
+  term_grace_s: 3
+  port_range: [<PORT_RANGE_START>, <PORT_RANGE_END>]
+  failure_policy: {on_failure: abort_run}
+  provenance: {require_same_version: true, require_stamped: false}
+  health: {strict: true, snapshot_each_point: true}
+limits: {max_processes: 2, max_campaign_s: 3600}
+topology:
+  kind: direct-link
+  interconnect: <INTERCONNECT_LABEL>   # a label for reports; TBCCL's transport is TCP over IPv4, never RDMA
+  transport: tcp
+  physical: true
+hosts:
+  host-a:                            # the machine you run the suite on
+    launcher: {kind: local}
+    address: <HOST_A_LINK_ADDRESS>
+    interface: <HOST_A_LINK_INTERFACE>
+    interfaces: {link: <HOST_A_LINK_ADDRESS>}
+    executables_dir: <HOST_A_BUILD_DIR>
+    health_snapshot: true
+    expect: {mtu: <EXPECTED_MTU>}
+  host-b:                            # reached through a management-path launcher (never the data link)
+    launcher: {kind: prefix, argv: ["<REMOTE_LAUNCH_PREFIX>", "<REMOTE_HOST_NAME>"], shell_join: true}
+    python: <HOST_B_PYTHON>
+    address: <HOST_B_LINK_ADDRESS>
+    interface: <HOST_B_LINK_INTERFACE>
+    interfaces: {link: <HOST_B_LINK_ADDRESS>}
+    management_address: <HOST_B_MANAGEMENT_ADDRESS>   # checked: the controller must reach it through a different interface than the data link
+    executables_dir: <HOST_B_BUILD_DIR>
+    health_script: <HOST_B_REPOSITORY>/scripts/tb4_health_snapshot.py
+    expect: {mtu: <EXPECTED_MTU>}
+ranks:
+  - {rank: 0, host: host-a, memory_backend: host, interface: link}
+  - {rank: 1, host: host-b, memory_backend: host, interface: link}
+workloads:
+  # a bounded first measurement; add 16777216 (16 MiB) to the transfer sizes for the large-message regime
+  - {name: tcp, benchmark: tcp_pingpong, operations: [pingpong], sizes: smoke, orientations: [forward, reverse]}
+  - {name: small-message, benchmark: small_message_latency, operations: [p2p], sizes: [64, 4096], orientations: [forward, reverse]}
+  - {name: transfer, benchmark: tensor_transfer, operations: [end_to_end], sizes: [4096, 1048576], orientations: [forward, reverse]}
+  - {name: collectives, benchmark: collective_bench, operations: [all_reduce], algorithms: [auto], datatype: float32, sizes: [4096, 1048576], rank_counts: [2]}

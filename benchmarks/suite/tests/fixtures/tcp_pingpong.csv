@@ -1,0 +1,4 @@
+mode,size_bytes,iterations,seconds,rtt_us,gbps,messages_per_second
+pingpong,64,10000,0.126200,12.62,0.0812,79213.0
+stream,64,100000,0.176172394,0,0.290624420986,567625.822239
+pingpong,4096,10000,0.1543,15.43,4.248,64821.0
