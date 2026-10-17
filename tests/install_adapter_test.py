@@ -275,7 +275,8 @@ class Inventory(unittest.TestCase):
         with Quiet() as q:
             code = ia.main(["--inventory", str(ROOT / "release" / "wheels.json"), "list"])
         self.assertEqual(code, 0)
-        self.assertIn("torch-tbccl 0.2.0", q.o.getvalue())
+        current = json.loads((ROOT / "release" / "ecosystem.json").read_text())["torch_tbccl"]["version"]  # the real inventory follows the current release
+        self.assertIn(f"torch-tbccl {current}", q.o.getvalue())
         self.assertIn("cp312", q.o.getvalue())
 
 
