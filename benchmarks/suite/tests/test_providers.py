@@ -165,8 +165,15 @@ class SharedPaths(SuiteTestCase):
         self.assertEqual(providers.shareable_path("/mnt/disk/projects/adapter/benchmarks/provider"), "<...>/benchmarks/provider")
 
     def test_values_that_are_not_absolute_paths_are_unchanged(self):
-        for value in (None, "python3", "bin/python", "/a/b"):
+        for value in (None, "python3", "bin/python", "/a"):
             self.assertEqual(providers.shareable_path(value), value)
+
+    def test_short_paths_do_not_keep_a_user_name(self):
+        """With only the last two components kept, `/home/<user>/python` would still name the user."""
+        for path, expected in (("/home/alice/python", "<...>/python"), ("/Users/alice", "~"), ("/mnt/alice/venv", "<...>/venv"), ("/home/alice/proj/bin/python", "<...>/bin/python")):
+            out = providers.shareable_path(path)
+            self.assertEqual(out, expected)
+            self.assertNotIn("alice", out)
 
     def test_a_path_inside_a_sentence_is_shortened_too(self):
         out = providers.shareable_path("module missing for /home/someone/envs/torch/bin/python (see log)")
