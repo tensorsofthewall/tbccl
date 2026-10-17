@@ -81,7 +81,7 @@ The keys are `<name>_python` and `<name>_bench_dir` for `torch`, `vllm` and `exo
 
 A `run` records, for every framework workload, `environment.providers`: the provider id, protocol and provider version, the interpreter, the directory, the framework versions the provider detected, the hash of the compiled extension the adapter wheel ships and the hashes of its scripts. Versions it could not detect are absent, not invented. A library bundled in an adapter wheel is identified by what the running workload reports about itself at execution time (the workload scripts record the library, C ABI and wire protocol versions they actually loaded), not by the TBCCL checkout the runner was started from.
 
-If a host configures no `<name>_bench_dir`, the runner falls back to the compatibility copy of the workload scripts that still ships in this repository (`benchmarks/suite/torch_bench`, `vllm_bench`, `exo_bench`) and records `status: bundled_compat` with the hashes of those scripts and no framework versions. The copies exist so that this repository works on its own until the providers are released, and they are removed once the adapter repositories ship them.
+A host that configures no `<name>_bench_dir` cannot plan that framework's workloads (the error names the missing key), and a record that is written for such a point says `status: not_configured`. Providers are configured; they are never searched for.
 
 ## Process ownership and security
 
