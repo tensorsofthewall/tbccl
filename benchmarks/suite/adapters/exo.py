@@ -2,7 +2,7 @@
 
 The suite never imports Exo, MLX or exo-tbccl. One workload point is one cluster lifecycle: the adapter starts one Exo node per host (rank r = the r-th configured host; Exo elects the
 master and chooses the pipeline stage order itself, so the stage assignment is read back, never assumed), one passive sampler per host and a client that waits for the nodes, places one
-instance with Exo's normal placement, checks what was placed, waits for the runners, runs the phases and deletes the instance (``exo_bench/client.py``). The runner owns every process:
+instance with Exo's normal placement, checks what was placed, waits for the runners, runs the phases and deletes the instance (the exo-tbccl provider's ``client.py``). The runner owns every process:
 argument arrays only, a lease/heartbeat on remote hosts, bounded termination of everything started, no name matching. Every node gets a unique ``EXO_ZENOH_NAMESPACE`` (the sampler
 selects Exo's processes by it), an isolated ``EXO_HOME``, ``EXO_OFFLINE=true`` and no optional exo-tbccl fast path.
 
@@ -43,7 +43,7 @@ SCENARIOS = {
 
 
 def masters_from_logs(logs):
-    from ..exo_bench import validation
+    from ..stream import exo_validation as validation
     return validation.masters_by_node(logs)
 
 
@@ -55,7 +55,7 @@ class ExoPipeline(BenchmarkAdapter):
         self.caps = Capabilities(
             name=name, category=category, description=f"Exo {description} (exo-tbccl {SUPPORTED_EXO_TBCCL}, exo-fork tbccl-integration-v2)", executable="exo", operations=operations,
             memory_backends=STAGE_DEVICES, min_ranks=1, max_ranks=2, executable_in_build=False, supports_warmup=False, supports_iterations=False, verification={op: "native" for op in operations},
-            source_files=("benchmarks/suite/exo_bench/client.py", "benchmarks/suite/exo_bench/sampler.py", "benchmarks/suite/exo_bench/metrics.py", "benchmarks/suite/exo_bench/validation.py"),
+            source_files=("<provider>/client.py", "<provider>/sampler.py", "benchmarks/suite/stream/exo_metrics.py", "benchmarks/suite/stream/exo_validation.py"),
             notes="Framework benchmark, not a native TBCCL benchmark. payload_bytes is a placeholder (1): the workload is defined by options.prompts and options.phases. Ranks are hosts (one Exo "
                   "node each); Exo chooses the stage order, and the placement that happened is recorded. Needs per-host executables: exo, exo_python, exo_bench_dir (and exo_lan_address on a "
                   "remote host so the client can read that node's own view).")
@@ -278,7 +278,7 @@ class ExoPipeline(BenchmarkAdapter):
 
     def _evidence(self, point, group, layout, ready, logs, outcome):
         """Prove which backend carried the pipeline and that the cluster was what the experiment says."""
-        from ..exo_bench import validation
+        from ..stream import exo_validation as validation
         backend = point.options["backend"]
         want = validation.KINDS[backend]
         if layout["kind"] != want:
@@ -353,7 +353,7 @@ class ExoPipeline(BenchmarkAdapter):
         return out
 
     def _measure(self, point, phases, evidence, raw, primary, layout, ready):
-        from ..exo_bench import metrics
+        from ..stream import exo_metrics as metrics
         pname = primary["phase"]
         recs = raw["records"].get(pname)
         if not recs:

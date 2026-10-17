@@ -16,6 +16,7 @@ Patch release. It adds the public benchmark suite and its documentation. There i
 - A shared public benchmark suite (`python3 -m benchmarks.suite`): native point-to-point, latency, transfer, collective and device-memory benchmarks, ready-made profiles (`quick`, `native`, `device`, `pytorch`, `vllm`, `exo`, `custom`), health gates, remote supervision and cleanup, and a result schema (`tbccl-bench-result/1`).
 - An external provider protocol (version 1): the PyTorch, vLLM and Exo workloads live in the repositories of torch-tbccl, vllm-tbccl and exo-tbccl and are run by the shared runner after `describe` and `validate` steps on every participating host.
 - Reports in Markdown, HTML (offline), JSON and CSV; a sanitized export for sharing results.
+- The PyTorch, vLLM and Exo workload scripts are not part of TBCCL: they live only in the torch-tbccl, vllm-tbccl and exo-tbccl repositories (tags `v0.2.1`, `v0.2.1`, `v0.3.1`) and are run through the provider protocol. A framework workload with no provider configured is refused by the preflight and names the missing setting; the native benchmarks are unaffected.
 - Regression comparison of two runs of one configuration, with the compatibility checks and statistical classification, and a record of build identity (matching, different or unknown) for the TBCCL archive, the provider and the framework.
 
 ### Documentation

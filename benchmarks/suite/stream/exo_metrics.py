@@ -2,7 +2,7 @@
 
 Exo streams one server-sent event per generated token (a ``TokenChunk``): ``choices[0].delta.content`` holds the decoded text of that token, which can be an empty string,
 ``choices[0].logprobs.content`` (only when logprobs were requested) names the token, ``choices[0].finish_reason`` is set on the last token's event and ``usage`` is attached
-to that event. Exo exposes no token ids. The definitions of TTFT, TPOT, ITL and E2E are those of ``vllm_bench.metrics`` (one source of truth for every framework benchmark);
+to that event. Exo exposes no token ids. The definitions of TTFT, TPOT, ITL and E2E are those of ``stream/metrics.py`` (one source of truth for every framework benchmark);
 this module only decides what an Exo event contributes:
 
   token event    an event with ``logprobs.content`` entries (each entry is one token), or - when logprobs were not requested - an event whose delta carries a ``content`` (or
@@ -12,22 +12,7 @@ this module only decides what an Exo event contributes:
 """
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
-
-def _shared():
-    """The vLLM benchmark's metrics module, loaded by path under its own name: this module also runs as a flat script module next to the client on a remote host, where a package import is not available."""
-    path = Path(__file__).resolve().parent.parent / "vllm_bench" / "metrics.py"
-    spec = importlib.util.spec_from_file_location("_tbccl_stream_metrics", path)
-    module = importlib.util.module_from_spec(spec)
-    import sys
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_m = _shared()
+from . import metrics as _m
 StreamError, Timeline, derive, parse_sse_line, phase_throughput, request_distributions, summarize = (
     _m.StreamError, _m.Timeline, _m.derive, _m.parse_sse_line, _m.phase_throughput, _m.request_distributions, _m.summarize)
 

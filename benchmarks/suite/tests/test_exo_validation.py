@@ -3,7 +3,7 @@ import copy
 import json
 import unittest
 
-from benchmarks.suite.exo_bench import validation
+from benchmarks.suite.stream import exo_validation as validation
 from benchmarks.suite.tests.common import FIXTURES
 
 REAL = json.loads((FIXTURES / "exo" / "state_single_ring_ready.json").read_text())

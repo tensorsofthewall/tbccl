@@ -22,7 +22,7 @@ class Ctx:
     class _Host:
         def __init__(self, interface="lo", local=True):
             self.id, self.interface, self.is_local = "local", interface, local
-            self.executables = {}
+            self.executables = {"torch_bench_dir": "/provider"}
 
     def __init__(self):
         self.config = type("C", (), {"hosts": {"local": self._Host()}})()
@@ -110,11 +110,19 @@ class Capabilities(SuiteTestCase):
 
 
 class Planning(SuiteTestCase):
+    def test_a_host_without_a_provider_directory_is_refused_with_a_pointer_to_the_provider(self):
+        ctx = Ctx()
+        ctx.config.hosts["local"].executables = {}
+        with self.assertRaises(ParseError) as raised:
+            REGISTRY["torch_p2p"].plan(point("torch_p2p", "p2p_ack", 4096), ctx, [31000, 31001], self.dir)
+        self.assertIn("torch_bench_dir", str(raised.exception))
+        self.assertIn("torch-tbccl provider", str(raised.exception))
+
     def test_command_lines_and_environment(self):
         p = point("torch_collectives", "broadcast", 65536, ("cuda", "mps"), source=1)
         g = REGISTRY["torch_collectives"].plan(p, Ctx(), [31000, 31001], self.dir)
         a0, a1 = g.invocations
-        self.assertEqual(a0.argv[:2], ["/venv/bin/python", "/repo/benchmarks/suite/torch_bench/comm_bench.py"])
+        self.assertEqual(a0.argv[:2], ["/venv/bin/python", "/provider/comm_bench.py"])
         self.assertEqual(a0.argv[a0.argv.index("--devices") + 1], "cuda,mps")
         self.assertEqual(a0.argv[a0.argv.index("--source") + 1], "1")
         self.assertEqual(a0.argv[a0.argv.index("--expect-addresses") + 1], "192.0.2.1,192.0.2.2")

@@ -290,13 +290,9 @@ class Provenance(SuiteTestCase):
         e = RunContext(make_config(hosts=hosts)).provider_entries(point("torch_p2p", "p2p_ack", 4096))[0]
         self.assertIsNone(e["native_modules"])
 
-    def test_the_bundled_copy_is_recorded_as_such_and_versions_stay_unavailable(self):
-        ctx = RunContext(make_config())
-        e = ctx.provider_entries(point("torch_p2p", "p2p_ack", 4096))[0]
-        self.assertEqual((e["status"], e["provider_version"], e["framework_versions"]), ("bundled_compat", None, {}))
-        self.assertIn("unavailable", e["note"])
-        self.assertIn("comm_bench.py", e["entry_point_sha256"])  # the bundled scripts are named by hash
-        self.assertTrue(all(len(h) == 64 for h in e["entry_point_sha256"].values()))
+    def test_a_host_with_no_provider_directory_is_recorded_as_not_configured(self):
+        e = RunContext(make_config()).provider_entries(point("torch_p2p", "p2p_ack", 4096))[0]
+        self.assertEqual((e["status"], e["provider_version"], e["framework_versions"], e["entry_point_sha256"]), ("not_configured", None, {}, {}))
 
     def test_a_provider_that_cannot_be_described_is_recorded_not_invented(self):
         d = write_provider(self.dir / "p", "raise SystemExit(2)\n")
@@ -363,29 +359,6 @@ class Contract(unittest.TestCase):
         for pid, names in needed.items():
             shipped = {Path(rel).name for rel in self.fixture(pid)["entry_points"].values()}
             self.assertTrue(names <= shipped, (pid, names - shipped))
-
-    def test_the_compatibility_copies_equal_the_scripts_the_providers_ship(self):
-        """Parity of the move: every workload script the suite still carries (`torch_bench`, `vllm_bench`, `exo_bench`) is byte-identical to the one the owning provider ships, except the two
-        Exo modules whose only edit is the lines that locate the framework-neutral modules the provider now carries itself."""
-        import hashlib
-        suite = Path(providers.__file__).resolve().parent
-        pins = json.loads((FIXTURES / "PINNED.json").read_text())["parity"]
-
-        def exo_text(name, text):
-            old, new = ('"vllm_bench" / "metrics.py"', '"stream_metrics.py"') if name == "metrics.py" else ('"vllm_bench" / "sampler.py"', '"process_sampler.py"')
-            text = text.replace("Path(__file__).resolve().parent.parent / " + old, "Path(__file__).resolve().parent / " + new)
-            return (text.replace("``vllm_bench.metrics``", "``stream_metrics.py``").replace("(``vllm_bench/sampler.py:", "(``process_sampler.py``:").replace("The vLLM benchmark's metrics module", "The shared stream metrics module")
-                    .replace("the vLLM sampler (``vllm_bench/sampler.py``:", "the shared process sampler (``process_sampler.py``:"))
-
-        checked = 0
-        for repo, files in pins.items():
-            for suite_path, pin in files.items():
-                data = (suite / suite_path).read_bytes()
-                if repo == "exo-tbccl" and suite_path in ("exo_bench/metrics.py", "exo_bench/sampler.py"):
-                    data = exo_text(Path(suite_path).name, data.decode()).encode()
-                self.assertEqual(hashlib.sha256(data).hexdigest(), pin["provider_sha256"], f"{suite_path} differs from {repo}/{pin['provider_file']}")
-                checked += 1
-        self.assertGreaterEqual(checked, 19)
 
     @unittest.skipUnless(__import__("os").environ.get("TBCCL_PROVIDER_CHECKOUTS"), "set TBCCL_PROVIDER_CHECKOUTS to compare live provider checkouts with the pins")
     def test_live_checkouts_match_the_pins(self):

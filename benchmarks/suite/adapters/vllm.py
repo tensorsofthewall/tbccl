@@ -2,7 +2,7 @@
 
 The suite never imports vLLM, PyTorch or vllm-tbccl. One workload point is one engine lifecycle: the adapter starts the API node (pipeline stage 0, node rank 0), the headless
 node (stage 1) when the point is a two-node pipeline, one passive sampler per host (resources, link counters, TCP connection census, engine liveness) and a client that runs the
-point's ordered phases against the API (``vllm_bench/client.py``). The runner owns every process: argument arrays only, one session per process, a lease/heartbeat on remote
+point's ordered phases against the API (the vllm-tbccl provider's ``client.py``). The runner owns every process: argument arrays only, one session per process, a lease/heartbeat on remote
 hosts, and bounded termination of everything it started on both hosts. vLLM's leader never notices a dead headless worker, so liveness is supervised from outside: the
 sampler of a host exits with a failure status when an engine process it saw disappears, and the runner fails the whole group on any nonzero exit.
 
@@ -77,7 +77,7 @@ class VllmPipeline(BenchmarkAdapter):
         self.caps = Capabilities(
             name=name, category=category, description=f"vLLM {description} (vllm-tbccl {SUPPORTED_VLLM_TBCCL}, vLLM {SUPPORTED_VLLM}, Qwen3-0.6B)", executable="vllm", operations=operations,
             memory_backends=STAGE_DEVICES, min_ranks=1, max_ranks=2, executable_in_build=False, supports_warmup=False, supports_iterations=False, verification={op: "native" for op in operations},
-            source_files=("benchmarks/suite/vllm_bench/client.py", "benchmarks/suite/vllm_bench/sampler.py", "benchmarks/suite/vllm_bench/metrics.py"),
+            source_files=("<provider>/client.py", "<provider>/sampler.py", "benchmarks/suite/stream/metrics.py"),
             notes="Framework benchmark, not a native TBCCL benchmark. payload_bytes is a placeholder (1): the workload is defined by options.phases (prompt tokens, output tokens, concurrency). "
                   "Ranks are pipeline stages; rank_counts [1] runs a single-node reference with the stage-0 host. Needs per-host executables: vllm, vllm_python, vllm_bench_dir, vllm_model_dir "
                   "(and vllm_workload, vllm_reference on the API host).")
@@ -153,7 +153,7 @@ class VllmPipeline(BenchmarkAdapter):
         return {"payload_semantics": "not applicable: the payload size is a placeholder; the workload is defined by prompt and output token counts in options.phases",
                 "backend": "vllm-tbccl" if point.rank_count == 2 else "vllm-single-node",
                 "timing_method": "client-side time.monotonic_ns() on the API host: submission time and the arrival time of every output-carrying server-sent event; per-request TTFT, TPOT, ITL and E2E are "
-                                 "derived from the raw timelines (vllm_bench/metrics.py); timestamps of different hosts are never subtracted",
+                                 "derived from the raw timelines (stream/metrics.py); timestamps of different hosts are never subtracted",
                 "completion_semantics": "TTFT = first output event; E2E = last output event; the request's token count is the server-reported usage, never the configured maximum"}
 
     # ---- planning ----
@@ -172,10 +172,7 @@ class VllmPipeline(BenchmarkAdapter):
         host = ctx.config.hosts[host_id]
         base = host.executables.get("vllm_bench_dir")
         if not base:
-            if host.is_local:
-                base = str(Path(ctx.repo_root) / "benchmarks" / "suite" / "vllm_bench")
-            else:
-                raise ParseError(f"remote host '{host.id}' needs executables.vllm_bench_dir")
+            raise ParseError(f"host '{host.id}' needs executables.vllm_bench_dir (the vllm-tbccl provider directory, benchmarks/provider in that repository)")
         return str(Path(base) / script)
 
     def _server_env(self, point, ctx, rank, spec, ports):
@@ -462,7 +459,7 @@ class VllmPipeline(BenchmarkAdapter):
         return out
 
     def _measure(self, point, phases, evidence, raw, primary, outcome):
-        from ..vllm_bench import metrics
+        from ..stream import metrics
         pname = primary["phase"]
         recs = raw["records"].get(pname)
         if not recs:
@@ -585,7 +582,7 @@ class VllmBackend(VllmPipeline):
         sizes = got[0]["sizes"]
         if not all(s["echo_verified"] for s in sizes) or not all(s["peer_received_verified"] for s in got[1]["sizes"]):
             raise ParseError("a tensor dict did not arrive unchanged")
-        from ..vllm_bench import metrics
+        from ..stream import metrics
         primary = next((s for s in sizes if s["tokens"] == int(point.options.get("primary_tokens", sizes[0]["tokens"]))), sizes[0])
         s = metrics.summarize(primary["samples_us"])
         stats = {k: s[k] for k in ("min", "max", "mean") if s[k] is not None}

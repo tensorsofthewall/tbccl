@@ -1,0 +1,1 @@
+"""Framework-neutral request metrics and response validation the runner applies to the raw per-request timelines a provider records (standard library only). The providers carry byte-identical copies of the stream metrics they use in their own clients."""

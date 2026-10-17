@@ -19,7 +19,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import _io
-from ..vllm_bench import metrics
+from ..stream import metrics
 from . import b3b
 from .b3b import CATEGORICAL, GRID, INK, MUTED
 

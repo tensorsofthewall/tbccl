@@ -3,7 +3,7 @@ import json
 import unittest
 
 from benchmarks.suite.tests.common import approx
-from benchmarks.suite.vllm_bench import metrics
+from benchmarks.suite.stream import metrics
 
 
 def sse(obj):

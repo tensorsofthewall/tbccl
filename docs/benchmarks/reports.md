@@ -23,7 +23,7 @@ A run id, a run directory or a `results.jsonl` path all work. Files are written 
 
 * The **statistic** column says what a value is (the median over repetitions of each repetition's median, or a mean for tools that report only a mean); `min..max` and `cv` show the spread between repetitions. With fewer than three repetitions the spread is not meaningful and the report says so.
 * The **backend** column separates, for example, PyTorch over torch-tbccl from PyTorch over Gloo for the same operation.
-* The **framework providers** table (framework benchmarks only) names each provider, its version, the framework versions it found, the hash of the compiled extension in the adapter wheel (the TBCCL library bundled with it, which may differ from the checkout the runner came from) and the hashes of the scripts it ran. If the compatibility copy bundled with the suite was used, it says that versions were not collected.
+* The **framework providers** table (framework benchmarks only) names each provider, its version, the framework versions it found, the hash of the compiled extension in the adapter wheel (the TBCCL library bundled with it, which may differ from the checkout the runner came from) and the hashes of the scripts it ran. Runs recorded while the suite still carried its own copy of the workload scripts show the state `bundled_compat` and say that versions were not collected.
 * **Hosts** lists each machine's hardware and build identity and whether cleanup of remote processes was confirmed. Unconfirmed cleanup is stated, not hidden.
 * **Points without a valid measurement** are never averaged into a result. A point that failed verification, timed out or could not run is listed with its reason.
 

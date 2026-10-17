@@ -11,7 +11,7 @@ from benchmarks.suite import config as cfg, schema
 from benchmarks.suite.adapters import REGISTRY
 from benchmarks.suite.adapters.base import Outcome, ParseError, Point
 from benchmarks.suite.tests.common import make_config
-from benchmarks.suite.vllm_bench import metrics
+from benchmarks.suite.stream import metrics
 
 NAMES = ("vllm_startup", "vllm_correctness", "vllm_latency", "vllm_throughput", "vllm_concurrency", "vllm_pipeline")
 LIP, MIP = "192.0.2.1", "192.0.2.2"
@@ -422,24 +422,6 @@ class TraceCollection(unittest.TestCase):
         self.assertFalse(src.exists())
         a._trace_sources = {"host-a": (None, True, str(tmp / "missing"))}
         self.assertEqual(a._collect_traces(tmp / "rep2" / "trace")["files"]["host-a"], [])  # nothing to collect is not an error
-
-
-class HookInert(unittest.TestCase):
-    def test_the_timing_hook_does_nothing_without_its_environment_variable(self):
-        hook = Path(__file__).resolve().parents[1] / "vllm_bench" / "trace_hook"
-        code = "import sys; before = list(sys.meta_path); import sitecustomize; print(sys.meta_path == before)"
-        env = {k: v for k, v in __import__("os").environ.items() if k != "TBCCL_B5_TRACE_DIR"}
-        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(hook), env=env)
-        self.assertEqual(out.stdout.strip(), "True", out.stderr)
-
-    def test_the_timing_hook_installs_one_import_finder_when_enabled_and_never_raises_without_vllm(self):
-        import tempfile
-        hook = Path(__file__).resolve().parents[1] / "vllm_bench" / "trace_hook"
-        with tempfile.TemporaryDirectory() as d:
-            code = "import sys; n = len(sys.meta_path); import sitecustomize; print(len(sys.meta_path) - n)"
-            env = {**__import__("os").environ, "TBCCL_B5_TRACE_DIR": d}
-            out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(hook), env=env)
-            self.assertEqual(out.stdout.strip(), "1", out.stderr)
 
 
 class SavedOutputs(unittest.TestCase):
