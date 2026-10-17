@@ -11,7 +11,7 @@ from pathlib import Path
 from benchmarks.suite import schema
 from benchmarks.suite.adapters import REGISTRY
 from benchmarks.suite.adapters.base import Outcome, ParseError, Point
-from benchmarks.suite.exo_bench import metrics
+from benchmarks.suite.stream import exo_metrics as metrics
 
 NAMES = ("exo_correctness", "exo_latency", "exo_throughput", "exo_transport_ab", "exo_stage_profile", "exo_large_model", "exo_lifecycle")
 LIP, MIP = "192.0.2.1", "192.0.2.2"

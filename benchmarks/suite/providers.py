@@ -24,9 +24,9 @@ ENTRY_POINT = "provider.py"
 
 # provider id -> (executables key for the interpreter, executables key for the provider directory, adapters that use it)
 PROVIDERS = {
-    "torch-tbccl": {"python": "torch_python", "dir": "torch_bench_dir", "legacy_dir": "torch_bench", "adapters": ("torch_collectives", "torch_p2p", "torch_async", "torch_ddp")},
-    "vllm-tbccl": {"python": "vllm_python", "dir": "vllm_bench_dir", "legacy_dir": "vllm_bench", "adapters": ("vllm_startup", "vllm_correctness", "vllm_latency", "vllm_throughput", "vllm_concurrency", "vllm_pipeline", "vllm_backend")},
-    "exo-tbccl": {"python": "exo_python", "dir": "exo_bench_dir", "legacy_dir": "exo_bench", "adapters": ("exo_correctness", "exo_latency", "exo_throughput", "exo_transport_ab", "exo_stage_profile", "exo_large_model", "exo_lifecycle")},
+    "torch-tbccl": {"python": "torch_python", "dir": "torch_bench_dir", "adapters": ("torch_collectives", "torch_p2p", "torch_async", "torch_ddp")},
+    "vllm-tbccl": {"python": "vllm_python", "dir": "vllm_bench_dir", "adapters": ("vllm_startup", "vllm_correctness", "vllm_latency", "vllm_throughput", "vllm_concurrency", "vllm_pipeline", "vllm_backend")},
+    "exo-tbccl": {"python": "exo_python", "dir": "exo_bench_dir", "adapters": ("exo_correctness", "exo_latency", "exo_throughput", "exo_transport_ab", "exo_stage_profile", "exo_large_model", "exo_lifecycle")},
 }
 
 AVAILABILITY = ("available", "environment_missing", "unsupported")
@@ -117,18 +117,6 @@ def interpret(provider_id, raw) -> dict:
     if problems:
         return {"provider_id": provider_id, "status": "incompatible", "reasons": problems, "description": desc}
     return {"provider_id": provider_id, "status": desc["availability"]["status"], "reasons": list(desc["availability"].get("reasons") or []), "description": desc}
-
-
-def bundled_dir(repo_root, provider_id) -> Path:
-    """The compatibility copy of a provider's workload scripts that still ships with the suite (see docs/development/benchmark-providers.md)."""
-    return Path(repo_root) / "benchmarks" / "suite" / PROVIDERS[provider_id]["legacy_dir"]
-
-
-def bundled_hashes(repo_root, provider_id) -> dict:
-    """SHA-256 of the scripts of the bundled compatibility copy, so a result produced with it names the exact scripts too."""
-    import hashlib
-    root = bundled_dir(repo_root, provider_id)
-    return {str(f.relative_to(root)): hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(root.rglob("*.py")) if "__pycache__" not in f.parts} if root.is_dir() else {}
 
 
 def configured(host, provider_id) -> tuple:

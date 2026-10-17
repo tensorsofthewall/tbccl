@@ -16,7 +16,7 @@ hosts:
     env: {OMP_NUM_THREADS: "2"}
     executables:
       torch_python: <TORCH_PYTHON>                          # the interpreter that has torch and torch-tbccl
-      torch_bench_dir: <TORCH_TBCCL_CHECKOUT>/benchmarks/provider   # the provider directory (omit to use the compatibility copy bundled with the suite)
+      torch_bench_dir: <TORCH_TBCCL_CHECKOUT>/benchmarks/provider   # the provider directory
 ranks:
   - {rank: 0, host: local, memory_backend: host}
   - {rank: 1, host: local, memory_backend: host}

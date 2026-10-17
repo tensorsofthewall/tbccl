@@ -2,7 +2,7 @@
 """Writes the B5 presets (vLLM pipeline-parallel inference over vllm-tbccl) next to this file. Run from the repository root:  python3 benchmarks/suite/configs/generate_b5.py
 
 The presets are plain YAML with placeholders for the real addresses, paths and launcher (a git-ignored overlay fills them). Each workload point is one engine lifecycle running an ordered list
-of client phases (vllm_bench/client.py); the generator documents exactly which phases exist, in which order, and with which seeds. Passes over a grid are repeated and the cell order is
+of client phases (the vllm-tbccl provider client); the generator documents exactly which phases exist, in which order, and with which seeds. Passes over a grid are repeated and the cell order is
 shuffled with a fixed seed for each pass, so slow drift (thermal state, caches) does not line up with a single cell.
 """
 import json
@@ -259,7 +259,7 @@ def main():
     write("b5-tier9-confirm", "confirmation runs of the key cells: 5 independent engine lifecycles per stage order (interleaved), 3 for the CPU pairing", confirm, timeout=3000, campaign=28800)
 
     # Tier 8 (trace): stage-level diagnostic runs, separate from every uninstrumented run. vllm-tbccl's own trace records the pipeline transfers, the Metal / CPU stage steps are timed by
-    # VLLM_TBCCL_TRACE_STEPS, and the suite's hook (vllm_bench/trace_hook) times the CUDA stage and the submissions. The traced cells repeat the confirmation cells so the overhead of tracing is measurable.
+    # VLLM_TBCCL_TRACE_STEPS, and the vllm-tbccl provider hook (trace_hook) times the CUDA stage and the submissions. The traced cells repeat the confirmation cells so the overhead of tracing is measurable.
     trace_cells = key_phases(passes=1, seed=800) + [phase(f"lat-r1-p128-o{o}", "rounds", prompt="p128", tokens=o, conc=1, rounds=10, round_group=1) for o in (1, 8)]  # the o=1/8/32 TTFT step is traced explicitly
     write("b5-tier8-trace", "stage-level diagnostic traces of the key cells (instrumented: never mixed with the performance runs)", [
         point(f"trace-{c}", "vllm_pipeline", "diagnostic", c, trace_cells, primary={"phase": "lat-r1-p128-o32", "metric": "tpot"}, trace="steps", tag=f"trace-{c}", timeout=3000)

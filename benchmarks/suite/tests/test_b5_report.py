@@ -7,7 +7,7 @@ from pathlib import Path
 
 from benchmarks.suite import schema
 from benchmarks.suite.reporting import b5
-from benchmarks.suite.vllm_bench import metrics
+from benchmarks.suite.stream import metrics
 
 
 def request(index, phase, ttft_ms, itl_ms, tokens, status="ok"):

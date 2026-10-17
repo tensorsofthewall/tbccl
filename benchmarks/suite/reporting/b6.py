@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import _io
-from ..exo_bench import metrics
+from ..stream import exo_metrics as metrics
 
 LAT = re.compile(r"^lat-r(?P<pass>\d+)-(?P<prompt>p\d+)-o(?P<o>\d+)$")
 MIN_LIFECYCLES = 2

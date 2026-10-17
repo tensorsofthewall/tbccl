@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from benchmarks.suite.exo_bench import metrics
+from benchmarks.suite.stream import exo_metrics as metrics
 from benchmarks.suite.tests.common import FIXTURES, approx
 
 EXO = FIXTURES / "exo"

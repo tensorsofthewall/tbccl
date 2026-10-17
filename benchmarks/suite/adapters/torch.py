@@ -1,7 +1,7 @@
 """Integrations for PyTorch communication over torch-tbccl (and Gloo as a baseline): collectives, point-to-point, asynchronous Work handles and DistributedDataParallel.
 
-The suite never imports PyTorch. Each point starts one wrapper process per rank (``torch_bench/comm_bench.py`` or ``ddp_bench.py``) with the torch environment's own
-interpreter, configured per host as ``executables.torch_python`` (and ``executables.torch_bench_dir`` on a remote host). The wrappers print one JSON line per rank
+The suite never imports PyTorch. Each point starts one wrapper process per rank (the torch-tbccl provider's ``comm_bench.py`` or ``ddp_bench.py``) with the torch environment's own
+interpreter, configured per host as ``executables.torch_python`` and ``executables.torch_bench_dir``, the provider directory. The wrappers print one JSON line per rank
 (``TBCCL_TORCH_BENCH`` / ``TBCCL_TORCH_DDP``); the adapter parses only that contract, never console text.
 
 Memory backends are torch device names: ``host`` (a CPU tensor), ``cuda`` and ``mps``. A pairing the capability audit does not support is rejected before anything runs; nothing is
@@ -100,12 +100,9 @@ class _TorchBase(BenchmarkAdapter):
     def _script(self, ctx, spec):
         host = ctx.config.hosts[spec["host"]]
         python = ctx.tool("torch_python", spec["host"])
-        if "torch_bench_dir" in host.executables:
-            base = host.executables["torch_bench_dir"]
-        elif host.is_local:
-            base = str(Path(ctx.repo_root) / "benchmarks" / "suite" / "torch_bench")
-        else:
-            raise ParseError(f"remote host '{host.id}' needs executables.torch_bench_dir")
+        base = host.executables.get("torch_bench_dir")
+        if not base:
+            raise ParseError(f"host '{host.id}' needs executables.torch_bench_dir (the torch-tbccl provider directory, benchmarks/provider in that repository)")
         return python, str(Path(base) / self.script)
 
     def _common_argv(self, point, ctx):
@@ -176,7 +173,7 @@ class TorchCollectives(_TorchBase):
     caps = Capabilities(
         name="torch_collectives", category="collective", description="PyTorch collectives (blocking) over torch-tbccl or Gloo: all_reduce SUM, broadcast, all_gather; float32, 2 ranks",
         executable="python", operations=tuple(OPS), memory_backends=("host", "cuda", "mps"), min_ranks=2, max_ranks=2, executable_in_build=False, source_selectable=True,
-        verification={op: "native" for op in OPS}, source_files=("benchmarks/suite/torch_bench/comm_bench.py",),
+        verification={op: "native" for op in OPS}, source_files=("<provider>/comm_bench.py",),
         notes="Framework benchmark, not a native TBCCL benchmark. Blocking dist.* calls; time = the call returning, per iteration, maximum over the two ranks; device_ready adds a measurement-only device synchronize.")
 
     def estimate_bytes(self, point):
@@ -241,7 +238,7 @@ class TorchP2P(_TorchBase):
     caps = Capabilities(
         name="torch_p2p", category="p2p", description="PyTorch send/recv over torch-tbccl or Gloo: completion-confirmed one-way transfer (1-byte CPU ACK) and ping-pong round trip; float32",
         executable="python", operations=tuple(OPS), memory_backends=("host", "cuda", "mps"), min_ranks=2, max_ranks=2, executable_in_build=False, source_selectable=True,
-        verification={op: "native" for op in OPS}, source_files=("benchmarks/suite/torch_bench/comm_bench.py",),
+        verification={op: "native" for op in OPS}, source_files=("<provider>/comm_bench.py",),
         notes="p2p_ack matches tbccl_tensor_transfer_bench end-to-end semantics (the source's time includes the ACK's return trip); p2p_rtt matches small_message_latency p2p.")
 
     def estimate_bytes(self, point):
@@ -316,7 +313,7 @@ class TorchAsync(_TorchBase):
     caps = Capabilities(
         name="torch_async", category="overlap", description="PyTorch asynchronous communication: all_reduce(async_op=True) and isend/irecv with Work.wait(); submission, wait and completion kept apart",
         executable="python", operations=tuple(OPS), memory_backends=("host", "cuda", "mps"), min_ranks=2, max_ranks=2, executable_in_build=False, source_selectable=True,
-        verification={op: "native" for op in OPS}, source_files=("benchmarks/suite/torch_bench/comm_bench.py",),
+        verification={op: "native" for op in OPS}, source_files=("<provider>/comm_bench.py",),
         notes="Submission time is the call returning with a Work handle, not completion. all_reduce_async lifetime = submit start until Work.wait() returned; the Work's completion callback timestamp is recorded when the backend supports futures.")
 
     def estimate_bytes(self, point):
@@ -403,7 +400,7 @@ class TorchDDP(_TorchBase):
     caps = Capabilities(
         name="torch_ddp", category="application", description="Two-rank DistributedDataParallel training of a synthetic deep MLP over torch-tbccl or Gloo: step time, phases, exposed communication, samples/s",
         executable="python", operations=("train",), memory_backends=("host", "cuda", "mps"), min_ranks=2, max_ranks=2, executable_in_build=False,
-        verification={"train": "native"}, source_files=("benchmarks/suite/torch_bench/ddp_bench.py",),
+        verification={"train": "native"}, source_files=("<provider>/ddp_bench.py",),
         notes="payload_bytes is the gradient bytes per step (layers*(width^2+width)*4) and must equal sizes[0]. Options: layers, width, batch (per rank), bucket_cap_mb, steps, profile, tag. "
               "Correctness (CPU reference, finite values, cross-rank agreement) is checked before the timed phases and is never timed.")
 

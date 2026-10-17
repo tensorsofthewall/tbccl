@@ -147,9 +147,8 @@ class RunContext:
                 host = self.config.hosts[host_id]
                 python, directory = providers.configured(host, pid)
                 if not python or not directory:
-                    self._providers[key] = {"provider_id": pid, "host": host_id, "status": "bundled_compat", "provider_version": None, "protocol_version": None, "interpreter": python,
-                                            "directory": None, "framework_versions": {}, "entry_point_sha256": providers.bundled_hashes(self.repo_root, pid) if host.is_local else {},
-                                            "note": "no provider directory configured: the compatibility copy bundled with the suite was used; framework and adapter versions are unavailable"}
+                    self._providers[key] = {"provider_id": pid, "host": host_id, "status": "not_configured", "provider_version": None, "protocol_version": None, "interpreter": python,
+                                            "directory": None, "framework_versions": {}, "entry_point_sha256": {}, "note": "no provider directory is configured for this host"}
                 else:
                     raw = providers.run_describe(python, directory) if host.is_local else providers.remote_describe(host, python, directory)
                     row = {"host": host_id, "python": python, "directory": directory, **providers.interpret(pid, raw)}

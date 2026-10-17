@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from benchmarks.suite import schema
-from benchmarks.suite.exo_bench import metrics
+from benchmarks.suite.stream import exo_metrics as metrics
 from benchmarks.suite.reporting import b6
 from benchmarks.suite.tests.common import approx
 
