@@ -44,6 +44,7 @@ class RunContext:
         self._host_info = {}
         self.host_provenance = {}
         self._providers = {}
+        self._shared = {}
 
     def address(self, host_id):
         return self.config.hosts[host_id].address
@@ -155,7 +156,7 @@ class RunContext:
                     entry = (providers.record_entries([row], {host_id}) or [None])[0]
                     self._providers[key] = entry or {"provider_id": pid, "host": host_id, "status": row["status"], "provider_version": None, "protocol_version": None, "interpreter": python,
                                                      "directory": directory, "framework_versions": {}, "note": "; ".join(row["reasons"])[:300]}
-            out.append(self._providers[key])
+            out.append(self._shared.setdefault(key, providers.shareable_entry(self._providers[key])))
         return out
 
     def executable_provenance(self, host_id, name):

@@ -157,6 +157,31 @@ class Environment(SuiteTestCase):
         self.assertEqual(json.loads(out["stdout"]), {"vars": []})
 
 
+class SharedPaths(SuiteTestCase):
+    """Results are meant to be shared: the provider provenance must not carry user names, mount points or directory layout."""
+
+    def test_absolute_paths_keep_only_their_last_two_components(self):
+        self.assertEqual(providers.shareable_path("/home/someone/envs/torch/bin/python"), "<...>/bin/python")
+        self.assertEqual(providers.shareable_path("/mnt/disk/projects/adapter/benchmarks/provider"), "<...>/benchmarks/provider")
+
+    def test_values_that_are_not_absolute_paths_are_unchanged(self):
+        for value in (None, "python3", "bin/python", "/a/b"):
+            self.assertEqual(providers.shareable_path(value), value)
+
+    def test_a_path_inside_a_sentence_is_shortened_too(self):
+        out = providers.shareable_path("module missing for /home/someone/envs/torch/bin/python (see log)")
+        self.assertNotIn("someone", out)
+        self.assertIn("(see log)", out)
+
+    def test_the_entry_keeps_every_other_fact(self):
+        entry = {"provider_id": "torch-tbccl", "host": "a", "interpreter": "/home/someone/venv/bin/python", "directory": "/mnt/x/y/z/benchmarks/provider",
+                 "note": None, "entry_point_sha256": {"s.py": "ab"}, "framework_versions": {"torch": "2.13.0"}}
+        out = providers.shareable_entry(entry)
+        self.assertNotIn("someone", json.dumps(out))
+        self.assertNotIn("/mnt/", json.dumps(out))
+        self.assertEqual({k: v for k, v in out.items() if k not in ("interpreter", "directory")}, {k: v for k, v in entry.items() if k not in ("interpreter", "directory")})
+
+
 class Discovery(SuiteTestCase):
     def config(self, executables=None):
         hosts = {"local": {"launcher": {"kind": "local"}, "address": "127.0.0.1", "interface": "lo", "executables": executables or {}}}
@@ -240,7 +265,7 @@ class Provenance(SuiteTestCase):
         self.assertEqual((e["provider_id"], e["protocol_version"], e["provider_version"], e["status"]), ("torch-tbccl", 1, "0.2.0", "available"))
         self.assertEqual(e["framework_versions"], {"torch": "2.13.0"})
         self.assertEqual(e["entry_point_sha256"], {"communication": "a" * 64})
-        self.assertEqual(e["interpreter"], sys.executable)
+        self.assertEqual(e["interpreter"], providers.shareable_path(sys.executable))  # shared results carry no absolute path
         self.assertIs(ctx.provider_entries(point("torch_p2p", "p2p_rtt", 64))[0], entries[0])  # described once per host
 
     def test_the_compiled_extension_of_an_adapter_wheel_is_recorded_by_hash_apart_from_the_versions(self):

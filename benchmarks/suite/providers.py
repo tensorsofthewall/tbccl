@@ -10,6 +10,7 @@ The protocol is specified in docs/development/benchmark-providers.md.
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 from pathlib import Path
@@ -173,6 +174,25 @@ def record_entries(rows, host_ids) -> list:
                     "framework_versions": {k: v for k, v in (d["availability"].get("detected") or {}).items() if k != "native_modules"},
                     "native_modules": (d["availability"].get("detected") or {}).get("native_modules"), "result_schema_versions": d["supported_result_schema_versions"],
                     "entry_point_sha256": d.get("entry_point_sha256") or {}})
+    return out
+
+
+_ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])(/(?:[^\s/:;,'\")]+/)*[^\s/:;,'\")]+)")
+
+
+def shareable_path(path):
+    """An absolute path as it may be recorded in a result that is shared: the last two components, so `<...>/benchmarks/provider` and `<...>/bin/python` stay recognisable without revealing user names, mount points or directory layout. Relative values and None are unchanged."""
+    if not isinstance(path, str):
+        return path
+    return _ABSOLUTE_PATH.sub(lambda m: "<...>/" + "/".join(m.group(1).split("/")[-2:]) if m.group(1).count("/") > 2 else m.group(1), path)
+
+
+def shareable_entry(entry: dict) -> dict:
+    """A provider provenance entry with the interpreter, directory and note stripped of absolute paths. The identity comparison uses versions and hashes, never paths."""
+    out = dict(entry)
+    for key in ("interpreter", "directory", "note"):
+        if key in out:
+            out[key] = shareable_path(out[key])
     return out
 
 
