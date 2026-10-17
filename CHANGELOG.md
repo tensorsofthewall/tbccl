@@ -2,6 +2,37 @@
 
 All notable user-facing changes are recorded here. The format follows Keep a Changelog, and the project follows Semantic Versioning once it has releases. 0.6.0 is the first release; it is experimental.
 
+## 0.6.1
+
+Patch release. It adds the public benchmark suite and its documentation. There is no change to the library (`src/`, `include/`), the C ABI (version 1), the wire protocol (version 4) or the endpoint blob format (version 1), and no change to any transport or collective algorithm. Nothing in this release is a performance improvement.
+
+### Installation
+
+- The same three native archives as 0.6.0, named `tbccl-0.6.1-...`, each with an SPDX SBOM, `SHA256SUMS` and a build-provenance attestation. The archives contain the library, not the Python benchmark suite.
+- The benchmark suite is obtained from the source archive of the tag `v0.6.1` (`https://github.com/tensorsofthewall/tbccl/archive/refs/tags/v0.6.1.tar.gz`) or a checkout of that tag. It needs Python 3.13 and PyYAML and builds the native benchmark programs with CMake. It needs no PyTorch, vLLM, Exo or MLX.
+
+### Added
+
+- A shared public benchmark suite (`python3 -m benchmarks.suite`): native point-to-point, latency, transfer, collective and device-memory benchmarks, ready-made profiles (`quick`, `native`, `device`, `pytorch`, `vllm`, `exo`, `custom`), health gates, remote supervision and cleanup, and a result schema (`tbccl-bench-result/1`).
+- An external provider protocol (version 1): the PyTorch, vLLM and Exo workloads live in the repositories of torch-tbccl, vllm-tbccl and exo-tbccl and are run by the shared runner after `describe` and `validate` steps on every participating host.
+- Reports in Markdown, HTML (offline), JSON and CSV; a sanitized export for sharing results.
+- Regression comparison of two runs of one configuration, with the compatibility checks and statistical classification, and a record of build identity (matching, different or unknown) for the TBCCL archive, the provider and the framework.
+
+### Documentation
+
+- Benchmark quickstart, hardware and network configuration, methodology and limitations, troubleshooting, and the measured reference results of the native benchmarks (with the software, hardware, direction, sample counts and limits of every figure).
+- A validation page for this release.
+
+### Compatibility
+
+- C ABI 1, wire protocol 4, endpoint blob format 1. Platforms and world sizes are unchanged.
+- The benchmark providers of the adapters are versioned by the provider protocol and the result schema, not by the TBCCL package version. An adapter's minimum TBCCL package is unchanged.
+
+### Known limitations
+
+- The first public benchmark release keeps the temporary in-tree copies of the PyTorch, vLLM and Exo workload scripts for use when no provider directory is configured; a later release removes them.
+- All published reference measurements come from one Linux CUDA / Apple Metal machine pair. PCIe AER reporting was unavailable on the Linux host, so no statement about AER errors is made.
+
 ## 0.6.0
 
 First release. Promoted from release candidate 0.6.0rc1 with no change to the library, the C ABI (version 1) or the wire protocol (version 4); the differences are the version string, documentation examples and the documentation checks.

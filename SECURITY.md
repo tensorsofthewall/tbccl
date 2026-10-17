@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-tbccl has not been released yet; 0.6.0 is the first planned release. Once releases exist, security fixes are made against the latest release series only. Development versions and unreleased branches are not supported.
+Security fixes are made against the latest release series only (currently 0.6.x). Development versions and unreleased branches are not supported.
 
 ## Reporting a vulnerability
 
