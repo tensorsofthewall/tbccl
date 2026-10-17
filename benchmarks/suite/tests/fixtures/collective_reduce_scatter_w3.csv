@@ -1,0 +1,2 @@
+collective,requested_algorithm,algorithm,selection_reason,datatype,op,world_size,segment_bytes,input_bytes_per_rank,output_bytes_per_rank,chunk_bytes,chunks_per_segment,iterations,warmup,median_us,p95_us,min_us,max_us,algbw_GBps,busbw_GBps,busy_poll_us
+reduce-scatter,ring,ring,,float32,sum,3,4096,12288,4096,0,0,20,5,175.633,307.254,120.97,314.586,0.0699641,0.0466427,0

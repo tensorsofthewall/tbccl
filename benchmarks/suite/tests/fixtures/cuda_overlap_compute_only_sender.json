@@ -1,0 +1,18 @@
+{
+  "label": "suite",
+  "rank": 0,
+  "role": "sender",
+  "schedule": "compute-only",
+  "bucket_bytes": 1048576,
+  "bucket_count": 4,
+  "compute_rounds": 2000,
+  "chunk_bytes": 262144,
+  "depth": 1,
+  "warmup": 2,
+  "iterations": 8,
+  "verify_ok": true,
+  "total_median_us": 9333.81,
+  "total_p95_us": 9808.24,
+  "enqueue_median_us": 0,
+  "enqueue_max_us": 0
+}

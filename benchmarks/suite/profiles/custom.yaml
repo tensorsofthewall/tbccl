@@ -1,0 +1,23 @@
+# A template for your own workloads.
+# Profile: custom. Start from the profile closest to what you want and edit; this file shows every section with one small loopback workload.
+# Copy this file to custom.local.yaml (git-ignored) or keep your real values in an overlay passed with --overlay; fill every <PLACEHOLDER>. Nothing private belongs in this tracked file.
+#   python3 -m benchmarks.suite list                # benchmarks, operations, algorithms and memory backends you can ask for
+#   python3 -m benchmarks.suite run custom.local.yaml --dry-run
+schema: tbccl-bench-config/1
+name: custom
+description: "Template for custom workloads"
+defaults:
+  warmup: 10                 # untimed iterations per repetition
+  iterations: 100            # timed iterations per repetition
+  repetitions: 3             # independent process launches; this is the replication unit
+  timeout_s: 120
+  startup_wait_s: 20
+# limits: {max_processes: 4, max_point_bytes: 1073741824, max_total_bytes: 17179869184, max_campaign_s: 3600}   # ceilings on a run
+topology: {kind: loopback, interconnect: loopback, transport: tcp, physical: false}
+hosts:                         # add hosts, their link addresses, interfaces, launchers and executables (see two-host.example.yaml)
+  local: {launcher: {kind: local}, address: 127.0.0.1}
+ranks:
+  - {rank: 0, host: local, memory_backend: host}
+  - {rank: 1, host: local, memory_backend: host}
+workloads:
+  - {name: my-workload, benchmark: tcp_pingpong, operations: [pingpong], sizes: [64, 4096, 1048576]}   # payload sizes: bytes or "4KiB"; or a preset name: smoke, standard

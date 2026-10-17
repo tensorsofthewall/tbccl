@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tbccl-bench-provider-description/1",
+  "title": "TBCCL benchmark provider description (protocol 1)",
+  "description": "The one JSON object a provider prints for `provider.py describe`. The suite also enforces rules a schema cannot express (see providers.validate_description): the protocol and result schema versions it speaks, a reason for every unavailable state, entry points that stay inside the provider directory, and hash digests that name known entry points.",
+  "type": "object",
+  "required": [
+    "provider_id",
+    "provider_protocol_version",
+    "provider_version",
+    "supported_workloads",
+    "supported_platforms",
+    "supported_memory_kinds",
+    "supported_device_pairings",
+    "required_framework_versions",
+    "required_runtime_capabilities",
+    "optional_dependencies",
+    "required_model_configuration",
+    "benchmark_configuration_schema",
+    "supported_result_schema_versions",
+    "entry_points",
+    "availability"
+  ],
+  "properties": {
+    "provider_id": {
+      "type": "string"
+    },
+    "provider_protocol_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider_version": {
+      "type": "string"
+    },
+    "supported_workloads": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supported_platforms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supported_memory_kinds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supported_device_pairings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_framework_versions": {
+      "type": "object"
+    },
+    "required_runtime_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "optional_dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "required_model_configuration": {
+      "type": "object"
+    },
+    "benchmark_configuration_schema": {
+      "type": "object"
+    },
+    "supported_result_schema_versions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entry_points": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "entry_point_sha256": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "availability": {
+      "type": "object",
+      "required": [
+        "status",
+        "reasons"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "available",
+            "environment_missing",
+            "unsupported"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "detected": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

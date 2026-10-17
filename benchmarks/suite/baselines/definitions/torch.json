@@ -1,0 +1,356 @@
+{
+ "schema_version": "tbccl-bench-baseline/1",
+ "kind": "definitions",
+ "catalog_id": "torch",
+ "description": "PyTorch (torch-tbccl) case definitions",
+ "created_utc": null,
+ "cases": [
+  {
+   "case_id": "torch.p2p.send-recv-ack.cpu-cpu.4KiB",
+   "campaign_id": "b4",
+   "family": "torch_p2p",
+   "benchmark_adapter": "torch_collectives",
+   "metric_name": "pytorch_send_recv_completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "exploratory",
+    "conditions": [
+     "at 4 KiB the native baseline is two-mode, so no single framework-minus-native figure exists"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 4096,
+   "datatype": "uint8",
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination accelerator's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.transfer.e2e.cpu-cpu.4KiB.a-to-b",
+   "campaign_id": "b4",
+   "family": "native_p2p",
+   "benchmark_adapter": "tensor_transfer",
+   "metric_name": "completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "exploratory",
+    "conditions": [
+     "at 4 KiB the process pairs fall into two latency modes (about 125 us or about 245 us); a median over a few pairs describes neither"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 4096,
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination accelerator's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "torch.p2p.send-recv-ack.cpu-cpu.16MiB",
+   "campaign_id": "b4",
+   "family": "torch_p2p",
+   "benchmark_adapter": "torch_collectives",
+   "metric_name": "pytorch_send_recv_completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "exploratory",
+    "conditions": [
+     "at 4 KiB the native baseline is two-mode, so no single framework-minus-native figure exists"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 16777216,
+   "datatype": "uint8",
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination accelerator's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "native.transfer.e2e.cpu-cpu.16MiB.a-to-b",
+   "campaign_id": "b4",
+   "family": "native_p2p",
+   "benchmark_adapter": "tensor_transfer",
+   "metric_name": "completion_confirmed_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "a-to-b",
+   "rank_count": 2,
+   "payload_bytes": 16777216,
+   "operation": "end_to_end",
+   "benchmark_mode": "end_to_end",
+   "timing_scope": "completion_confirmed_ack",
+   "completion_semantics": "the destination accelerator's completion ACK has been observed by the source (includes the ACK's return trip)",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "torch.p2p.ping-pong-rtt.cpu-cpu.4KiB",
+   "campaign_id": "b4",
+   "family": "torch_p2p",
+   "benchmark_adapter": "torch_collectives",
+   "metric_name": "pytorch_ping_pong_round_trip_time",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 4096,
+   "datatype": "uint8",
+   "operation": "p2p_rtt",
+   "benchmark_mode": "ping_pong",
+   "timing_scope": "framework_round_trip_echo",
+   "completion_semantics": "the echoed tensor was received on the source",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "torch.allreduce.cpu-cpu.1MiB.blocking",
+   "campaign_id": "b4",
+   "family": "torch_collective",
+   "benchmark_adapter": "torch_collectives",
+   "metric_name": "pytorch_all_reduce_time_max_across_ranks",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cpu-cpu",
+   "memory_kind": "host",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 1048576,
+   "datatype": "float32",
+   "operation": "all_reduce",
+   "benchmark_mode": "blocking",
+   "timing_scope": "collective_slowest_rank",
+   "completion_semantics": "the blocking call returned on a rank",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward",
+    "blocking_mode": "blocking"
+   }
+  },
+  {
+   "case_id": "torch.ddp.step.cuda-mps.bucket1",
+   "campaign_id": "b4",
+   "family": "torch_ddp",
+   "benchmark_adapter": "torch_ddp",
+   "metric_name": "ddp_step_time_slowest_rank",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [
+     "DDP minus no_sync is an inference of exposed communication, not an exact decomposition"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cuda-mps",
+   "memory_kind": "device",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 33587200,
+   "datatype": "float32",
+   "operation": "train",
+   "model_id": "deep-mlp-l8-w1024",
+   "workload": "batch64-per-rank;bucket1MB;SGD",
+   "timing_scope": "ddp_step_slowest_rank",
+   "completion_semantics": "the optimizer step finished and the device is synchronized on the rank",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "torch.ddp.step.cuda-mps.bucket5",
+   "campaign_id": "b4",
+   "family": "torch_ddp",
+   "benchmark_adapter": "torch_ddp",
+   "metric_name": "ddp_step_time_slowest_rank",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [
+     "DDP minus no_sync is an inference of exposed communication, not an exact decomposition"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cuda-mps",
+   "memory_kind": "device",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 33587200,
+   "datatype": "float32",
+   "operation": "train",
+   "model_id": "deep-mlp-l8-w1024",
+   "workload": "batch64-per-rank;bucket5MB;SGD",
+   "timing_scope": "ddp_step_slowest_rank",
+   "completion_semantics": "the optimizer step finished and the device is synchronized on the rank",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "torch.ddp.step.cuda-mps.bucket25",
+   "campaign_id": "b4",
+   "family": "torch_ddp",
+   "benchmark_adapter": "torch_ddp",
+   "metric_name": "ddp_step_time_slowest_rank",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [
+     "DDP minus no_sync is an inference of exposed communication, not an exact decomposition"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cuda-mps",
+   "memory_kind": "device",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 33587200,
+   "datatype": "float32",
+   "operation": "train",
+   "model_id": "deep-mlp-l8-w1024",
+   "workload": "batch64-per-rank;bucket25MB;SGD",
+   "timing_scope": "ddp_step_slowest_rank",
+   "completion_semantics": "the optimizer step finished and the device is synchronized on the rank",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  },
+  {
+   "case_id": "torch.ddp.step.cuda-mps.bucket100",
+   "campaign_id": "b4",
+   "family": "torch_ddp",
+   "benchmark_adapter": "torch_ddp",
+   "metric_name": "ddp_step_time_slowest_rank",
+   "unit": "us",
+   "aggregation": "median_of_repetition_medians",
+   "direction": "lower_is_better",
+   "validity": {
+    "status": "valid",
+    "conditions": [
+     "DDP minus no_sync is an inference of exposed communication, not an exact decomposition"
+    ],
+    "caveats": []
+   },
+   "hardware_profile": "linux-cuda-laptop+mac-mini-m4:tb4-direct",
+   "transport": "tcp",
+   "backend": "torch-tbccl",
+   "device_pairing": "cuda-mps",
+   "memory_kind": "device",
+   "data_direction": "bidirectional",
+   "rank_count": 2,
+   "payload_bytes": 33587200,
+   "datatype": "float32",
+   "operation": "train",
+   "model_id": "deep-mlp-l8-w1024",
+   "workload": "batch64-per-rank;bucket100MB;SGD",
+   "timing_scope": "ddp_step_slowest_rank",
+   "completion_semantics": "the optimizer step finished and the device is synchronized on the rank",
+   "replication_unit": "repetition",
+   "min_independent_units": 3,
+   "extra_dimensions": {
+    "orientation": "forward"
+   }
+  }
+ ]
+}

@@ -1,0 +1,70 @@
+# vLLM pipeline parallelism (PP=2, TP=1) over vllm-tbccl between two hosts: one latency workload, one engine lifecycle per repetition.
+# Profile: vllm. Needs vLLM 0.31.0 with vllm-tbccl on both hosts, a local model directory on each, the fixed prompt file (make_workload.py) and a clone of the vllm-tbccl repository (the provider). Nothing is downloaded. Physical.
+# Copy this file to vllm.local.yaml (git-ignored) or keep your real values in an overlay passed with --overlay; fill every <PLACEHOLDER>. Nothing private belongs in this tracked file.
+#   python3 -m benchmarks.suite providers vllm.local.yaml
+#   python3 -m benchmarks.suite doctor vllm.local.yaml --probe --allow-physical
+#   python3 -m benchmarks.suite run vllm.local.yaml --dry-run
+#   python3 -m benchmarks.suite run vllm.local.yaml --allow-physical
+schema: tbccl-bench-config/1
+name: vllm
+description: "vLLM pipeline latency between two hosts"
+defaults:
+  warmup: 0
+  iterations: 1
+  repetitions: 3
+  timeout_s: 3000
+  startup_wait_s: 90
+  lease_s: 30                        # a remote rank is terminated if the controller is silent this long
+  term_grace_s: 3
+  port_range: [<PORT_RANGE_START>, <PORT_RANGE_END>]
+  failure_policy: {on_failure: abort_run}
+  provenance: {require_same_version: true, require_stamped: false}
+  health: {strict: true, snapshot_each_point: true}
+limits: {max_processes: 8, max_campaign_s: 14400}
+topology:
+  kind: direct-link
+  interconnect: <INTERCONNECT_LABEL>   # a label for reports; TBCCL's transport is TCP over IPv4, never RDMA
+  transport: tcp
+  physical: true
+hosts:
+  host-a:                            # the machine you run the suite on
+    launcher: {kind: local}
+    address: <HOST_A_LINK_ADDRESS>
+    interface: <HOST_A_LINK_INTERFACE>
+    interfaces: {link: <HOST_A_LINK_ADDRESS>}
+    executables: {vllm: <HOST_A_VLLM>, vllm_python: <HOST_A_VLLM_PYTHON>, vllm_model_dir: <HOST_A_MODEL_DIR>, vllm_bench_dir: <VLLM_TBCCL_CHECKOUT>/benchmarks/provider, vllm_workload: <HOST_A_WORKLOAD>, vllm_reference: <HOST_A_REFERENCE>}
+    health_snapshot: true
+    expect: {mtu: <EXPECTED_MTU>}
+  host-b:                            # reached through a management-path launcher (never the data link)
+    launcher: {kind: prefix, argv: ["<REMOTE_LAUNCH_PREFIX>", "<REMOTE_HOST_NAME>"], shell_join: true}
+    python: <HOST_B_PYTHON>
+    address: <HOST_B_LINK_ADDRESS>
+    interface: <HOST_B_LINK_INTERFACE>
+    interfaces: {link: <HOST_B_LINK_ADDRESS>}
+    management_address: <HOST_B_MANAGEMENT_ADDRESS>   # checked: the controller must reach it through a different interface than the data link
+    executables: {vllm: <HOST_B_VLLM>, vllm_python: <HOST_B_VLLM_PYTHON>, vllm_model_dir: <HOST_B_MODEL_DIR>, vllm_bench_dir: <HOST_B_VLLM_BENCH_DIR>, vllm_workload: <HOST_B_WORKLOAD>, vllm_reference: <HOST_B_REFERENCE>}
+    health_script: <HOST_B_REPOSITORY>/scripts/tb4_health_snapshot.py
+    expect: {mtu: <EXPECTED_MTU>}
+ranks:
+  - {rank: 0, host: host-a, memory_backend: host, interface: link}
+  - {rank: 1, host: host-b, memory_backend: host, interface: link}
+workloads:
+  # stage devices are the memory_backend of each host (cuda, metal or host); orientations: [forward, reverse] swaps which host runs stage 0 and hosts the API
+  - name: latency
+    benchmark: vllm_latency
+    operation: single_request
+    sizes: [1]
+    memory_backend: {host-a: cuda, host-b: metal}
+    orientations: [forward, reverse]
+    timeout_s: 3000
+    options:
+      dtype: bfloat16
+      max_model_len: 4096
+      gpu_memory_utilization: {host-a: 0.5, host-b: 0.3}
+      startup_timeout_s: 600
+      request_timeout_s: 180
+      tag: latency
+      phases:
+        - {name: warm, kind: warmup, prompt: p128, tokens: 8, requests: 3}
+        - {name: lat-p128-o32, kind: rounds, prompt: p128, tokens: 32, conc: 1, rounds: 10}
+      primary: {phase: lat-p128-o32, metric: tpot}

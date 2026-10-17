@@ -1,0 +1,20 @@
+# Quick check: every built-in native benchmark on loopback, two ranks, small iteration counts. Measures software overhead on this machine, not a network.
+# Profile: quick. Needs only a TBCCL build. No other framework or machine.
+# Copy this file to quick.local.yaml (git-ignored) or keep your real values in an overlay passed with --overlay; fill every <PLACEHOLDER>. Nothing private belongs in this tracked file.
+#   python3 -m benchmarks.suite run benchmarks/suite/profiles/quick.yaml --dry-run
+#   python3 -m benchmarks.suite run benchmarks/suite/profiles/quick.yaml --label quick
+schema: tbccl-bench-config/1
+name: quick
+description: "Loopback check of the native benchmarks (2 ranks, small iteration counts)"
+defaults: {warmup: 5, iterations: 30, repetitions: 2, timeout_s: 60}
+topology: {kind: loopback, interconnect: loopback, transport: tcp, physical: false}
+hosts:
+  local: {launcher: {kind: local}, address: 127.0.0.1}
+ranks:
+  - {rank: 0, host: local, memory_backend: host}
+  - {rank: 1, host: local, memory_backend: host}
+workloads:
+  - {name: tcp, benchmark: tcp_pingpong, operations: [pingpong], sizes: smoke}
+  - {name: small-message, benchmark: small_message_latency, operations: [p2p], sizes: [64, 4096]}
+  - {name: tensor-p2p, benchmark: tensor_transfer, operations: [latency_floor], sizes: [4096, 1048576]}
+  - {name: collectives, benchmark: collective_bench, operations: [all_reduce], algorithms: [auto], datatype: float32, sizes: [4096, 1048576], rank_counts: [2]}

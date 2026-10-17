@@ -1,0 +1,28 @@
+# PyTorch over torch-tbccl on loopback, CPU tensors: send/recv, a blocking collective, asynchronous work and a small DDP step. Needs the torch-tbccl benchmark provider.
+# Profile: pytorch. Needs an environment with PyTorch and torch-tbccl, and a clone of the torch-tbccl repository (the provider). No other framework. For two hosts and device tensors, use the two-host layout of the native profile with torch_python and torch_bench_dir on each host.
+# Copy this file to pytorch.local.yaml (git-ignored) or keep your real values in an overlay passed with --overlay; fill every <PLACEHOLDER>. Nothing private belongs in this tracked file.
+#   python3 -m benchmarks.suite providers pytorch.local.yaml     # torch-tbccl must be listed as available
+#   python3 -m benchmarks.suite run pytorch.local.yaml --dry-run
+#   python3 -m benchmarks.suite run pytorch.local.yaml
+schema: tbccl-bench-config/1
+name: pytorch
+description: "PyTorch communication and DDP over torch-tbccl on loopback (CPU)"
+defaults: {warmup: 5, iterations: 30, repetitions: 2, timeout_s: 180, port_range: [<PORT_RANGE_START>, <PORT_RANGE_END>]}
+topology: {kind: loopback, interconnect: loopback, transport: tcp, physical: false}
+hosts:
+  local:
+    launcher: {kind: local}
+    address: 127.0.0.1
+    env: {OMP_NUM_THREADS: "2"}
+    executables:
+      torch_python: <TORCH_PYTHON>                          # the interpreter that has torch and torch-tbccl
+      torch_bench_dir: <TORCH_TBCCL_CHECKOUT>/benchmarks/provider   # the provider directory (omit to use the compatibility copy bundled with the suite)
+ranks:
+  - {rank: 0, host: local, memory_backend: host}
+  - {rank: 1, host: local, memory_backend: host}
+workloads:
+  - {name: p2p, benchmark: torch_p2p, operations: [p2p_ack, p2p_rtt], sizes: [4096, 1048576]}
+  - {name: allreduce, benchmark: torch_collectives, operations: [all_reduce], sizes: [4096, 1048576]}
+  - {name: gloo-baseline, benchmark: torch_collectives, operations: [all_reduce], sizes: [4096], options: {backend: gloo}}
+  - {name: async, benchmark: torch_async, operations: [all_reduce_async], sizes: [4096, 1048576]}
+  - {name: ddp, benchmark: torch_ddp, operations: [train], sizes: [526336], options: {layers: 2, width: 256, batch: 16, steps: 8, tag: tiny}}

@@ -1,0 +1,125 @@
+{
+  "availability": {
+    "detected": {
+      "native_modules": null,
+      "platform": "linux-x86_64",
+      "psutil": null,
+      "python": "3.13.0",
+      "torch": null,
+      "torch-tbccl": null,
+      "transformers": null,
+      "vllm": null,
+      "vllm-metal": null,
+      "vllm-tbccl": null
+    },
+    "reasons": [
+      "Python package 'torch' (module 'torch') is not installed in this interpreter",
+      "Python package 'vllm' (module 'vllm') is not installed in this interpreter",
+      "Python package 'vllm-tbccl' (module 'vllm_tbccl') is not installed in this interpreter"
+    ],
+    "status": "environment_missing"
+  },
+  "benchmark_configuration_schema": {
+    "properties": {
+      "concurrency": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "layer_split": {
+        "type": "string"
+      },
+      "max_tokens": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "repetitions": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "stage_hosts": {
+        "type": "string"
+      },
+      "workload": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "workload"
+    ],
+    "type": "object"
+  },
+  "entry_point_sha256": {
+    "client": "c1e586d747c9b093cfa091b89d5f093535d57261326b0b7c51df9aa1c1cba848",
+    "fault": "2c51299227c4c7a99ecbb448ececa6655b91e0876b4bf9dc70b5b042403cd887",
+    "process_group_pingpong": "c9388eae81345e2f013f6075b81a62c7699ec3c4e45093b695e7545fc6aa28a4",
+    "sampler": "bd7f1c2fbb4f92118ae3e9e7627f67982aacbfa235d2aa2d4e9711fa941fb737",
+    "workload_generator": "3a2822cdd453c54d671ce169343a01a54e5c0373358e354d4043af02dc0d0554"
+  },
+  "entry_points": {
+    "client": "client.py",
+    "fault": "fault.py",
+    "process_group_pingpong": "pg_pingpong.py",
+    "sampler": "sampler.py",
+    "workload_generator": "make_workload.py"
+  },
+  "optional_dependencies": [
+    "psutil",
+    "transformers",
+    "vllm-metal",
+    "torch-tbccl"
+  ],
+  "provider_id": "vllm-tbccl",
+  "provider_protocol_version": 1,
+  "provider_version": "source-checkout",
+  "required_framework_versions": {
+    "libtbccl": {
+      "c_abi": [
+        1
+      ],
+      "wire_protocol": [
+        4
+      ]
+    },
+    "python": ">=3.12,<3.14",
+    "torch": ">=2.13,<2.14",
+    "vllm": "0.31.0",
+    "vllm-metal": "0.31.0 (tensorsofthewall/vllm-metal fork, tag v0.31.0-tbccl1, for Metal stages)",
+    "vllm-tbccl": ">=0.2,<0.3"
+  },
+  "required_model_configuration": {
+    "note": "a local model directory per host (executables.vllm_model_dir); the provider never downloads weights. Reference configuration: Qwen3-0.6B bf16, PP=2, TP=1",
+    "required": true
+  },
+  "required_runtime_capabilities": [
+    "vLLM OpenAI-compatible server with pipeline_parallel_size=2",
+    "VLLM_TBCCL_ENABLE=1 platform plugin",
+    "CUDA device for cuda stages",
+    "vllm-metal for metal stages"
+  ],
+  "supported_device_pairings": [
+    "cpu-cuda",
+    "cuda-metal",
+    "single-node"
+  ],
+  "supported_memory_kinds": [
+    "host",
+    "cuda",
+    "metal"
+  ],
+  "supported_platforms": [
+    "linux",
+    "darwin"
+  ],
+  "supported_result_schema_versions": [
+    "tbccl-bench-result/1"
+  ],
+  "supported_workloads": [
+    "startup",
+    "correctness",
+    "latency",
+    "throughput",
+    "concurrency",
+    "pipeline",
+    "backend"
+  ]
+}

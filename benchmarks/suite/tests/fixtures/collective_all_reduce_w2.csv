@@ -1,0 +1,3 @@
+collective,requested_algorithm,algorithm,selection_reason,datatype,op,world_size,segment_bytes,input_bytes_per_rank,output_bytes_per_rank,chunk_bytes,chunks_per_segment,iterations,warmup,median_us,p95_us,min_us,max_us,algbw_GBps,busbw_GBps,busy_poll_us
+all-reduce,auto,reference,auto_unmeasured_world_size,float32,sum,2,2048,4096,4096,0,0,20,5,16.677,19.1947,16.106,21.563,0.245608,0.245608,0
+all-reduce,auto,reference,auto_unmeasured_world_size,float32,sum,2,524288,1048576,1048576,0,0,20,5,236.017,256.473,230.92,332.342,4.4428,4.4428,0

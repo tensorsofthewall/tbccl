@@ -1,0 +1,18 @@
+{
+  "label": "suite",
+  "rank": 0,
+  "root": 0,
+  "backend": "cuda",
+  "metal_async_path": "adapter",
+  "count": 262144,
+  "bytes": 1048576,
+  "chunk_bytes": 262144,
+  "warmup": 2,
+  "iterations": 8,
+  "async_median_us": 786.661,
+  "async_p95_us": 2083.09,
+  "async_p99_us": 2083.09,
+  "async_mean_us": 1002.9,
+  "async_verify_ok": true,
+  "done": true
+}

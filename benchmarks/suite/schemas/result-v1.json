@@ -1,0 +1,673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tbccl-bench-result/1",
+  "title": "TBCCL benchmark result record, version 1",
+  "description": "One record is one workload point in one independent repetition. A record whose status.state is not 'success' carries no measurements.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "record_id",
+    "run_id",
+    "timestamp_utc",
+    "benchmark",
+    "environment",
+    "configuration",
+    "measurements",
+    "verification",
+    "status",
+    "artifacts"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "tbccl-bench-result/1"
+    },
+    "record_id": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "timestamp_utc": {
+      "type": "string"
+    },
+    "benchmark": {
+      "type": "object",
+      "required": [
+        "name",
+        "category",
+        "operation",
+        "provenance",
+        "suite_version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "category": {
+          "enum": [
+            "network_transport",
+            "p2p",
+            "collective",
+            "algorithm",
+            "memory_backend",
+            "overlap",
+            "application",
+            "other",
+            "vllm_startup",
+            "vllm_correctness",
+            "vllm_latency",
+            "vllm_throughput",
+            "vllm_concurrency",
+            "vllm_pipeline",
+            "exo_correctness",
+            "exo_latency",
+            "exo_throughput",
+            "exo_transport_ab",
+            "exo_stage_profile",
+            "exo_large_model",
+            "exo_lifecycle"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "source_repository": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "executable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executable_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executable_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "build_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "algorithm_requested": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "algorithm_resolved": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenance": {
+          "enum": [
+            "native",
+            "imported"
+          ]
+        },
+        "import_source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "suite_version": {
+          "type": "string"
+        },
+        "repository_commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repository_dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "build_provenance": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "hosts",
+        "memory_backend",
+        "memory_domain",
+        "topology",
+        "transport"
+      ],
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "host_id",
+              "ranks"
+            ],
+            "properties": {
+              "host_id": {
+                "type": "string"
+              },
+              "ranks": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "os": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "arch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cpu_model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "gpu_model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "driver": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "info_source": {
+                "enum": [
+                  "detected",
+                  "declared",
+                  "probed",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        },
+        "memory_backend": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "memory_domain": {
+          "type": "object",
+          "required": [
+            "label",
+            "per_rank"
+          ],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "per_rank": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "topology": {
+          "type": "object",
+          "required": [
+            "kind",
+            "interconnect",
+            "physical"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "interconnect": {
+              "type": "string"
+            },
+            "physical": {
+              "type": "boolean"
+            }
+          }
+        },
+        "network_interface": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transport": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "framework_versions": {
+          "type": "object"
+        },
+        "multi_host": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rank_interfaces": {
+          "type": "array"
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "required": [
+        "payload_bytes",
+        "payload_semantics",
+        "rank_count",
+        "repetitions",
+        "repetition_index",
+        "timing_method",
+        "completion_semantics"
+      ],
+      "properties": {
+        "payload_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "payload_semantics": {
+          "type": "string"
+        },
+        "datatype": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reduce_op": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rank_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "rank_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warmup": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "iterations": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "warmup_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repetitions": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "repetition_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "timeout_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "timing_method": {
+          "type": "string"
+        },
+        "completion_semantics": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object"
+        }
+      }
+    },
+    "measurements": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "timing": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "metric",
+            "unit",
+            "primary_statistic",
+            "statistics",
+            "statistics_provenance"
+          ],
+          "properties": {
+            "metric": {
+              "type": "string"
+            },
+            "unit": {
+              "enum": [
+                "us"
+              ]
+            },
+            "primary_statistic": {
+              "type": "string"
+            },
+            "statistics": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "statistics_provenance": {
+              "type": "object",
+              "additionalProperties": {
+                "enum": [
+                  "reported",
+                  "computed"
+                ]
+              }
+            },
+            "percentile_method": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sample_count": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "samples": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "number"
+              }
+            },
+            "per_rank": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "object",
+                "required": [
+                  "rank",
+                  "statistics"
+                ],
+                "properties": {
+                  "rank": {
+                    "type": "integer"
+                  },
+                  "statistics": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "throughput": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "value",
+              "unit",
+              "definition"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "tcp_application_payload",
+                  "collective_algorithmic",
+                  "collective_bus_estimate",
+                  "device_to_device_effective",
+                  "application_payload",
+                  "iperf3_tcp_goodput",
+                  "training_samples_per_second",
+                  "training_steps_per_second",
+                  "inference_output_tokens_per_second",
+                  "inference_requests_per_second"
+                ]
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0
+              },
+              "unit": {
+                "enum": [
+                  "Gbit/s",
+                  "GB/s",
+                  "GiB/s",
+                  "MB/s",
+                  "samples/s",
+                  "steps/s",
+                  "tokens/s",
+                  "requests/s"
+                ]
+              },
+              "definition": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "extra": {
+          "type": "object"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": [
+        "status",
+        "details"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_supported",
+            "not_run"
+          ]
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "success",
+            "failure",
+            "timeout",
+            "skipped",
+            "unsupported",
+            "invalid"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit_codes": {
+          "type": "object"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "array"
+        },
+        "stdout": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stderr": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "raw": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ranks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "rank",
+              "host_id"
+            ],
+            "properties": {
+              "rank": {
+                "type": "integer"
+              },
+              "host_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

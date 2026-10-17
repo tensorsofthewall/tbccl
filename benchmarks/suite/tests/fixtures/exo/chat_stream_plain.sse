@@ -1,0 +1,21 @@
+: keep-alive
+
+: prefill_progress {"PrefillProgressChunk":{"model":"mlx-community/Qwen3-0.6B-8bit","processed_tokens":0,"total_tokens":1}}
+
+: prefill_progress {"PrefillProgressChunk":{"model":"mlx-community/Qwen3-0.6B-8bit","processed_tokens":1,"total_tokens":1}}
+
+data: {"id":"235f856b-eb33-4abe-9349-03317c3b0b33","object":"chat.completion","created":1792223174,"model":"mlx-community/Qwen3-0.6B-8bit","choices":[{"index":0,"delta":{"role":"assistant","content":"One"}}]}
+
+data: {"id":"235f856b-eb33-4abe-9349-03317c3b0b33","object":"chat.completion","created":1792223174,"model":"mlx-community/Qwen3-0.6B-8bit","choices":[{"index":0,"delta":{"role":"assistant","content":","}}]}
+
+data: {"id":"235f856b-eb33-4abe-9349-03317c3b0b33","object":"chat.completion","created":1792223174,"model":"mlx-community/Qwen3-0.6B-8bit","choices":[{"index":0,"delta":{"role":"assistant","content":" two"}}]}
+
+data: {"id":"235f856b-eb33-4abe-9349-03317c3b0b33","object":"chat.completion","created":1792223174,"model":"mlx-community/Qwen3-0.6B-8bit","choices":[{"index":0,"delta":{"role":"assistant","content":","}}]}
+
+data: {"id":"235f856b-eb33-4abe-9349-03317c3b0b33","object":"chat.completion","created":1792223174,"model":"mlx-community/Qwen3-0.6B-8bit","choices":[{"index":0,"delta":{"role":"assistant","content":" three"}}]}
+
+data: {"id":"235f856b-eb33-4abe-9349-03317c3b0b33","object":"chat.completion","created":1792223174,"model":"mlx-community/Qwen3-0.6B-8bit","choices":[{"index":0,"delta":{"role":"assistant","content":","},"finish_reason":"length"}],"usage":{"prompt_tokens":20,"completion_tokens":6,"total_tokens":26,"prompt_tokens_details":{"cached_tokens":18,"audio_tokens":0},"completion_tokens_details":{"reasoning_tokens":0,"audio_tokens":0,"accepted_prediction_tokens":0,"rejected_prediction_tokens":0}}}
+
+: generation_stats {"prompt_tps":482.40776912085715,"generation_tps":273.4329733646244,"prompt_tokens":20,"generation_tokens":6,"peak_memory_usage":{"in_bytes":788800259},"prefix_cache_hit":"exact"}
+
+data: [DONE]

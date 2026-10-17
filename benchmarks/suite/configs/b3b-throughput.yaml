@@ -1,0 +1,66 @@
+# B3B preset: point-to-point transfer over the link (host memory) and the bounded raw TCP reference
+# Physical (Thunderbolt) campaign. The real addresses, paths and launcher live in a git-ignored overlay (see docs/development/benchmark-suite.md); this file holds the
+# workload matrix and the safety limits. Start with a preliminary overlay (few iterations, one repetition), run `doctor --probe --allow-physical` and `--dry-run`
+# first, and only then run with --allow-physical.  Results are local and git-ignored.  Performance numbers are never CI gates.
+# Run in tiers with --benchmark: `tensor_transfer` first (tier 2), then `iperf3` (tier 3, the higher-load tier) only if everything before it was clean.
+# Never add tcp_pingpong stream here without checking the estimated volume: the tool fixes its own iteration counts (about 4 GiB per point).
+schema: tbccl-bench-config/1
+name: b3b-throughput
+description: "point-to-point transfer over the link (host memory) and the bounded raw TCP reference"
+defaults:
+  warmup: 20
+  iterations: 30
+  repetitions: 3
+  timeout_s: 300
+  startup_wait_s: 20
+  lease_s: 30
+  term_grace_s: 3
+  port_range: [<PORT_RANGE_START>, <PORT_RANGE_END>]
+  failure_policy: {on_failure: abort_run}
+  provenance: {require_same_version: true, require_stamped: true}
+  health: {strict: true, snapshot_each_point: true, max_load_fraction: 0.75}
+limits:
+  max_processes: 2
+  max_point_bytes: 25769803776    # 24 GiB: the iperf3 ceiling (4 s at 40 Gbit/s); every other point is far below
+  max_total_bytes: 64424509440   # 60 GiB, counted from the bytes actually moved (iperf3 reports them)
+  max_campaign_s: 3600
+topology:
+  kind: direct-link
+  interconnect: thunderbolt4-ip      # a label for reports; TBCCL's transport is TCP over IPv4, never RDMA
+  transport: tcp
+  physical: true
+hosts:
+  host-a:                            # the machine the suite runs on
+    launcher: {kind: local}
+    address: <HOST_A_LINK_ADDRESS>
+    interface: <HOST_A_LINK_INTERFACE>
+    interfaces: {link: <HOST_A_LINK_ADDRESS>}
+    executables_dir: <HOST_A_BUILD_DIR>
+    executables: {iperf3: <HOST_A_IPERF3>}
+    health_snapshot: true
+    expect: {mtu: <EXPECTED_MTU>}
+  host-b:                            # reached through a management-path launcher (never the data link)
+    launcher: {kind: prefix, argv: ["<REMOTE_LAUNCH_PREFIX>", "<REMOTE_HOST_NAME>"], shell_join: true}
+    python: <HOST_B_PYTHON>
+    address: <HOST_B_LINK_ADDRESS>
+    interface: <HOST_B_LINK_INTERFACE>
+    interfaces: {link: <HOST_B_LINK_ADDRESS>}
+    management_address: <HOST_B_MANAGEMENT_ADDRESS>   # checked: the controller must reach it through a different interface than the data link
+    executables_dir: <HOST_B_BUILD_DIR>
+    executables: {iperf3: <HOST_B_IPERF3>}
+    health_script: <HOST_B_REPOSITORY>/scripts/tb4_health_snapshot.py
+    expect: {mtu: <EXPECTED_MTU>}
+ranks:
+  - {rank: 0, host: host-a, memory_backend: host, interface: link}
+  - {rank: 1, host: host-b, memory_backend: host, interface: link}
+workloads:
+  # data direction (source_ranks) and rank orientation are independent; with orientation forward, source 0 is host-a -> host-b and source 1 is host-b -> host-a.
+  - {name: network-only, benchmark: tensor_transfer, operation: network_only, sizes: [4096, 16384, 65536, 262144, 1048576, 4194304, 16777216], source_ranks: [0, 1], orientations: [forward]}
+  - {name: end-to-end, benchmark: tensor_transfer, operation: end_to_end, sizes: [4096, 16384, 65536, 262144, 1048576, 4194304, 16777216], source_ranks: [0, 1], orientations: [forward]}
+  # the same physical directions with the ranks swapped, on a subset: is the result a property of the direction or of the rank numbering?
+  - {name: network-only-swapped, benchmark: tensor_transfer, operation: network_only, sizes: [4096, 65536, 1048576, 16777216], source_ranks: [0, 1], orientations: [reverse]}
+  - {name: end-to-end-swapped, benchmark: tensor_transfer, operation: end_to_end, sizes: [4096, 65536, 1048576, 16777216], source_ranks: [0, 1], orientations: [reverse]}
+  # timing scope 'produce' includes the producer; kept separate from 'ready' (the default above)
+  - {name: end-to-end-produce, benchmark: tensor_transfer, operation: end_to_end, sizes: [4096, 1048576], source_ranks: [0, 1], orientations: [forward], options: {timing_scope: produce}}
+  # tier 3: single TCP stream, a few seconds, JSON from the client, server exits after one test; sequentially in each direction
+  - {name: raw-tcp, benchmark: iperf3, operation: tcp_stream, sizes: [131072], source_ranks: [0, 1], orientations: [forward], repetitions: 3, options: {duration_s: 3, omit_s: 1}}

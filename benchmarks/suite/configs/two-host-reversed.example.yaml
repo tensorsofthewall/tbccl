@@ -1,0 +1,53 @@
+# EXAMPLE: two physical hosts, rank 0 on host-b (Metal) and rank 1 on host-a (CUDA). Nothing here is a real address or path.
+#   cp two-host.example.yaml two-host.local.yaml   (git-ignored; or keep the real values in an overlay file passed with --overlay)
+#   python3 -m benchmarks.suite doctor two-host.local.yaml --probe        # read-only: hardware, executables, build provenance, link health signals
+#   python3 -m benchmarks.suite run two-host.local.yaml --dry-run
+#   python3 -m benchmarks.suite run two-host.local.yaml --allow-physical  # only after the checks above and your own link/GPU checks
+# This is the reverse orientation of two-host.example.yaml (same hosts, rank numbers swapped), or add `orientations: [forward, reverse]` to a workload to run both in one go.
+# TBCCL's transport is TCP over IPv4 whatever the interconnect is; `interconnect` is only a label for reports.
+schema: tbccl-bench-config/1
+name: two-host-reversed
+description: The reverse orientation of two-host.example.yaml; rank 0 on host-b
+defaults:
+  warmup: 20
+  iterations: 200
+  repetitions: 5
+  timeout_s: 300
+  lease_s: 30                 # a remote rank is terminated if the controller is silent this long (heartbeats every lease/4)
+  term_grace_s: 3
+  failure_policy: {on_failure: abort_run}
+  provenance: {require_same_version: true, require_stamped: false}
+limits: {max_processes: 4}
+topology:
+  kind: direct-link
+  interconnect: <INTERCONNECT_LABEL>
+  transport: tcp
+  physical: true
+hosts:
+  host-a:                                     # the machine you run the suite on
+    launcher: {kind: local}
+    address: <HOST_A_LINK_ADDRESS>
+    interface: <HOST_A_LINK_INTERFACE>
+    interfaces: {link: <HOST_A_LINK_ADDRESS>}  # name -> address, so a rank can pick which one peers use
+    expect: {mtu: <EXPECTED_MTU>, gpu_max_temp_c: 80}
+    health_snapshot: true
+  host-b:                                     # reached through whatever prefix you provide (ssh, a job launcher, ...); the suite does not assume ssh
+    launcher: {kind: prefix, argv: ["<REMOTE_LAUNCH_PREFIX>", "<REMOTE_HOST_NAME>"], shell_join: true}
+    python: python3
+    address: <HOST_B_LINK_ADDRESS>
+    interface: <HOST_B_LINK_INTERFACE>
+    interfaces: {link: <HOST_B_LINK_ADDRESS>}
+    executables_dir: <HOST_B_BUILD_DIR>
+    env: {OMP_NUM_THREADS: "2"}
+    health_script: <HOST_B_REPOSITORY>/scripts/tb4_health_snapshot.py
+    expect: {mtu: <EXPECTED_MTU>}
+    os: <HOST_B_OS>
+    arch: <HOST_B_ARCH>
+    build: {}                                  # or {commit: <BUILD_COMMIT>} to declare a commit; prefer `provenance stamp` on that host
+ranks:
+  - {rank: 0, host: host-b, memory_backend: metal-shared, interface: link}
+  - {rank: 1, host: host-a, memory_backend: cuda-pinned, interface: link}
+workloads:
+  - {name: tcp, benchmark: tcp_pingpong, operations: [pingpong, stream], sizes: smoke, memory_backend: host}
+  - {name: small-message, benchmark: small_message_latency, operations: [p2p], sizes: smoke, memory_backend: host}
+  - {name: tensor-device, benchmark: tensor_transfer, operations: [end_to_end], sizes: smoke}

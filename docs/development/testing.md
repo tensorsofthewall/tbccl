@@ -44,6 +44,15 @@ make check-compat      # compatibility.json must agree with the C ABI header and
 - **C ABI.** `tests/c_api/` pins layouts and the exported symbols; update `abi_symbols_v1.txt` only deliberately.
 - **Hardware.** Tests that need a GPU or a Thunderbolt link are opt-in. Follow the [Thunderbolt link guide](../guides/thunderbolt-link.md) for real-link sessions and take a health snapshot (`scripts/tb4_health_snapshot.sh`) before and after.
 
+## Benchmark suite tests
+
+The optional benchmark suite (`benchmarks/suite/`, see the [benchmark suite guide](benchmark-suite.md)) has its own unit tests. They need only CPython 3.13 and, for a short loopback run, built benchmark executables; they never touch a network interface or another machine, and they assert behaviour, not speed.
+
+```sh
+python3 -m unittest discover -s benchmarks/suite/tests -t .
+TBCCL_BUILD_DIR=build-release python3 -m unittest discover -s benchmarks/suite/tests -t .   # also runs the loopback workflows
+```
+
 ## Release archives
 
 CI builds the release archives from the tagged commit; you can build and check one locally with the same script:

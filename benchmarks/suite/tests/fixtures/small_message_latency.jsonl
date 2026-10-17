@@ -1,0 +1,4 @@
+{"label":"t","mode":"p2p","bytes":64,"median_us":113.81,"p25_us":112.42,"p75_us":116.90,"p95_us":135.20,"n":50,"cpu_cores":0.61,"sleep_ratio":1.00}
+{"label":"t","mode":"p2p","bytes":4096,"median_us":121.96,"p25_us":118.84,"p75_us":128.88,"p95_us":169.97,"n":50,"cpu_cores":0.57,"sleep_ratio":1.00}
+{"label":"t","mode":"allgather","bytes":64,"median_us":102.97,"p25_us":98.91,"p75_us":105.49,"p95_us":210.43,"n":50,"cpu_cores":0.72,"sleep_ratio":1.00}
+{"label":"t","mode":"allgather","bytes":4096,"median_us":106.29,"p25_us":104.14,"p75_us":109.87,"p95_us":141.93,"n":50,"cpu_cores":0.74,"sleep_ratio":1.00}

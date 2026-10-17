@@ -1,0 +1,123 @@
+{
+  "availability": {
+    "detected": {
+      "exo": null,
+      "exo-tbccl": null,
+      "mlx": null,
+      "native_modules": null,
+      "platform": "linux-x86_64",
+      "psutil": null,
+      "python": "3.13.0"
+    },
+    "reasons": [
+      "Python package 'exo' (module 'exo') is not installed in this interpreter",
+      "Python package 'exo-tbccl' (module 'exo_tbccl') is not installed in this interpreter",
+      "Python package 'mlx' (module 'mlx') is not installed in this interpreter"
+    ],
+    "status": "environment_missing"
+  },
+  "benchmark_configuration_schema": {
+    "properties": {
+      "activity_policy": {
+        "type": "string"
+      },
+      "backend": {
+        "enum": [
+          "MlxRing",
+          "MlxTbccl"
+        ],
+        "type": "string"
+      },
+      "concurrency": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "max_tokens": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "stage_hosts": {
+        "type": "string"
+      },
+      "stage_layers": {
+        "type": "string"
+      },
+      "tier": {
+        "enum": [
+          "baseline",
+          "fastpath"
+        ],
+        "type": "string"
+      },
+      "workload": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "workload"
+    ],
+    "type": "object"
+  },
+  "entry_point_sha256": {
+    "client": "08c61d83a2a5951b32708f256bc50e44990ce9648b0d2a132cf0359d34175b69",
+    "sampler": "44bedff3a50f2015b183f1679110d839ad8c7919626851a090bf23d574603ea5",
+    "trace_hook": "171604271c04ce1796aa364dd4bd9d13e113d01b65a285a653381454ba898492"
+  },
+  "entry_points": {
+    "client": "client.py",
+    "sampler": "sampler.py",
+    "trace_hook": "trace_hook/sitecustomize.py"
+  },
+  "optional_dependencies": [
+    "psutil"
+  ],
+  "provider_id": "exo-tbccl",
+  "provider_protocol_version": 1,
+  "provider_version": "source-checkout",
+  "required_framework_versions": {
+    "exo": "tensorsofthewall/exo-fork tag tbccl-integration-v2 (revision d1497b28b89618172d273e70e9ac7992811635f5)",
+    "exo-tbccl": ">=0.3,<0.4",
+    "libtbccl": {
+      "c_abi": [
+        1
+      ],
+      "minimum_package": "0.6.0"
+    },
+    "mlx": "0.32.0 (Linux CUDA); 0.32.4.dev20261013+0e3ff3643 (macOS, exo's pin)",
+    "python": ">=3.13"
+  },
+  "required_model_configuration": {
+    "note": "an MLX model already present on every host; the provider never downloads models. Reference configuration: Qwen3-0.6B-8bit",
+    "required": true
+  },
+  "required_runtime_capabilities": [
+    "exo cluster with the MlxRing and MlxTbccl placements",
+    "TBCCL communicator (MlxTbccl)",
+    "MLX CUDA on Linux, MLX Metal on macOS (DLPack compatibility check on Metal)"
+  ],
+  "supported_device_pairings": [
+    "cuda-metal",
+    "metal-metal"
+  ],
+  "supported_memory_kinds": [
+    "host",
+    "cuda",
+    "metal"
+  ],
+  "supported_platforms": [
+    "linux",
+    "darwin"
+  ],
+  "supported_result_schema_versions": [
+    "tbccl-bench-result/1"
+  ],
+  "supported_workloads": [
+    "correctness",
+    "latency",
+    "throughput",
+    "transport_ab",
+    "stage_profile",
+    "large_model",
+    "lifecycle"
+  ]
+}
