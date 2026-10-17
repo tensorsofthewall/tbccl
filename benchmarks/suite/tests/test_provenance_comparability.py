@@ -149,5 +149,52 @@ class BaselineComparison(unittest.TestCase):
         self.assertFalse([l for l in r["labels"] if "build" in l])
 
 
+class Attribution(unittest.TestCase):
+    """What may be concluded about the cause of a difference: one changed component, several at once, or nothing known."""
+    def result(self, base, cand):
+        return pc.compare_identity(base, cand)
+
+    def test_a_single_changed_component_is_named_and_not_refused(self):
+        r = self.result({"executable.x.sha256": "1", "provider.p.h.version": "0.2.0"}, {"executable.x.sha256": "2", "provider.p.h.version": "0.2.0"})
+        self.assertEqual(pc.components_changed(r), [pc.COMPONENT_TBCCL])
+        line = pc.attribution(r)[0]
+        self.assertIn("only the TBCCL build differs", line)
+        self.assertNotIn("WARNING", line)
+
+    def test_an_unintended_framework_change_is_named_as_the_software_underneath(self):
+        r = self.result({"executable.x.sha256": "1", "provider.p.h.framework.torch": "2.13.0"}, {"executable.x.sha256": "1", "provider.p.h.framework.torch": "2.13.1"})
+        self.assertEqual(pc.components_changed(r), [pc.COMPONENT_FRAMEWORK])
+        self.assertIn("software underneath the run changed", pc.attribution(r)[0])
+
+    def test_several_changed_components_are_warned_about_together(self):
+        r = self.result({"executable.x.sha256": "1", "provider.p.h.version": "0.2.0", "provider.p.h.framework.torch": "2.13.0"},
+                        {"executable.x.sha256": "2", "provider.p.h.version": "0.2.1", "provider.p.h.framework.torch": "2.13.1"})
+        self.assertEqual(len(pc.components_changed(r)), 3)
+        line = pc.attribution(r)[0]
+        self.assertTrue(line.startswith("WARNING"))
+        self.assertIn("cannot be attributed to one component alone", line)
+
+    def test_an_adapter_wheel_swap_is_one_component_not_three(self):
+        """A new adapter wheel changes its version, its compiled extension and its scripts together."""
+        r = self.result({"provider.p.h.version": "0.2.0", "provider.p.h.native.ext": "aa", "provider.p.h.script.s": "bb"},
+                        {"provider.p.h.version": "0.2.1", "provider.p.h.native.ext": "cc", "provider.p.h.script.s": "dd"})
+        self.assertEqual(pc.components_changed(r), [pc.COMPONENT_ADAPTER])
+
+    def test_unknown_facts_do_not_count_as_a_changed_component(self):
+        r = self.result({"provider.p.h.version": "0.2.0", "provider.p.h.native.ext": "aa"}, {"provider.p.h.version": "0.2.0"})
+        self.assertEqual(pc.components_changed(r), [])
+        self.assertEqual(pc.attribution(r), [])
+        self.assertIn("provider.p.h.native.ext", r["unknown"])
+
+    def test_the_run_report_and_the_baseline_comparison_both_carry_the_warning(self):
+        cand = with_change(provider_version="0.2.1", framework_versions={"exo": "0.3.71", "mlx": "0.32.0"})
+        r, md = RunComparison().md(run([100, 101, 99], [PROVIDER], name="a"), run([100, 101, 99], cand, exe="2", name="b"))
+        self.assertIn("cannot be attributed to one component alone", md)
+        base = comparison.compare(snap(TPOT, STEADY, software_versions={"torch": "2.13.0", "tbccl": "0.6.0"}), snap(TPOT, STEADY, software_versions={"torch": "2.13.1", "tbccl": "0.6.1"}))
+        self.assertEqual(base["software_provenance"]["changed_components"], [pc.COMPONENT_TBCCL, pc.COMPONENT_FRAMEWORK])
+        self.assertTrue([l for l in base["labels"] if "cannot be attributed to one component alone" in l])
+        self.assertEqual(base["classification"], comparison.compare(snap(TPOT, STEADY, software_versions={"x": "1"}), snap(TPOT, STEADY, software_versions={"x": "1"}))["classification"])
+
+
 if __name__ == "__main__":
     unittest.main()

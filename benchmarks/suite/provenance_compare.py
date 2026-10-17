@@ -66,9 +66,37 @@ def compare_identity(baseline: dict, candidate: dict) -> dict:
     return out
 
 
+COMPONENT_TBCCL, COMPONENT_ADAPTER, COMPONENT_FRAMEWORK, COMPONENT_OTHER = "the TBCCL build", "the benchmark provider or adapter", "the framework", "other recorded software"
+_FRAMEWORK_KEYS = {"torch", "vllm", "vllm-metal", "mlx", "mlx-lm", "exo", "transformers", "psutil", "cuda", "jax"}
+
+
+def component_of(fact: str) -> str:
+    """The component a recorded fact belongs to. A new adapter wheel changes its version, its compiled extension and usually its scripts together: those are one component, the adapter."""
+    if fact.startswith(("executable.", "tbccl.")) or fact in ("tbccl", "wire_protocol", "c_abi"):
+        return COMPONENT_TBCCL
+    if fact.startswith("provider."):
+        return COMPONENT_FRAMEWORK if ".framework." in fact else COMPONENT_ADAPTER
+    return COMPONENT_FRAMEWORK if fact.split(".")[0].lower() in _FRAMEWORK_KEYS else COMPONENT_OTHER
+
+
+def components_changed(result) -> list:
+    """The components with at least one fact that both sides recorded and that differs."""
+    return sorted({component_of(k) for k in result["different"]})
+
+
+def attribution(result) -> list:
+    """What a reader may conclude about the cause of a measured difference, from the recorded facts alone. A deliberate comparison of an old and a new build is allowed; what is refused is silence about it."""
+    changed = components_changed(result)
+    if len(changed) > 1:
+        return [f"WARNING: {', '.join(changed[:-1])} and {changed[-1]} all differ between the runs: a performance difference cannot be attributed to one component alone"]
+    if changed:
+        return [f"only {changed[0]} differs between the runs. If that is the change you made, a difference can be attributed to it; if you did not change it, the software underneath the run changed and the comparison is not a test of your change"]
+    return []
+
+
 def describe(result) -> list:
     """Plain-language lines for a report."""
-    lines = []
+    lines = list(attribution(result))
     for k, (a, b) in sorted(result["different"].items()):
         lines.append(f"{k}: {a[:16]} -> {b[:16]}" if len(a) > 32 or len(b) > 32 else f"{k}: {a} -> {b}")
     for k, side in sorted(result["unknown"].items()):

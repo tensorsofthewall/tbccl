@@ -220,6 +220,8 @@ def compare(baseline: dict, candidate: dict, purpose: str = "regression", tolera
         result["labels"].append("build identity not recorded for at least one side: a change cannot be attributed to a build")
     elif result["software_provenance"]["unknown"]:
         result["labels"].append("some build facts were recorded for only one side (unknown, not assumed equal)")
+    result["software_provenance"]["changed_components"] = _pc.components_changed(result["software_provenance"])
+    result["labels"] += _pc.attribution(result["software_provenance"])
     if not fit["compatible"]:
         return done("incompatible", *[f"{m['dimension']}: {m['baseline']!r} against {m['candidate']!r}" + (" (not recorded)" if m["kind"] == "missing" else "") for m in fit["mismatches"]],
                     *fit["explanations"], mismatches=fit["mismatches"], speedup=None)
