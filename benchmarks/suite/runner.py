@@ -414,7 +414,7 @@ def _stop_remote(handle):
 
 
 class Redactor:
-    """Replaces non-loopback addresses and local paths in strings that go into tracked-looking records. Raw stdout/stderr files are not rewritten."""
+    """Replaces non-loopback addresses and local paths in strings that go into tracked-looking records: configured addresses, the checkout and the home directory by name, every other absolute path by its last two components. Raw stdout/stderr files are not rewritten."""
 
     def __init__(self, config, repo_root=inventory.REPO_ROOT):
         self.pairs = [(h.address, f"{{address:{h.id}}}") for h in config.hosts.values() if not h.is_loopback and h.address]
@@ -429,7 +429,7 @@ class Redactor:
     def text(self, value):
         for old, new in self.pairs:
             value = value.replace(old, new)
-        return value
+        return providers.shareable_path(value)  # any other absolute path (another host's home, a mount point, a venv) keeps only its last two components
 
     def argv(self, argv):
         return [self.text(a) for a in argv]

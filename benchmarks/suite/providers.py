@@ -177,7 +177,7 @@ def record_entries(rows, host_ids) -> list:
     return out
 
 
-_ABSOLUTE_PATH = re.compile(r"(?<![\w.~-])(/(?:[^\s/:;,'\")]+/)*[^\s/:;,'\")]+)")
+_ABSOLUTE_PATH = re.compile(r"(?<![\w.~/>}-])(/(?:[^\s/:;,'\")]+/)*[^\s/:;,'\")]+)")
 
 
 def shareable_path(path):

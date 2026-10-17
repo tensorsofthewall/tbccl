@@ -309,6 +309,19 @@ class Redaction(unittest.TestCase):
         self.assertEqual((out["ports"], out["loopback"]), ([1, 2], "127.0.0.1"))
         self.assertNotIn("192.0.2", str(out))
 
+    def test_other_absolute_paths_keep_only_their_last_two_components(self):
+        """A recorded command names the interpreters and scripts of every host; a shared result must not carry a user name, a mount point or a directory layout from any of them."""
+        config = make_config(hosts={"peer": {"address": "192.0.2.77"}, "local": {"address": "127.0.0.1"}}, topology={"kind": "direct-link", "interconnect": "x", "transport": "tcp", "physical": True},
+                             ranks=[{"rank": 0, "host": "local"}, {"rank": 1, "host": "peer"}])
+        r = run.Redactor(config)
+        argv = ["/Users/someone/venvs/vllm/bin/python", "/mnt/disk/projects/adapter/benchmarks/provider/server.py", "--model=/home/other/models/qwen/Qwen3", "--port", "36000"]
+        out = " ".join(r.argv(argv))
+        for private in ("someone", "/mnt/disk", "other", "/Users/"):
+            self.assertNotIn(private, out)
+        self.assertIn("bin/python", out)
+        self.assertIn("--port 36000", out)
+        self.assertEqual(r.text("https://example.org/a/b/c/d"), "https://example.org/a/b/c/d")
+
 
 if __name__ == "__main__":
     unittest.main()
