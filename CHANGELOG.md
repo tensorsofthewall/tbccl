@@ -30,7 +30,6 @@ Patch release. It adds the public benchmark suite and its documentation. There i
 
 ### Known limitations
 
-- The first public benchmark release keeps the temporary in-tree copies of the PyTorch, vLLM and Exo workload scripts for use when no provider directory is configured; a later release removes them.
 - All published reference measurements come from one Linux CUDA / Apple Metal machine pair. PCIe AER reporting was unavailable on the Linux host, so no statement about AER errors is made.
 
 ## 0.6.0
