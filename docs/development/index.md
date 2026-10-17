@@ -18,6 +18,11 @@ contributing
 where-should-this-change-go
 testing
 benchmark-methodology
+benchmark-suite
+benchmark-suite-inventory
+benchmark-baselines
+benchmark-providers
+performance-evaluation
 building-docs
 release-process
 maintenance

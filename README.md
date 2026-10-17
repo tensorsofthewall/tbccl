@@ -93,6 +93,10 @@ Hosted documentation: https://tbccl.tensorsofthewall.com/ (`stable` is the lates
 
 Start with [getting started](docs/getting-started/index.md). The [compatibility matrix](docs/reference/compatibility-matrix.md), [troubleshooting](docs/guides/troubleshooting.md), [known limitations](docs/project/limitations.md) and the [ecosystem overview](docs/project/ecosystem.md) answer most first questions.
 
+## Benchmarks
+
+Measure TBCCL on your own hardware, generate your own reports and compare your own runs: [run benchmarks](docs/benchmarks/quickstart.md), [performance results](docs/benchmarks/native-results.md) (one machine pair, with its limits) and [methodology](docs/benchmarks/methodology.md).
+
 ## Known limitations
 
 Only TCP over IPv4 (no RDMA); no direct CUDA-to-Metal DMA; `Sum` is the only reduction; Float16 and BFloat16 reductions only at world size 2; no recovery after a communicator failure; Windows is not supported. See [known limitations](docs/project/limitations.md).

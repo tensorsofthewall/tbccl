@@ -56,3 +56,7 @@ Added with the shared harness `tools/benchmark_allreduce.py`, which follows the 
 5. **Report spread, not one number.** Use the median of several timed loops and keep the minimum and maximum. Repeat on another day before believing a difference.
 6. **Physical runs follow the hardware rules.** Check the link's health and the GPU's thermal state before timed runs and the link again afterwards; stop on new errors. A throttled GPU or a degraded link invalidates the numbers, and a run that stopped early is reported as stopped.
 7. **No numbers from verification loops or from runs that failed.** A result file whose verified `all_reduce` did not match is a failure, not a slow result.
+
+## The benchmark suite
+
+`benchmarks/suite/` applies these conventions to the benchmark executables TBCCL already has and records every result with its configuration, build provenance, timing method, completion semantics and verification status. Usage, safety rules and the result schema are in the [benchmark suite guide](benchmark-suite.md); what each native benchmark times is in the [benchmark inventory](benchmark-suite-inventory.md); the reviewed measurements taken so far are summarised in the [performance evaluation](performance-evaluation.md). The suite adds no methodology of its own: where this page and the suite disagree, this page is authoritative and the suite is wrong.
