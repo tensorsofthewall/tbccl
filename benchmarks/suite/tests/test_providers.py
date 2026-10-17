@@ -160,17 +160,17 @@ class Environment(SuiteTestCase):
 class SharedPaths(SuiteTestCase):
     """Results are meant to be shared: the provider provenance must not carry user names, mount points or directory layout."""
 
-    def test_absolute_paths_keep_only_their_last_two_components(self):
-        self.assertEqual(providers.shareable_path("/home/someone/envs/torch/bin/python"), "<...>/bin/python")
-        self.assertEqual(providers.shareable_path("/mnt/disk/projects/adapter/benchmarks/provider"), "<...>/benchmarks/provider")
+    def test_absolute_paths_keep_only_their_last_component(self):
+        self.assertEqual(providers.shareable_path("/home/someone/envs/torch/bin/python"), "<...>/python")
+        self.assertEqual(providers.shareable_path("/mnt/disk/projects/adapter/benchmarks/provider"), "<...>/provider")
 
     def test_values_that_are_not_absolute_paths_are_unchanged(self):
         for value in (None, "python3", "bin/python", "/a"):
             self.assertEqual(providers.shareable_path(value), value)
 
-    def test_short_paths_do_not_keep_a_user_name(self):
-        """With only the last two components kept, `/home/<user>/python` would still name the user."""
-        for path, expected in (("/home/alice/python", "<...>/python"), ("/Users/alice", "~"), ("/mnt/alice/venv", "<...>/venv"), ("/home/alice/proj/bin/python", "<...>/bin/python")):
+    def test_no_directory_name_is_kept(self):
+        """User names, mount points and customer names live in directory names."""
+        for path, expected in (("/home/alice/python", "<...>/python"), ("/Users/alice", "~"), ("/mnt/alice/venv", "<...>/venv"), ("/home/alice/proj/bin/python", "<...>/python"), ("/srv/customer-x/models/qwen", "<...>/qwen")):
             out = providers.shareable_path(path)
             self.assertEqual(out, expected)
             self.assertNotIn("alice", out)

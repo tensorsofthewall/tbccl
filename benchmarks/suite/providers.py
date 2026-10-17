@@ -181,17 +181,17 @@ _ABSOLUTE_PATH = re.compile(r"(?<![\w.~/>}-])(/(?:[^\s/:;,'\")]+/)*[^\s/:;,'\")]
 
 
 def _shorten(match):
-    """Four or more components keep the last two. A shorter path (`/home/<user>/python`, `/mnt/<user>/venv`) keeps only the last one, because its second component can be a user name."""
+    """An absolute path keeps only its last component (an executable basename such as `python`, or `provider`): directory names are where user names, mount points and customer names live. A bare home directory becomes `~`. Full paths stay in local diagnostics (raw output, health snapshots)."""
     parts = match.group(1).split("/")[1:]
     if len(parts) < 2:
         return match.group(1)
     if len(parts) == 2 and parts[0] in ("home", "Users"):
-        return "~"  # a home directory itself: its name is the user name
-    return "<...>/" + "/".join(parts[-2:] if len(parts) >= 4 else parts[-1:])
+        return "~"
+    return "<...>/" + parts[-1]
 
 
 def shareable_path(path):
-    """An absolute path as it may be recorded in a result that is shared: the last two components (one for a short path), so `<...>/benchmarks/provider` and `<...>/bin/python` stay recognisable without revealing user names, mount points or directory layout. Relative values and None are unchanged."""
+    """An absolute path as it may be recorded in a result that is shared: its last component only (see _shorten), so `<...>/python` and `<...>/provider` stay recognisable without revealing user names, mount points or directory layout. Relative values and None are unchanged."""
     if not isinstance(path, str):
         return path
     return _ABSOLUTE_PATH.sub(_shorten, path)

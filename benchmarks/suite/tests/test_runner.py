@@ -316,9 +316,10 @@ class Redaction(unittest.TestCase):
         r = run.Redactor(config)
         argv = ["/Users/someone/venvs/vllm/bin/python", "/mnt/disk/projects/adapter/benchmarks/provider/server.py", "--model=/home/other/models/qwen/Qwen3", "--port", "36000"]
         out = " ".join(r.argv(argv))
-        for private in ("someone", "/mnt/disk", "other", "/Users/"):
+        for private in ("someone", "/mnt/disk", "other", "/Users/", "venvs", "projects", "adapter", "models"):
             self.assertNotIn(private, out)
-        self.assertIn("bin/python", out)
+        self.assertIn("<...>/python", out)
+        self.assertIn("<...>/server.py", out)
         self.assertIn("--port 36000", out)
         self.assertEqual(r.text("https://example.org/a/b/c/d"), "https://example.org/a/b/c/d")
 
