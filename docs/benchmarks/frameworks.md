@@ -31,6 +31,18 @@ Every framework result records which provider produced it: the provider and prot
 
 Each adapter documents its own workloads, timing definitions, results and limits in its own documentation. The workloads are also described in the [benchmark suite guide](../development/benchmark-suite.md).
 
+## Obtaining and pairing a provider
+
+A provider is the `benchmarks/provider` directory of an adapter repository. Take it from the adapter release you are measuring, by downloading the source archive of its tag or checking the tag out, and set `*_bench_dir` to that directory; the adapter's wheel, which is installed in the framework environment, is a separate thing.
+
+| Provider | Source of the provider directory | Runs in |
+|---|---|---|
+| `torch-tbccl` | tag `v0.2.1` of `tensorsofthewall/torch-tbccl` | a PyTorch 2.13 environment with torch-tbccl installed |
+| `vllm-tbccl` | tag `v0.2.1` of `tensorsofthewall/vllm-tbccl` | a vLLM 0.31.0 environment with vllm-tbccl installed |
+| `exo-tbccl` | tag `v0.3.1` of `tensorsofthewall/exo-tbccl` | the Exo environment with exo-tbccl installed |
+
+The runner and a provider do not need the same package version. They are paired by three things that are checked, not assumed: the **provider protocol** (the runner supports protocol 1 and `describe` reports the provider's), the **result schema** (`tbccl-bench-result/1`, listed by `describe`) and the **runtime** (the adapter's own C ABI and wire protocol, which are unchanged across these releases). The identity of what actually ran is recorded in every result: the provider's version, the framework versions, and the hash of the compiled extension in the installed wheel. An adapter wheel carries the TBCCL library it was built with, so the library that ran is the adapter's, not the runner's. The suite identifies it by the hash of the compiled extension and never reports the runner's version as the library's; the library version, C ABI and wire protocol of an installed adapter are shown by its own `info()` command (for example `python -m torch_tbccl.info`).
+
 ## Compatibility copy
 
 Until the adapter repositories ship their providers, this repository still contains a copy of each framework's workload scripts (`benchmarks/suite/torch_bench`, `vllm_bench`, `exo_bench`). A host that configures only the interpreter (no `*_bench_dir`) uses that copy, and the result records it as `bundled_compat` with the hashes of those scripts and without framework versions. Prefer the provider.

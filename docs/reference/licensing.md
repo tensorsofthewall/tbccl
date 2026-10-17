@@ -10,6 +10,10 @@ TBCCL contains no vendored third-party source code and no copied or adapted thir
 
 The installed prefix contains TBCCL's own static libraries and headers. Because the libraries are static, a program or package that links TBCCL embeds TBCCL code; such a package must carry TBCCL's license text (see the torch-tbccl and exo-tbccl pages).
 
+## Benchmark suite
+
+The Python benchmark suite (`benchmarks/suite`) contains no vendored third-party code. It imports PyYAML (MIT licence) to read configuration files, and optionally matplotlib (matplotlib licence) for static plots; you install them yourself and they are not redistributed with TBCCL. The framework benchmark providers in the adapter repositories additionally use `psutil` (BSD-3-Clause) when it is installed in the framework environment. The generated HTML report is a single self-contained file with no external scripts, styles or fonts.
+
 ## Documentation build
 
 The documentation toolchain (Sphinx, MyST, Furo, Breathe, Doxygen and their dependencies) is used only to build the documentation and is not redistributed with TBCCL. The pinned versions are in `docs/requirements.txt`.

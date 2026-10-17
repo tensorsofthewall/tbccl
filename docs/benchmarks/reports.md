@@ -29,4 +29,12 @@ A run id, a run directory or a `results.jsonl` path all work. Files are written 
 
 ## Sharing a report
 
-Reports contain the hardware descriptions, addresses and paths that appeared in your configuration. Read a report before you publish it and remove what you do not want public. Nothing is uploaded by the suite.
+What is safe to share, and what is not:
+
+| In the run directory | Contains | Share it? |
+|---|---|---|
+| `report.md`, `report.html`, `report.json`, `summary.csv` | measurements, hardware and software descriptions, the commands that ran | after you have read it |
+| `results.jsonl`, `manifest.json` | the same records the reports are made from | after you have read it |
+| `raw/`, `health/` | **unredacted** program output, and link-health snapshots with interface addresses, MAC addresses and host names | no; keep them local |
+
+In the records and reports, configured host addresses, your home directory and the suite checkout are replaced by placeholders, and every other absolute path (interpreters, provider directories, model directories) is cut to its last two components. A report can still carry host labels, hardware names and anything you typed into a label, a command or a configuration value. Read what you publish. Nothing is uploaded by the suite.

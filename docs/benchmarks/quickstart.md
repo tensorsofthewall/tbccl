@@ -2,6 +2,19 @@
 
 This runs the native benchmarks on one machine, on loopback. It needs a C++ toolchain and CMake for the build, and Python 3.13 with PyYAML for the suite. No GPU, second machine, PyTorch, vLLM or Exo is needed.
 
+## Get the suite
+
+The Python benchmark suite is **not** inside the native release archives (`tbccl-<version>-<platform>.tar.gz`, which hold the library, headers, CMake packages and `tbccl-info`). It is part of the source of each release: download the source archive of the release tag, or check the tag out, and run it from that directory. Use the tag of the release you are measuring.
+
+```sh
+curl -fsSL https://github.com/tensorsofthewall/tbccl/archive/refs/tags/v0.6.1.tar.gz | tar -xz
+cd tbccl-0.6.1
+```
+
+(`git clone --branch v0.6.1 https://github.com/tensorsofthewall/tbccl` gives the same files.) Nothing else is downloaded. The framework providers are obtained the same way from the matching tags of their repositories; see [framework benchmarks](frameworks.md).
+
+## Run it
+
 ```sh
 # 1. build the benchmark programs once
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
