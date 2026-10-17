@@ -22,6 +22,7 @@ PRESETS = {"smoke": SMOKE_SIZES, "standard": STANDARD_SIZES}
 VERIFICATION_POLICIES = ("required", "preferred", "off")
 TOPOLOGY_KINDS = ("loopback", "direct-link", "switched", "unknown")
 PLACEHOLDER = re.compile(r"<[A-Za-z0-9_ .:/-]+>")
+WORKLOAD_PLACEHOLDER = re.compile(r"<[A-Z][A-Z0-9_]*>")
 LOOPBACK_PREFIXES = ("127.", "localhost", "::1")
 
 TOP_KEYS = {"schema", "name", "description", "output_dir", "build_dirs", "limits", "defaults", "topology", "hosts", "ranks", "workloads"}
@@ -472,6 +473,21 @@ def unresolved_placeholders(config: RunConfig) -> list:
 
     walk(config.raw.get("hosts") or {}, "hosts")
     walk(config.raw.get("defaults") or {}, "defaults")
+
+    def walk_strict(value, where):
+        """Workload options and the topology may hold free text (prompts, labels), so only the shipped upper-case form <MODEL_ID> counts as an unfilled placeholder there."""
+        if isinstance(value, str) and WORKLOAD_PLACEHOLDER.search(value):
+            found.append(f"{where}: {value}")
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk_strict(v, f"{where}.{k}")
+        elif isinstance(value, list):
+            for i, v in enumerate(value):
+                walk_strict(v, f"{where}[{i}]")
+
+    walk_strict(config.raw.get("topology") or {}, "topology")
+    for i, workload in enumerate(config.raw.get("workloads") or []):
+        walk_strict(workload, f"workloads[{i}]")
     return found
 
 

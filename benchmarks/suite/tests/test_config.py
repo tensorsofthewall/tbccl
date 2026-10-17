@@ -70,6 +70,14 @@ class Validation(unittest.TestCase):
         wl["rank_counts"] = [1]
         self.assertIn("supports 2..2 ranks", self.errors(workloads=[wl]))
 
+    def test_an_unfilled_placeholder_in_a_workload_or_the_topology_is_reported(self):
+        c = make_config(topology={"kind": "direct-link", "interconnect": "<INTERCONNECT_LABEL>", "transport": "tcp", "physical": False},
+                        workloads=[{"name": "w", "benchmark": "tcp_pingpong", "operation": "pingpong", "sizes": [4], "options": {"model_id": "<MODEL_ID>", "prompt": "say <think> twice"}}])
+        found = cfg.unresolved_placeholders(c)
+        self.assertTrue(any("topology.interconnect" in f for f in found))
+        self.assertTrue(any("workloads[0].options.model_id" in f for f in found))
+        self.assertFalse(any("prompt" in f for f in found), "free text such as <think> is not a placeholder")
+
     def test_port_range_is_validated_and_placeholders_are_reported_not_crashed_on(self):
         for bad in ([5, 10], [40000, 30000], [1], "x", [70000, 80000], [True, 5000]):
             self.assertIn("port_range", self.errors(defaults={"port_range": bad}))
