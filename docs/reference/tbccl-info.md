@@ -4,8 +4,8 @@
 
 ```text
 $ tbccl-info
-TBCCL 0.6.1
-Package version:   0.6.1
+TBCCL 0.6.0
+Package version:   0.6.0
 C ABI version:     1
 Wire protocol:     4
 Platform:          linux x86_64
@@ -15,14 +15,14 @@ Memory providers:  host, cuda
 `tbccl-info --json` prints the same information as one JSON object, for scripts and bug reports:
 
 ```json
-{"public_version": "0.6.1", "package_version": "0.6.1", "c_abi": 1, "wire_protocol": 4, "os": "linux", "arch": "x86_64", "providers": {"host": true, "cuda": true, "metal_shared": false}}
+{"public_version": "0.6.0", "package_version": "0.6.0", "c_abi": 1, "wire_protocol": 4, "os": "linux", "arch": "x86_64", "providers": {"host": true, "cuda": true, "metal_shared": false}}
 ```
 
 ## Fields
 
 | Field | Meaning | What to compare |
 |---|---|---|
-| public version (`TBCCL 0.6.1`) | the release name (`0.6.1`; a release candidate carries an `rcN` suffix) | what you intended to install |
+| public version (`TBCCL 0.6.0`) | the release name (`0.6.0`; a release candidate carries an `rcN` suffix) | what you intended to install |
 | package version | the numeric `major.minor.patch` of the CMake package and `tbcclGetPackageVersion` | the minimum an adapter requires |
 | C ABI version | the stable binary interface (`TBCCL_C_ABI_VERSION`) | must match what a consumer was built against |
 | wire protocol | what ranks exchange on the network | **must be equal on every rank** |
