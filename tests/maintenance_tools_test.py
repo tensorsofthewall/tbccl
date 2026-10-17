@@ -262,7 +262,7 @@ class Ecosystem(unittest.TestCase):
 
     def test_tag_version_mismatch(self):
         e = copy.deepcopy(self.eco)
-        e["torch_tbccl"]["tag"] = "v0.2.1"
+        e["torch_tbccl"]["tag"] = "v" + e["torch_tbccl"]["version"] + ".1"  # never the recorded version, whatever release is current
         self.assertEqual(self.offline(e), mc.INTEGRITY)
 
     def test_invalid_sha(self):
