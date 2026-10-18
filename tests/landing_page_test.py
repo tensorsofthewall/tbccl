@@ -54,6 +54,11 @@ class Structure(unittest.TestCase):
                 if name and not name.startswith(":"):
                     self.assertTrue((DOCS / f"{name}.md").exists() or (DOCS / name / "index.md").exists(), name)
 
+    def test_toctrees_are_hidden_on_the_page(self):
+        """Furo lists the tree in the sidebar; repeating it in the article only buries the landing page."""
+        for block in INDEX.split("```{toctree}")[1:]:
+            self.assertIn(":hidden:", block.split("```")[0])
+
     def test_internal_links_resolve(self):
         for target in re.findall(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)", INDEX):
             if target.startswith("http"):
@@ -124,6 +129,8 @@ class Figure(unittest.TestCase):
             for i in ids.groups():
                 self.assertIn(f'id="{i}"', svg)
             self.assertNotIn("<image", svg)
+            desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S).group(1)
+            self.assertRegex(desc, r"C and C\+\+ programs call the runtime[^.]*directly", "C and C++ programs must be shown using the runtime without an adapter")
             self.assertNotRegex(svg, r"#[0-9a-fA-F]{3,8}\b", "colours come from the page, not from the figure")
 
 
