@@ -97,17 +97,21 @@ The [ecosystem overview](project/ecosystem.md) explains how the projects fit tog
 </svg>
 <svg class="tb-narrow" viewBox="0 0 340 470" role="img" aria-labelledby="tb-arch-t2 tb-arch-d2" xmlns="http://www.w3.org/2000/svg">
 <title id="tb-arch-t2">TBCCL architecture</title>
-<desc id="tb-arch-d2">Applications are on top. PyTorch, vLLM and exo programs use the adapters torch-tbccl, vllm-tbccl and exo-tbccl, and C or C++ programs call the runtime directly. Below the adapters is the tbccl runtime, libtbccl, which sends data over TCP on IPv4, including IP over a direct Thunderbolt 4 link. There is no RDMA and no direct GPU-to-GPU DMA.</desc>
+<desc id="tb-arch-d2">On the left, PyTorch, vLLM and exo programs reach the tbccl runtime through the adapters torch-tbccl, vllm-tbccl and exo-tbccl, which are separate packages. On the right, C and C++ programs call the runtime, libtbccl, directly through its C ABI, without an adapter. The runtime sends data over TCP on IPv4, including IP over a direct Thunderbolt 4 link. There is no RDMA and no direct GPU-to-GPU DMA.</desc>
 <defs><marker id="tb-ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="tb-arrow" d="M0 0L10 5L0 10z"/></marker></defs>
-<rect class="tb-box" x="5" y="5" width="330" height="62" rx="6"/>
-<text class="tb-label" x="170" y="30" text-anchor="middle">Applications</text><text class="tb-small" x="170" y="50" text-anchor="middle">PyTorch · vLLM · exo · your C or C++ code</text>
-<path class="tb-line" marker-end="url(#tb-ah2)" d="M60 67V100"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M170 67V100"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M280 67V100"/>
-<g class="tb-box"><rect x="5" y="102" width="106" height="64" rx="6"/><rect x="117" y="102" width="106" height="64" rx="6"/><rect x="229" y="102" width="106" height="64" rx="6"/></g>
-<rect x="5" y="102" width="106" height="4" style="fill:var(--tb-accent-torch)"/><rect x="117" y="102" width="106" height="4" style="fill:var(--tb-accent-vllm)"/><rect x="229" y="102" width="106" height="4" style="fill:var(--tb-accent-exo)"/>
-<text class="tb-label" x="58" y="132" text-anchor="middle">torch-tbccl</text><text class="tb-small" x="58" y="152" text-anchor="middle">PyTorch</text>
-<text class="tb-label" x="170" y="132" text-anchor="middle">vllm-tbccl</text><text class="tb-small" x="170" y="152" text-anchor="middle">vLLM</text>
-<text class="tb-label" x="282" y="132" text-anchor="middle">exo-tbccl</text><text class="tb-small" x="282" y="152" text-anchor="middle">exo</text>
-<path class="tb-line" marker-end="url(#tb-ah2)" d="M58 166V232"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M170 166V232"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M282 166V232"/>
+<g class="tb-box"><rect x="5" y="5" width="250" height="62" rx="6"/><rect x="263" y="5" width="72" height="62" rx="6"/></g>
+<text class="tb-label" x="130" y="31" text-anchor="middle">Framework programs</text><text class="tb-small" x="130" y="51" text-anchor="middle">PyTorch · vLLM · exo</text>
+<text class="tb-label" x="299" y="31" text-anchor="middle">C and C++</text><text class="tb-small" x="299" y="51" text-anchor="middle">programs</text>
+<path class="tb-line" marker-end="url(#tb-ah2)" d="M45 67V100"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M130 67V100"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M215 67V100"/>
+<g class="tb-box"><rect x="5" y="102" width="80" height="64" rx="6"/><rect x="90" y="102" width="80" height="64" rx="6"/><rect x="175" y="102" width="80" height="64" rx="6"/></g>
+<rect x="5" y="102" width="80" height="4" style="fill:var(--tb-accent-torch)"/><rect x="90" y="102" width="80" height="4" style="fill:var(--tb-accent-vllm)"/><rect x="175" y="102" width="80" height="4" style="fill:var(--tb-accent-exo)"/>
+<text class="tb-label" x="45" y="132" text-anchor="middle">torch-tbccl</text><text class="tb-small" x="45" y="152" text-anchor="middle">PyTorch</text>
+<text class="tb-label" x="130" y="132" text-anchor="middle">vllm-tbccl</text><text class="tb-small" x="130" y="152" text-anchor="middle">vLLM</text>
+<text class="tb-label" x="215" y="132" text-anchor="middle">exo-tbccl</text><text class="tb-small" x="215" y="152" text-anchor="middle">exo</text>
+<path class="tb-line" marker-end="url(#tb-ah2)" d="M45 166V232"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M130 166V232"/><path class="tb-line" marker-end="url(#tb-ah2)" d="M215 166V232"/>
+<path class="tb-line" marker-end="url(#tb-ah2)" d="M299 67V232"/>
+<rect class="tb-bg" x="266" y="118" width="66" height="40" rx="4"/>
+<text class="tb-small" x="299" y="135" text-anchor="middle">direct,</text><text class="tb-small" x="299" y="151" text-anchor="middle">C ABI</text>
 <rect class="tb-box" x="5" y="234" width="330" height="92" rx="6"/><rect x="5" y="234" width="330" height="4" style="fill:var(--tb-accent-tbccl)"/>
 <text class="tb-label" x="170" y="262" text-anchor="middle">tbccl runtime (libtbccl)</text>
 <text class="tb-small" x="170" y="284" text-anchor="middle">C ABI v1 · point-to-point and collectives</text><text class="tb-small" x="170" y="302" text-anchor="middle">CUDA staged through pinned host memory</text><text class="tb-small" x="170" y="318" text-anchor="middle">Metal shared memory</text>
@@ -201,6 +205,7 @@ On one pair of machines joined by one direct Thunderbolt 4 cable (a Linux laptop
 Questions and feedback: [getting help](project/getting-help.md); there is [no telemetry](project/privacy.md).
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Getting started
 
@@ -213,6 +218,7 @@ getting-started/examples
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: User guide
 
@@ -224,6 +230,7 @@ reference/configuration
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Benchmarks
 
@@ -231,6 +238,7 @@ benchmarks/index
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Architecture
 
@@ -239,6 +247,7 @@ adr/index
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Reference
 
@@ -246,6 +255,7 @@ reference/index
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Troubleshooting
 
@@ -254,6 +264,7 @@ guides/diagnostics
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Development
 
@@ -261,6 +272,7 @@ development/index
 ```
 
 ```{toctree}
+:hidden:
 :maxdepth: 2
 :caption: Project
 
