@@ -7,6 +7,20 @@ There are two ways to get TBCCL, and you only need one:
 
 If you only want to use PyTorch, vLLM or exo, you do not need this page: install the adapter wheel instead ([torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html)). The wheels contain libtbccl. A [helper script](install-adapters.md) can pick, verify and install the right wheel for an environment.
 
+## Which path do I need?
+
+| You want to... | Do this |
+|---|---|
+| use PyTorch, vLLM or exo | install the **adapter wheel**, not this page: it contains libtbccl ([torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html), [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/getting-started/install.html)) |
+| write C or C++ against TBCCL | [Path 1](#path-1-a-prebuilt-release-archive), then CMake or pkg-config |
+| move CUDA buffers (Linux, NVIDIA) | the `linux-x86_64-cuda13` archive; the `linux-x86_64` archive carries host buffers only |
+| move Metal shared buffers (Apple silicon) | the `macos-arm64` archive |
+| change TBCCL, or no archive matches your platform | [Path 2](#path-2-build-from-source) |
+| try it on one machine first | [Your first program](first-program.md): every example runs as two ranks on loopback, with no GPU and no second computer |
+| connect two machines | install **the same version** on both, then [Two machines over Thunderbolt](two-machine-thunderbolt.md) |
+
+A **release archive** (a built, installed prefix: library, headers, CMake and pkg-config packages, `tbccl-info`) is not a **source checkout** (the repository, with the examples, `scripts/` and the Python benchmark suite). The commands below that mention `examples/` or `scripts/` need the checkout; the archive needs neither.
+
 ## Requirements
 
 - A C++17 compiler (C11 for C-only consumers), CMake 3.20 or newer and Threads.
@@ -140,3 +154,10 @@ A source build is versioned as the release by default (`TBCCL_PUBLIC_VERSION`, e
 ## After installing or upgrading
 
 Package versions, the C ABI version and the wire protocol version are separate ([versioning](../reference/versioning.md)). Ranks that were built against different wire protocol versions cannot connect. After installing a TBCCL with a different wire version, rebuild every program and adapter that links it, on every machine.
+
+## What success looks like
+
+- `tbccl-info` prints the package version, `C ABI 1`, `wire protocol 4`, and the memory providers you expected (`host`, plus `cuda` or `metal_shared`).
+- The CMake consumer prints `TBCCL 0.6.1, C ABI 1`.
+
+**This showed** that the headers, the library and the build system fit together on this machine. **It did not show** that two machines can reach each other, that a GPU path works end to end, or how fast anything is. **Next:** [Your first program](first-program.md) for a two-rank run on one machine, then [Two machines over Thunderbolt](two-machine-thunderbolt.md). **If it fails:** [Troubleshooting](../guides/troubleshooting.md) (installing and linking) and [diagnostics](../guides/diagnostics.md).
