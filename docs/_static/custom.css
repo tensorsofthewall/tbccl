@@ -1,0 +1,83 @@
+/* TBCCL documentation: the few rules Furo has no option for. Colours and fonts are set in conf.py. Shared by the four TBCCL sites. */
+
+:root {
+  --tbccl-radius: 6px;
+  --tbccl-border: #d3deec;
+  --tbccl-stripe: #f6f9fd;
+  --tbccl-focus: #0b57c9;
+  --tbccl-mark: url("brand/tbccl-mark.svg");
+}
+body[data-theme="dark"] {
+  --tbccl-border: #263548;
+  --tbccl-stripe: #111b29;
+  --tbccl-focus: #4db8ff;
+  --tbccl-mark: url("brand/tbccl-mark-white.svg");
+}
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) {
+    --tbccl-border: #263548;
+    --tbccl-stripe: #111b29;
+    --tbccl-focus: #4db8ff;
+    --tbccl-mark: url("brand/tbccl-mark-white.svg");
+  }
+}
+
+/* Sidebar brand: the mark above the project name. */
+.sidebar-logo-container { margin-bottom: 0.25rem; }
+.sidebar-logo { max-width: 9rem; width: 100%; }
+.sidebar-brand-text { font-weight: 650; letter-spacing: 0.01em; }
+.sidebar-tree .current > .reference { font-weight: 600; }
+
+/* Keyboard focus: a visible ring on every interactive element. */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible,
+label:focus-visible {
+  outline: 2px solid var(--tbccl-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Links in running text. */
+article a.reference { text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
+article a.reference:hover { text-decoration-thickness: 2px; }
+
+/* Headings. */
+article h1 { font-weight: 700; letter-spacing: -0.01em; }
+article h2 { margin-top: 2.2rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--tbccl-border); }
+
+/* Code. */
+div.highlight, .highlight pre { border-radius: var(--tbccl-radius); }
+div.highlight { border: 1px solid var(--tbccl-border); }
+code.literal { border-radius: 4px; }
+
+/* Tables. */
+table.docutils { border: 1px solid var(--tbccl-border); border-radius: var(--tbccl-radius); border-collapse: separate; border-spacing: 0; }
+table.docutils th { background: var(--tbccl-stripe); font-weight: 650; }
+table.docutils td, table.docutils th { border-color: var(--tbccl-border); }
+table.docutils tbody tr:nth-child(even) td { background: var(--tbccl-stripe); }
+.table-wrapper { -webkit-overflow-scrolling: touch; }
+
+/* Admonitions and the announcement bar. */
+div.admonition { border-radius: var(--tbccl-radius); box-shadow: none; border: 1px solid var(--tbccl-border); }
+.announcement { background: #0b57c9; }
+.announcement, .announcement a { color: #fff; }
+body[data-theme="dark"] .announcement { background: #0f3b73; }
+
+/* Small screens. */
+@media (max-width: 82em) {
+  .mobile-header { border-bottom: 1px solid var(--tbccl-border); }
+  .mobile-header .header-center a { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .mobile-header .header-center a::before { content: ""; width: 1.9rem; height: 1.2rem; background: var(--tbccl-mark) center / contain no-repeat; }
+}
+@media (max-width: 44em) {
+  article { font-size: 1rem; }
+  article h1 { font-size: 1.75rem; }
+  div.highlight pre { font-size: 0.8125rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
