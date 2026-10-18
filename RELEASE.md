@@ -24,6 +24,7 @@ d. Review the release statements of the homepage and the README by eye. The chec
 e. Confirm that historical references stay as measured: benchmark and validation records, changelog sections and warnings about superseded releases keep the versions they describe. If a scanned page must name an older version, declare it under `allow` in `tools/release_docs.json` with the reason.
 f. Updating the live ecosystem manifest after publishing (the follow-up change) does not replace this check; it runs before the tag.
 g. A change that touches only documentation or release tooling needs no physical requalification of the runtime or of performance; the manual physical-qualification policy in step 5 is unchanged and applies to runtime, transport and collective changes.
+h. The `stable` documentation is built from the release tag, so it carries the documentation of that release only; the current homepages, charts, troubleshooting guides and code maps appear on `stable` when the next release is tagged. Until then the README links `latest` (development documentation) for them, and says so. Do not rewrite a published release's documentation to catch up.
 
 ## Build, inspect and preflight
 
