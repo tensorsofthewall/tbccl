@@ -21,6 +21,10 @@ jobs:
         run: python3 scripts/check_compatibility_manifest.py
       - name: Check the release state (offline)
         run: python3 tools/check_release_state.py
+      - name: Check that the documentation describes the current release (offline)
+        run: python3 tools/check_release_docs.py
+      - name: Test the release-documentation check (stale releases must fail)
+        run: python3 tests/release_docs_test.py
       - name: Check the repository-internal links (offline)
         run: python3 tools/check_links.py
       - name: Test the maintenance tooling

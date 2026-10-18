@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "repo": "tensorsofthewall/tbccl",
+  "scan": [
+    "README.md",
+    "MAINTENANCE.md",
+    "RELEASE.md",
+    "docs/**/*.md"
+  ],
+  "exclude": [
+    "docs/validation/*",
+    "docs/adr/*",
+    "docs/project/changelog.md"
+  ],
+  "exclude_reason": "Validation reports, decision records, the changelog page and the benchmark results page record what was true or measured for an earlier version and must keep those versions. They are not scanned for release URLs or artifact names.",
+  "versions": {},
+  "statements": [
+    {
+      "file": "README.md",
+      "find": "^> \\*\\*Status:\\*\\* \\*\\*(?P<v>\\d+\\.\\d+\\.\\d+(?:rc\\d+)?)\\*\\*",
+      "expect": "current",
+      "describe": "README status line"
+    },
+    {
+      "file": "docs/index.md",
+      "find": "The current release is (?P<v>\\d+\\.\\d+\\.\\d+(?:rc\\d+)?)",
+      "expect": "current",
+      "describe": "documentation homepage release statement"
+    },
+    {
+      "file": "docs/getting-started/install.md",
+      "find": "currently \\[`v(?P<v>\\d+\\.\\d+\\.\\d+(?:rc\\d+)?)`\\]",
+      "expect": "current",
+      "describe": "installation page release statement"
+    },
+    {
+      "file": "docs/getting-started/install.md",
+      "find": "# TBCCL (?P<v>\\d+\\.\\d+\\.\\d+(?:rc\\d+)?), C ABI 1",
+      "expect": "current",
+      "describe": "expected output of the CMake consumer"
+    }
+  ],
+  "allow": []
+}
