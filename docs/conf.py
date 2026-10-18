@@ -35,6 +35,9 @@ html_favicon = "_static/brand/favicon.svg"
 # controls on a light and on a dark page; the contrast of both is checked against the page, sidebar and tinted surfaces.
 _ACCENT = {"light": "#1155BB", "dark": "#86B6FF"}
 
+# Accents of all four projects (identical on every site): the ecosystem navigation and the architecture diagram colour each project with its own.
+_ECO = {"tbccl": ("#1155BB", "#86B6FF"), "torch": ("#BF341A", "#FF9174"), "vllm": ("#523781", "#BCA4F4"), "exo": ("#026E2B", "#58D68D")}
+
 _FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif'
 _MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
 
@@ -72,6 +75,8 @@ def _tokens(n, accent, dark):
         "color-highlighted-background": _mix(a, n["page"], 0.22 if not dark else 0.30),
         "color-announcement-background": _mix(_ACCENT["light"], "#000000", 0.7 if dark else 1.0),
         "color-announcement-text": "#ffffff",
+        "tb-on-accent": "#0b0d10" if dark else "#ffffff",
+        **{f"tb-accent-{k}": v[1 if dark else 0] for k, v in _ECO.items()},
         "tbccl-border": n["border"],
         "tbccl-stripe": n["stripe"],
         "tbccl-tint": _mix(a, n["page"], 0.06 if not dark else 0.10),

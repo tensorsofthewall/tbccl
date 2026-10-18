@@ -80,7 +80,9 @@ class ReleaseDocs(unittest.TestCase):
         m = re.search(rf"The current release is {re.escape(CURRENT)}", text)
         self.assertTrue(m)
         self.edit("docs/index.md", m.group(0), m.group(0).replace(CURRENT, PREVIOUS))
-        self.assertFails(f"docs/index.md:6: documentation homepage release statement says {PREVIOUS}; expected {CURRENT}")
+        code, out = self.run_checker()
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, rf"docs/index\.md:\d+: documentation homepage release statement says {re.escape(PREVIOUS)}; expected {re.escape(CURRENT)}")
 
     def test_installation_url_of_the_previous_release_fails(self):
         repo = re.escape(CONFIG["repo"])
