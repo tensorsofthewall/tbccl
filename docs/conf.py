@@ -29,37 +29,60 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_favicon = "_static/brand/favicon.svg"
 
-# Visual identity: the shared TBCCL mark (branding/README.md in the tbccl repository) and the Furo colour and type settings. Keep these values in step with the
-# other TBCCL documentation sites; docs/_static/custom.css holds the few rules Furo has no option for.
+# Visual identity: the shared TBCCL mark (branding/README.md in the tbccl repository), the neutral foundation and the project accent. Everything below _ACCENT is
+# identical on the four TBCCL documentation sites; docs/_static/custom.css holds the few rules Furo has no option for.
+# Project identity: the only values that differ between the TBCCL documentation sites. Light and dark are the accent used for links and
+# controls on a light and on a dark page; the contrast of both is checked against the page, sidebar and tinted surfaces.
+_ACCENT = {"light": "#1155BB", "dark": "#86B6FF"}
+
 _FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif'
 _MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
+
+
+def _mix(color, base, share):
+    """`share` of `color` over `base` (both #rrggbb), as #rrggbb."""
+    c, b = (tuple(int(h[i : i + 2], 16) for i in (1, 3, 5)) for h in (color, base))
+    return "#" + "".join(f"{round(x * share + y * (1 - share)):02x}" for x, y in zip(c, b))
+
+
+# Shared neutral foundation (the same on every site) and the accent-derived tokens (hover, visited, tints, selection).
+_LIGHT = {"page": "#ffffff", "sidebar": "#f6f7f9", "text": "#1a1d21", "muted": "#5b6168", "border": "#d9dde3", "stripe": "#f7f8fa"}
+_DARK = {"page": "#131416", "sidebar": "#0e1013", "text": "#e6e8eb", "muted": "#a3a9b1", "border": "#2a2f36", "stripe": "#191c20"}
+
+
+def _tokens(n, accent, dark):
+    a = accent
+    return {
+        "color-brand-primary": a,
+        "color-brand-content": a,
+        "color-brand-visited": _mix(a, n["muted"], 0.6),
+        "color-link": a,
+        "color-link--hover": _mix(a, "#ffffff" if dark else "#000000", 0.75),
+        "color-link--visited": _mix(a, n["muted"], 0.6),
+        "color-link--visited--hover": _mix(a, "#ffffff" if dark else "#000000", 0.75),
+        "color-link-underline": _mix(a, n["page"], 0.45),
+        "color-link-underline--hover": a,
+        "color-link-underline--visited": _mix(a, n["page"], 0.3),
+        "color-link-underline--visited--hover": a,
+        "color-sidebar-background": n["sidebar"],
+        "color-sidebar-brand-text": n["text"],
+        "color-sidebar-link-text--top-level": n["text"],
+        "color-sidebar-item-background--hover": _mix(a, n["sidebar"], 0.07 if not dark else 0.12),
+        "color-sidebar-item-background--current": _mix(a, n["sidebar"], 0.11 if not dark else 0.20),
+        "color-highlighted-background": _mix(a, n["page"], 0.22 if not dark else 0.30),
+        "color-announcement-background": _mix(_ACCENT["light"], "#000000", 0.7 if dark else 1.0),
+        "color-announcement-text": "#ffffff",
+        "tbccl-border": n["border"],
+        "tbccl-stripe": n["stripe"],
+        "tbccl-tint": _mix(a, n["page"], 0.06 if not dark else 0.10),
+    }
+
+
 html_theme_options = {
     "light_logo": "brand/tbccl-mark.svg",
     "dark_logo": "brand/tbccl-mark-white.svg",
-    "light_css_variables": {
-        "font-stack": _FONT,
-        "font-stack--monospace": _MONO,
-        "color-brand-primary": "#0b57c9",
-        "color-brand-content": "#0b57c9",
-        "color-sidebar-brand-text": "#0f172a",
-        "color-sidebar-background": "#f4f8fd",
-        "color-sidebar-item-background--current": "#e3eefb",
-        "color-sidebar-link-text--top-level": "#0f172a",
-        "color-highlighted-background": "#cfe6fd",
-        "color-link-underline": "#9cbcec",
-        "color-link-underline--hover": "#0b57c9",
-    },
-    "dark_css_variables": {
-        "color-brand-primary": "#4db8ff",
-        "color-brand-content": "#4db8ff",
-        "color-sidebar-brand-text": "#e6edf6",
-        "color-sidebar-background": "#0e1622",
-        "color-sidebar-link-text--top-level": "#e6edf6",
-        "color-sidebar-item-background--current": "#16253a",
-        "color-highlighted-background": "#123b63",
-        "color-link-underline": "#2f6fa8",
-        "color-link-underline--hover": "#4db8ff",
-    },
+    "light_css_variables": {"font-stack": _FONT, "font-stack--monospace": _MONO, **_tokens(_LIGHT, _ACCENT["light"], False)},
+    "dark_css_variables": _tokens(_DARK, _ACCENT["dark"], True),
 }
 
 # C and C++ API reference: Doxygen extracts XML from the public headers, Breathe renders it.
