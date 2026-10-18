@@ -25,7 +25,42 @@ myst_heading_anchors = 3
 
 html_theme = "furo"
 html_title = f"TBCCL {release}"
-html_static_path = []
+html_static_path = ["_static"]
+html_css_files = ["custom.css"]
+html_favicon = "_static/brand/favicon.svg"
+
+# Visual identity: the shared TBCCL mark (see branding/README.md) and the Furo colour and type settings. Keep these values in step with the
+# other TBCCL documentation sites; docs/_static/custom.css holds the few rules Furo has no option for.
+_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif'
+_MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
+html_theme_options = {
+    "light_logo": "brand/tbccl-mark.svg",
+    "dark_logo": "brand/tbccl-mark-white.svg",
+    "light_css_variables": {
+        "font-stack": _FONT,
+        "font-stack--monospace": _MONO,
+        "color-brand-primary": "#0b57c9",
+        "color-brand-content": "#0b57c9",
+        "color-sidebar-brand-text": "#0f172a",
+        "color-sidebar-background": "#f4f8fd",
+        "color-sidebar-item-background--current": "#e3eefb",
+        "color-sidebar-link-text--top-level": "#0f172a",
+        "color-highlighted-background": "#cfe6fd",
+        "color-link-underline": "#9cbcec",
+        "color-link-underline--hover": "#0b57c9",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#4db8ff",
+        "color-brand-content": "#4db8ff",
+        "color-sidebar-brand-text": "#e6edf6",
+        "color-sidebar-background": "#0e1622",
+        "color-sidebar-link-text--top-level": "#e6edf6",
+        "color-sidebar-item-background--current": "#16253a",
+        "color-highlighted-background": "#123b63",
+        "color-link-underline": "#2f6fa8",
+        "color-link-underline--hover": "#4db8ff",
+    },
+}
 
 # C and C++ API reference: Doxygen extracts XML from the public headers, Breathe renders it.
 _xml = HERE / "_build" / "doxygen" / "xml"
@@ -44,7 +79,7 @@ import os
 _released_build = os.environ.get("READTHEDOCS_VERSION_TYPE") == "tag"
 html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "")
 if not _released_build:
-    html_theme_options = {"announcement": "Development documentation (not a release)"}
+    html_theme_options["announcement"] = "Development documentation (not a release)"
 
 # The four documentation sites. Until a release exists the references use each site's development (latest) version.
 # Cross-project references are opt-in: the build never needs the network unless DOCS_INTERSPHINX=1. A local inventory can be given with
