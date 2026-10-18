@@ -30,6 +30,6 @@ Design source: <https://www.figma.com/design/uOP5Ilb13nZ0ejLSnLlpuT>. The files 
 
 ## Known limits of this export
 
-* The mark is wide (about 1.56:1), so as a favicon it fills only the middle 60% of the height. It is legible at 32 px and blurry at 16 px.
+* The favicon files place the unchanged mark, centred by its bounding box, in a 256 px square (scale 0.29). The mark is wide (about 1.56:1), so it fills only the middle 57% of the height. It is legible at 32 px and blurry at 16 px.
 * The artwork has uneven padding in its view box (9 units above, 21 below) and the `width`/`height` do not match the `viewBox` ratio exactly (830x530 against 825x530).
 * The lockups have no dark-background variant.

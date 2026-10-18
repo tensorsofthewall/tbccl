@@ -54,11 +54,11 @@ div.highlight { border: 1px solid var(--tbccl-border); }
 code.literal { border-radius: 4px; }
 
 /* Tables. */
-table.docutils { border: 1px solid var(--tbccl-border); border-radius: var(--tbccl-radius); border-collapse: separate; border-spacing: 0; overflow: hidden; }
+table.docutils { border: 1px solid var(--tbccl-border); border-radius: var(--tbccl-radius); border-collapse: separate; border-spacing: 0; }
 table.docutils th { background: var(--tbccl-stripe); font-weight: 650; }
 table.docutils td, table.docutils th { border-color: var(--tbccl-border); }
 table.docutils tbody tr:nth-child(even) td { background: var(--tbccl-stripe); }
-.table-wrapper { overflow-x: auto; }
+.table-wrapper { -webkit-overflow-scrolling: touch; }
 
 /* Admonitions and the announcement bar. */
 div.admonition { border-radius: var(--tbccl-radius); box-shadow: none; border: 1px solid var(--tbccl-border); }
@@ -76,7 +76,6 @@ body[data-theme="dark"] .announcement { background: #0f3b73; }
   article { font-size: 1rem; }
   article h1 { font-size: 1.75rem; }
   div.highlight pre { font-size: 0.8125rem; }
-  table.docutils { display: block; overflow-x: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

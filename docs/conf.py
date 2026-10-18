@@ -29,7 +29,7 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_favicon = "_static/brand/favicon.svg"
 
-# Visual identity: the shared TBCCL mark (see branding/README.md) and the Furo colour and type settings. Keep these values in step with the
+# Visual identity: the shared TBCCL mark (branding/README.md in the tbccl repository) and the Furo colour and type settings. Keep these values in step with the
 # other TBCCL documentation sites; docs/_static/custom.css holds the few rules Furo has no option for.
 _FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif'
 _MONO = 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace'
