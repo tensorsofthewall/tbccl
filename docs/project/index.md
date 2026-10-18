@@ -11,4 +11,5 @@ release-versioning
 security-policy
 getting-help
 privacy
+branding
 ```

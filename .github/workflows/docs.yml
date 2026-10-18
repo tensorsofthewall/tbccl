@@ -25,6 +25,8 @@ jobs:
         run: python3 tools/check_release_docs.py
       - name: Test the release-documentation check (stale releases must fail)
         run: python3 tests/release_docs_test.py
+      - name: Test the branding assets (portable SVG, unchanged mark, README and docs references)
+        run: python3 tests/branding_assets_test.py
       - name: Check the repository-internal links (offline)
         run: python3 tools/check_links.py
       - name: Test the maintenance tooling

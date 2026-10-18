@@ -1,4 +1,9 @@
-# TBCCL
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/lockups/tbccl-horizontal-dark.svg">
+    <img src="branding/lockups/tbccl-horizontal-light.svg" alt="tbccl" height="72">
+  </picture>
+</h1>
 
 [![docs](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml/badge.svg)](https://github.com/tensorsofthewall/tbccl/actions/workflows/docs.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![release](https://img.shields.io/github/v/release/tensorsofthewall/tbccl?label=release)](https://github.com/tensorsofthewall/tbccl/releases)
 
@@ -108,3 +113,7 @@ Only TCP over IPv4 (no RDMA); no direct CUDA-to-Metal DMA; `Sum` is the only red
 ## License
 
 tbccl is licensed under the Apache License, Version 2.0 (see `LICENSE`). Copyright 2026 Sandesh Bharadwaj.
+
+## Independence
+
+TBCCL is an independent project. It is not affiliated with, sponsored by or endorsed by the PyTorch Foundation, the vLLM project, exo labs, NVIDIA, Apple or any other company or project named in its documentation. PyTorch, vLLM, exo, CUDA, Metal, Thunderbolt and other product and company names mentioned here are trademarks of their respective owners. See [Branding and independence](docs/project/branding.md).

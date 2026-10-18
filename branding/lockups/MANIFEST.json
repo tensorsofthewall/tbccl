@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "generator": "branding/tools/build_lockups.py",
+  "command": "python3 branding/tools/build_lockups.py --editable",
+  "tools": {
+    "uharfbuzz": "0.56.3",
+    "fonttools": "4.67.0"
+  },
+  "typeface": {
+    "id": "inter-600",
+    "family": "Inter",
+    "style": "SemiBold",
+    "weight": 600,
+    "variations": null,
+    "file": "Inter-SemiBold.otf",
+    "version": "Version 3.019;git-0a5106e0b",
+    "file_sha256": "8c1990b6012254ea2b487161697d107357dd0ee55811cfd91c8c11227bbef457",
+    "license": "SIL Open Font License 1.1",
+    "copyright": "Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)",
+    "embedded": false,
+    "note": "Text is converted to paths; no font data is embedded or distributed."
+  },
+  "mark": {
+    "source": "branding/logo/tbccl-mark.svg",
+    "sha256": "aacd87aaf5709973eb6beed41b4b43ef2413697c59d51bd17081bd9c2d3282c4",
+    "modified": false
+  },
+  "projects": {
+    "tbccl": {
+      "accent": {
+        "light": "#1155BB",
+        "dark": "#86B6FF"
+      }
+    },
+    "torch-tbccl": {
+      "accent": {
+        "light": "#BF341A",
+        "dark": "#FF9174"
+      }
+    },
+    "vllm-tbccl": {
+      "accent": {
+        "light": "#523781",
+        "dark": "#BCA4F4"
+      }
+    },
+    "exo-tbccl": {
+      "accent": {
+        "light": "#026E2B",
+        "dark": "#58D68D"
+      }
+    }
+  },
+  "files": {
+    "exo-tbccl-compact-dark.svg": "293a153115b9f6d04215ceb643ca6e1dd09760770cfaf9786b9fc26b2b40fd6e",
+    "exo-tbccl-compact-light.svg": "bb441428bce534318f36a2a86a3c003318fb07df6d8db4a8c05004ff03bd6718",
+    "exo-tbccl-compact-mono-black.svg": "43ec40a972be1cf671835f087a970345f5a314b84b877f166ded418f10dce8d1",
+    "exo-tbccl-compact-mono-white.svg": "ccf606518982674f4785a041ca34451e6bade9b9b09284f6aac0425cbc18f9a0",
+    "exo-tbccl-horizontal-dark.svg": "f8542f77a94d9fa253015518300616a03a0a1f1894234e60f209a94786dd3b1a",
+    "exo-tbccl-horizontal-light.svg": "fbc85f0d97b88b5c51df0778fe4057132e16a6331675750ad9d23ccbd21ece74",
+    "exo-tbccl-horizontal-mono-black.svg": "ef07634ebbcad9a6b768ec52842cafaa9a149bdbddeff754c763e9b19b16e541",
+    "exo-tbccl-horizontal-mono-white.svg": "0aac834f4f80e7100b6ffb077d8479a492d40da33e2fcafaa465a7a258b29057",
+    "exo-tbccl-stacked-dark.svg": "632f014acb390c8bcadd66816c75a6c14cbda27a319dc6012824bd24b0935840",
+    "exo-tbccl-stacked-light.svg": "ff3cf3105c75a7f490d837a4f1810b3039da135f9bcff6fe914d320d61fb5d91",
+    "exo-tbccl-stacked-mono-black.svg": "38b15a43aa2003e1def268a936b88006596fe21272e92f1a303070ee4a94f28d",
+    "exo-tbccl-stacked-mono-white.svg": "487b71e0e96081bc8cc12406d8624f9601cf23e6ed2c9b8800397c30bbc60ee8",
+    "source/exo-tbccl-compact-editable.svg": "75dc041e0e9c30e893e39245ece6c3e08682547e3d506f12e1c68af8ec733a58",
+    "source/exo-tbccl-horizontal-editable.svg": "d641f1d315999a7d0e90bbcec242dd36b820f5f8fd3d7f55a80f540ff1e444ea",
+    "source/exo-tbccl-stacked-editable.svg": "82497379a345c50c4d796bf1e8cd6def8a993dd90d0aac1d3b931e262728f735",
+    "source/tbccl-compact-editable.svg": "2981ada4d64fe6352795946c400d570a96514da9bf5f065f1c8d4f6be21e1d2e",
+    "source/tbccl-horizontal-editable.svg": "94ac0c2be3c68c103ab7bc4378b511d81bc9547e02198632083f7b7db0849866",
+    "source/tbccl-stacked-editable.svg": "4f90aa7e56ca6c588fefdf2add87ab9fe95e1621871e11f4756c1e058cb8f372",
+    "source/torch-tbccl-compact-editable.svg": "442e72bc5a27adb2ebdc9760d11e03b3fdaf8bc0fd988bed7a753ff93cb4f2c0",
+    "source/torch-tbccl-horizontal-editable.svg": "e7bcc2b28aca496248e23ba954e251c5e9ba8b8af7d7df1a0c1ed24e4d7bbbf3",
+    "source/torch-tbccl-stacked-editable.svg": "759a8be4300690343dee17a6bfe953b5872c230c774c6bffe2902173f2794343",
+    "source/vllm-tbccl-compact-editable.svg": "66d2ec033f5323765d03e09ff16e4984337536ab9e7c21b87879a4e7f8f90f51",
+    "source/vllm-tbccl-horizontal-editable.svg": "0d7a2e038c0f75f839c2d1f608781ab165a5e6458fdf7d277a3ca80830603faa",
+    "source/vllm-tbccl-stacked-editable.svg": "f5a9904afc0ab40d335c1ea949e382e94f96bc457de9833a03b6f5cee4ffcccf",
+    "tbccl-compact-dark.svg": "e5d2c0d7a5593d1ba43140052fc4b338a395191270c42023cb2d7b03689016ab",
+    "tbccl-compact-light.svg": "441297bea9958fa40dd161dd2ea701a40f4c3c416fb0129e6c1de1ca77bd0588",
+    "tbccl-compact-mono-black.svg": "97f359aa730c4e1c2820929a90f9742931f47cf2148fa22e5125fe7bccb05429",
+    "tbccl-compact-mono-white.svg": "0359f202982a08e6ed583d9cc55fefb62f9e697574497c68bb6827f1b3e0444c",
+    "tbccl-horizontal-dark.svg": "6fcbc3a702da9c1c2a15b9039acd9f9bfcfc6e009b75c764c193bba793aacc87",
+    "tbccl-horizontal-light.svg": "ad915af4a210946b98c1da1feea39ba5c8ca26af98845906aa4c28cf988c8ad3",
+    "tbccl-horizontal-mono-black.svg": "29adc4322b02762cf26b80b9fda2f69836add1e42f3e9c533e2951e5b92e91d5",
+    "tbccl-horizontal-mono-white.svg": "f2aba0cce09c4e75aeeaca816299367e90fa842ebb4c52a3943a5bf06cf502ef",
+    "tbccl-stacked-dark.svg": "274fe4b05acc00382c7a038f7e9f47aafa59b4a0f68d77a82fe88860c3f6fcdb",
+    "tbccl-stacked-light.svg": "7b8acece0ea40b100f5a60615a97c9f8fd4c0354c39a9e460053d1f51a327dbb",
+    "tbccl-stacked-mono-black.svg": "cf216b07475cc37cb9102451cde454175e6a661fdd92e48fcfa59a494ac1d58e",
+    "tbccl-stacked-mono-white.svg": "5de9e7e09b107d3d5eb66f91570904310678b6e0e7dddd71bbdccdcd64417f9b",
+    "torch-tbccl-compact-dark.svg": "174b1c5be42d44839f3cae69783a02e6a499fbc61c7948e6b0c4056e81fa39cf",
+    "torch-tbccl-compact-light.svg": "c496ad1e509e5b95a9a717fb45791b111ca396925177c0b28701407533ef7939",
+    "torch-tbccl-compact-mono-black.svg": "6dc3397a8127e6e6a25132622783e60b6e18c666500be09109ecf8e780bf94a1",
+    "torch-tbccl-compact-mono-white.svg": "7f1ffc982dbe299183cefe86969635cd9a87ec0552f1bd9f36ccfbcf98b3b139",
+    "torch-tbccl-horizontal-dark.svg": "d006248ecc7a243e73c8e0da6f8450fceb71fdbf98f01c26f51fa629100d72d0",
+    "torch-tbccl-horizontal-light.svg": "6d788e960256f6fa1abd29bdf9f3d07bef1357aa6f2033317dd3880672797869",
+    "torch-tbccl-horizontal-mono-black.svg": "3605a686e8b7a44260c057d49e0e79c15cba57bfb74e0f5fa949e7e41961d2e8",
+    "torch-tbccl-horizontal-mono-white.svg": "2dcabf0920538547dd2bee4ec34f2d9f2b39b64eddb57534e5113f0d0b07a817",
+    "torch-tbccl-stacked-dark.svg": "a69df1a1b5dbfdb23ec2b953f0345cbb50249f3dddf9905eb24d7183087e4d6c",
+    "torch-tbccl-stacked-light.svg": "96fbc6cde0a221d3ccdc44de537250f31d2b349465458b66c3e39b1b3b613ae2",
+    "torch-tbccl-stacked-mono-black.svg": "d3b3ceb469696886f09eada83a705dba0b4941b8587c4f37c7bed9f9d1109d79",
+    "torch-tbccl-stacked-mono-white.svg": "4e618756745992c4f890a9d8cc9b17393c792192ac6dcb46ba6201de54018259",
+    "vllm-tbccl-compact-dark.svg": "dcc9a3cfe8c3b3de4c277deb7c46f1c6a2d45d38e2441054be9850cc1e5908a3",
+    "vllm-tbccl-compact-light.svg": "e0bf455b02f05ee01d51ef8042a8d0b640c12af2e75c0b5f0c8dfb3944b2ebb4",
+    "vllm-tbccl-compact-mono-black.svg": "cad43bb5adf11fa70db542024a3159f532f1fa54058a1bd78bb12e3d64d2ccab",
+    "vllm-tbccl-compact-mono-white.svg": "3249a1b813e44960b187a02d615cc362b57fb00c956ab584a76b7a766697d081",
+    "vllm-tbccl-horizontal-dark.svg": "d713978b31c46590b51fa898894422cc2e2aefad34a58650779a70853db3a8cc",
+    "vllm-tbccl-horizontal-light.svg": "c60492c3a86d33de0d14d33f0871f099ed234203e6c9c4c873bfd4bba4b9a8f2",
+    "vllm-tbccl-horizontal-mono-black.svg": "263b5580a815a54c824a65af16e824a31ab001c0e6ef51a51126b99594b325de",
+    "vllm-tbccl-horizontal-mono-white.svg": "7325bb0fa56428b941d69e2583c92713a167f91feddfee1754f468e354094410",
+    "vllm-tbccl-stacked-dark.svg": "3b57c806ed6d242e9a26b207df18efa3ae0ba209ec627c3cb8d782ccabe38f15",
+    "vllm-tbccl-stacked-light.svg": "58604a4abb012c438419cc1e9d12460c6f0f9424888654a42ed8973ef068d51e",
+    "vllm-tbccl-stacked-mono-black.svg": "833de82af080ca1137262dafda51ff5cd8fd3bd4f37b2f55eaa1250a338d2581",
+    "vllm-tbccl-stacked-mono-white.svg": "e2ab605d9065fa2be315096322db0164dce0969e3bd78dc22747d3a391c08068"
+  }
+}
