@@ -26,7 +26,7 @@ cmake --build build-release -j
 cmake --install build-release --prefix <prefix>    # consumers link the installed prefix
 ```
 
-Run the full test suite for any change to the core, transport, collectives or C API, on every platform the change touches. Concurrency, lifetime and wire-level changes should also be run under AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer, and new concurrency tests need a negative control. Tests that need a GPU or a Thunderbolt link are opt-in; say in the pull request what you ran.
+Run the full test suite for any change to the core, transport, collectives or C API, on every platform the change touches. Concurrency, lifetime and wire-level changes should also be run under AddressSanitizer/UndefinedBehaviorSanitizer and ThreadSanitizer, and new concurrency tests need a negative control. Tests that need a GPU or a Thunderbolt link are opt-in; say in the pull request what you ran. `docs/development/testing.md` ("What needs what") lists which checks need which hardware, and `docs/development/code-map.md` points to the first files for each topic.
 
 ## Contribution workflow
 

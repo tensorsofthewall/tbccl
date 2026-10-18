@@ -23,3 +23,7 @@ When a connection is set up, ranks exchange a `PeerCapabilities` record once ove
 ## Platforms
 
 Linux (x86-64) and macOS (arm64 and x86-64) are the supported platforms for the C ABI layout checks; the validated hardware pairing is a Linux/NVIDIA host and an Apple-silicon Mac (see [Platform capabilities](../reference/platform-capabilities.md)). Only IPv4 endpoints are supported.
+
+## Where adapters come in
+
+Framework users reach this transport through an adapter that statically links libtbccl and maps its framework's communication API onto it: the architecture of [torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html) and [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html) shows what each one translates. None of them adds a transport or an algorithm.

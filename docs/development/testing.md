@@ -34,6 +34,22 @@ make check-compat      # compatibility.json must agree with the C ABI header and
 
 `DOCS_INTERSPHINX=1 make docs` additionally resolves cross-project references against the other projects' published `latest` inventories (needs the network).
 
+## What needs what
+
+You do not need a GPU, a Mac or Thunderbolt hardware to contribute. Pick the lowest tier that covers your change and say in the pull request which tiers you ran.
+
+| Tier | Needs | Commands (above) | Covers |
+|---|---|---|---|
+| Documentation only | Python 3 | `make docs`, `make docs-linkcheck`, `make check-compat`, `python3 tools/check_doc_commands.py`, `python3 tools/check_release_docs.py` | links, builds, commands named in the docs, version facts |
+| Core, loopback | a C++17 toolchain and CMake | the host-only build and `ctest` | the transport, collectives and C API with every rank on `127.0.0.1` |
+| CUDA | Linux, an NVIDIA GPU, the CUDA Toolkit | the CUDA-enabled build and `ctest` | device staging and CUDA buffers |
+| Metal | an Apple-silicon Mac | `-DTBCCL_ENABLE_METAL=ON`, suites run serially | Metal-shared buffers |
+| Physical link | two machines and a Thunderbolt cable | opt-in only; [Thunderbolt link guide](../guides/thunderbolt-link.md) and a health snapshot before and after | real-link behavior; never part of a generic run |
+| Benchmarks | CPython 3.13, built benchmark executables | the benchmark suite tests below | the suite's own logic, never speed |
+| Packaging | a clean directory | `scripts/package_native.sh` | the release archive and its consumers |
+
+Changes to the runtime that touch only host-memory behavior can be fully validated on the loopback tier. A change that affects a device path should be run on the matching tier by someone who has the hardware; say so in the pull request instead of skipping it silently.
+
 ## What to run when
 
 - Run the full suite after any change to the core, transport, collectives or C API, on every platform the change touches.
