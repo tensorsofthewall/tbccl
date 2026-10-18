@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "projects": {
+    "tbccl": {
+      "right": "tbccl",
+      "accent": {"light": "#1155BB", "dark": "#86B6FF"},
+      "description": "The TBCCL Geometric Crossing mark beside the name tbccl."
+    },
+    "torch-tbccl": {
+      "left": "torch",
+      "right": "tbccl",
+      "accent": {"light": "#BF341A", "dark": "#FF9174"},
+      "description": "The TBCCL Geometric Crossing mark beside the name torch-tbccl, with a short connector in place of the hyphen."
+    },
+    "vllm-tbccl": {
+      "left": "vllm",
+      "right": "tbccl",
+      "accent": {"light": "#523781", "dark": "#BCA4F4"},
+      "description": "The TBCCL Geometric Crossing mark beside the name vllm-tbccl, with a short connector in place of the hyphen."
+    },
+    "exo-tbccl": {
+      "left": "exo",
+      "right": "tbccl",
+      "accent": {"light": "#026E2B", "dark": "#58D68D"},
+      "description": "The TBCCL Geometric Crossing mark beside the name exo-tbccl, with a short connector in place of the hyphen."
+    }
+  }
+}
