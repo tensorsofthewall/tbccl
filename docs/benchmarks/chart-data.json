@@ -36,7 +36,12 @@
                   "value": 15.5,
                   "published": "15.5 Gbit/s",
                   "exact": false,
-                  "n": 3
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "A to B",
+                    "column": "Effective rate"
+                  }
                 },
                 {
                   "label": "iperf3, single stream",
@@ -44,7 +49,12 @@
                   "value": 15.81,
                   "published": "15.81 Gbit/s",
                   "exact": true,
-                  "n": 3
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "A to B",
+                    "column": "iperf3 single stream"
+                  }
                 }
               ]
             },
@@ -57,7 +67,12 @@
                   "value": 18.3,
                   "published": "18.3 Gbit/s",
                   "exact": false,
-                  "n": 3
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "B to A",
+                    "column": "Effective rate"
+                  }
                 },
                 {
                   "label": "iperf3, single stream",
@@ -65,7 +80,12 @@
                   "value": 18.81,
                   "published": "18.81 Gbit/s",
                   "exact": true,
-                  "n": 3
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "B to A",
+                    "column": "iperf3 single stream"
+                  }
                 }
               ]
             }
@@ -75,25 +95,18 @@
     },
     {
       "id": "native-latency-size",
-      "title": "Time against message size, host memory, Linux to Mac",
-      "summary": "Line chart on logarithmic axes. Completion-confirmed TBCCL transfers from 4 KiB to 16 MiB take 126 microseconds at 4 KiB, 269 at 64 KiB, 1,118 at 1 MiB (range 779 to 1,480 over repetitions), 2,432 at 4 MiB and 8,669 at 16 MiB. Two further series are round trips of 64 byte and 4 KiB messages, about 128 microseconds, which are a different kind of measurement and not one-way latencies. Small and medium messages are latency- and variability-bound.",
-      "conditions": "Host memory, TBCCL 0.6.0 over TCP/IPv4, direct Thunderbolt 4 link, MTU 9000. The two round-trip series are ping-pongs that include the return trip and are not halved; the completion-confirmed series times one transfer up to its acknowledgement. The three series have different timing semantics and are not a like-for-like comparison.",
+      "title": "Completion-confirmed transfer time against message size, host memory, Linux to Mac",
+      "summary": "Line chart on logarithmic axes, one series: completion-confirmed TBCCL transfers from 4 KiB to 16 MiB. The time is 126 microseconds at 4 KiB, 269 at 64 KiB, 1,118 at 1 MiB (range 779 to 1,480 over repetitions), 2,432 at 4 MiB and 8,669 at 16 MiB. Each time includes the acknowledgement's return trip. Small and medium messages are latency- and variability-bound. Ping-pong round trips are a different kind of measurement and are left in the table.",
+      "conditions": "Host memory, TBCCL 0.6.0 over TCP/IPv4, direct Thunderbolt 4 link, MTU 9000. Each point times one transfer up to its acknowledgement. The round-trip measurements (raw TCP and TBCCL ping-pongs at 64 B and 4 KiB) use a different timing method and statistic and are not drawn here; they are in the Latency table.",
       "page": "native-results.md",
-      "section": [
-        "Latency",
-        "Large transfers, host memory"
-      ],
-      "statistic": "medians over independent repetitions (3-6) of each repetition's median, except the TCP series, which is the mean per repetition",
+      "section": "Large transfers, host memory",
+      "statistic": "medians over independent repetitions (3-6) of each repetition's median",
       "kind": "lines",
       "x_label": "Message size",
       "y_label": "Time",
       "y_unit": "microseconds",
       "y_scale": "log",
       "x_ticks": [
-        {
-          "x": 64,
-          "label": "64 B"
-        },
         {
           "x": 4096,
           "label": "4 KiB"
@@ -127,14 +140,24 @@
               "value": 126,
               "published": "126 us",
               "exact": true,
-              "n": "3-6"
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "4 KiB",
+                "column": "Time"
+              }
             },
             {
               "x": 65536,
               "value": 269,
               "published": "269 us",
               "exact": true,
-              "n": "3-6"
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "64 KiB",
+                "column": "Time"
+              }
             },
             {
               "x": 1048576,
@@ -144,71 +167,41 @@
               "n": "3-6",
               "min": 779,
               "max": 1480,
-              "range_published": "779-1,480"
+              "range_published": "779-1,480",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "1 MiB",
+                "column": "Time"
+              }
             },
             {
               "x": 4194304,
               "value": 2432,
               "published": "2,432 us",
               "exact": true,
-              "n": "3-6"
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "4 MiB",
+                "column": "Time"
+              }
             },
             {
               "x": 16777216,
               "value": 8669,
               "published": "8,669 us",
               "exact": true,
-              "n": "3-6"
-            }
-          ]
-        },
-        {
-          "label": "TBCCL, ping-pong round trip",
-          "marker": "square",
-          "dash": "dashed",
-          "color": "neutral",
-          "points": [
-            {
-              "x": 64,
-              "value": 128.1,
-              "published": "128.1 us",
-              "exact": true,
-              "n": 5,
-              "min": 128.0,
-              "max": 128.1,
-              "range_published": "128.0-128.1"
-            },
-            {
-              "x": 4096,
-              "value": 128.4,
-              "published": "128.4 us",
-              "exact": true,
-              "n": 5,
-              "min": 128.0,
-              "max": 134.2,
-              "range_published": "128.0-134.2"
-            }
-          ]
-        },
-        {
-          "label": "Raw TCP, ping-pong round trip (mean)",
-          "marker": "diamond",
-          "dash": "dotted",
-          "color": "neutral",
-          "points": [
-            {
-              "x": 64,
-              "value": 128.2,
-              "published": "128.2 us",
-              "exact": true,
-              "n": 5,
-              "min": 128.2,
-              "max": 128.6,
-              "range_published": "128.2-128.6"
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "16 MiB",
+                "column": "Time"
+              }
             }
           ]
         }
-      ]
+      ],
+      "x_scale": "log"
     },
     {
       "id": "native-staging",
@@ -253,7 +246,17 @@
                   "n": 3,
                   "min": 8664,
                   "max": 8669,
-                  "range_published": "8,664-8,669"
+                  "range_published": "8,664-8,669",
+                  "table": {
+                    "section": "Device memory",
+                    "row": "host memory (control)",
+                    "column": "Time",
+                    "range_source": {
+                      "section": "Large transfers, host memory",
+                      "row": "A to B",
+                      "column": "TBCCL completion time"
+                    }
+                  }
                 },
                 {
                   "label": "CUDA to Metal, synchronous",
@@ -264,7 +267,12 @@
                   "n": 3,
                   "min": 9957,
                   "max": 9984,
-                  "range_published": "9,957-9,984"
+                  "range_published": "9,957-9,984",
+                  "table": {
+                    "section": "Device memory",
+                    "row": "CUDA pinned to Metal shared, synchronous",
+                    "column": "Time"
+                  }
                 },
                 {
                   "label": "CUDA to Metal, async chunks",
@@ -275,7 +283,12 @@
                   "n": 3,
                   "min": 8671,
                   "max": 8717,
-                  "range_published": "8,671-8,717"
+                  "range_published": "8,671-8,717",
+                  "table": {
+                    "section": "Device memory",
+                    "row": "asynchronous chunked (256 KiB chunks, depth 2)",
+                    "column": "Time"
+                  }
                 }
               ]
             }
@@ -330,35 +343,60 @@
               "value": 138,
               "published": "138 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 KiB",
+                "column": "ring"
+              }
             },
             {
               "x": 65536,
               "value": 254,
               "published": "254 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "64 KiB",
+                "column": "ring"
+              }
             },
             {
               "x": 1048576,
               "value": 855,
               "published": "855 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 MiB",
+                "column": "ring"
+              }
             },
             {
               "x": 4194304,
               "value": 3541,
               "published": "3,541 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "4 MiB",
+                "column": "ring"
+              }
             },
             {
               "x": 16777216,
               "value": 16192,
               "published": "16,192 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "16 MiB",
+                "column": "ring"
+              }
             }
           ]
         },
@@ -373,35 +411,60 @@
               "value": 124,
               "published": "124 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 KiB",
+                "column": "reference"
+              }
             },
             {
               "x": 65536,
               "value": 201,
               "published": "201 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "64 KiB",
+                "column": "reference"
+              }
             },
             {
               "x": 1048576,
               "value": 1251,
               "published": "1,251 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 MiB",
+                "column": "reference"
+              }
             },
             {
               "x": 4194304,
               "value": 4749,
               "published": "4,749 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "4 MiB",
+                "column": "reference"
+              }
             },
             {
               "x": 16777216,
               "value": 18163,
               "published": "18,163 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "16 MiB",
+                "column": "reference"
+              }
             }
           ]
         },
@@ -416,39 +479,65 @@
               "value": 125,
               "published": "125 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 KiB",
+                "column": "auto"
+              }
             },
             {
               "x": 65536,
               "value": 205,
               "published": "205 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "64 KiB",
+                "column": "auto"
+              }
             },
             {
               "x": 1048576,
               "value": 1237,
               "published": "1,237 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 MiB",
+                "column": "auto"
+              }
             },
             {
               "x": 4194304,
               "value": 4683,
               "published": "4,683 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "4 MiB",
+                "column": "auto"
+              }
             },
             {
               "x": 16777216,
               "value": 18145,
               "published": "18,145 us",
               "exact": true,
-              "n": 3
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "16 MiB",
+                "column": "auto"
+              }
             }
           ]
         }
-      ]
+      ],
+      "x_scale": "log"
     }
   ]
 }

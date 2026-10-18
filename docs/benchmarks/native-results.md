@@ -70,7 +70,7 @@ Small and medium messages are latency- and variability-bound; only the largest s
 :file: charts/native-latency-size.html
 ```
 
-Read the three series separately. The round trips (ping-pongs) include the way back and are never halved into a one-way latency; the completion-confirmed series times one transfer up to its acknowledgement; and the TCP series is a mean where the TBCCL series are medians. The chart shows the scale (about 130 us for small messages, rising towards the streaming rate at 16 MiB), not a comparison between the series.
+The chart draws only the completion-confirmed transfers: each time runs from the start of one transfer until its acknowledgement came back, so it includes the return trip. The ping-pong round trips in the Latency table (raw TCP and TBCCL, 64 B and 4 KiB) are a different measurement with a different statistic, and are not drawn on the same axes; reading them against these points would suggest a comparison the data do not support. The chart shows the scale: about 130 us for small messages, rising towards the streaming rate at 16 MiB.
 
 ## Device memory
 
