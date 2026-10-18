@@ -4,9 +4,10 @@ Use this page when the link from [Two machines over Thunderbolt](../getting-star
 
 **Rules for every entry.** Never reset the controller, rescan or remove PCI devices, unload and reload drivers in a loop, disable PCIe error reporting (AER), bypass the IOMMU, change power management, or unplug and replug repeatedly to see if it helps. Repeated reconnecting can hide a bad cable and, on a marginal link, make it worse. If a step below asks you to reconnect, do it **once**.
 
-Start with the checker on both machines. It only reads state:
+Start with the checker on both machines. It is one standard-library Python file that only reads state; fetch it once on each machine (it needs no TBCCL installation), then run it:
 
 ```sh
+curl -fsSLO https://raw.githubusercontent.com/tensorsofthewall/tbccl/main/tools/thunderbolt_link_doctor.py
 python3 thunderbolt_link_doctor.py --peer <peer-link-address>
 ```
 

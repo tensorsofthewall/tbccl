@@ -2,6 +2,50 @@
 
 Find your symptom, check the likely cause with the diagnostic command, apply the fix. Start with [diagnostics](diagnostics.md) (`tbccl-info` on every machine). The full list of error messages is in the [error reference](../reference/errors.md).
 
+## Start here
+
+### Work through it in this order
+
+Each step is read-only. Stop at the first step that fails: later steps depend on it.
+
+| Step | Question | Check | If it fails |
+|---|---|---|---|
+| 1 | Which versions are installed? | `tbccl-info --json` on **every** machine (the wire protocol must be equal) | [Diagnostics](diagnostics.md); [Bootstrap](#bootstrap) for `protocol_mismatch` |
+| 2 | Is the device or backend you need present? | `tbccl-info` lists the providers (`cuda`, `metal_shared`) | [Installing and linking](#installing-and-linking) |
+| 3 | Is the link ready? | `python3 thunderbolt_link_doctor.py --peer <peer-link-address>` (read-only; [how to get it](thunderbolt-troubleshooting.md)) | [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md) |
+| 4 | Do the ranks agree on who is who? | print rank, world size and communicator id on each rank | [Bootstrap](#bootstrap) |
+| 5 | Does the transport come up? | `TBCCL_TRACE=1` on every rank; a `timeout:` within `bootstrap_timeout` | [Bootstrap](#bootstrap), [ping works but the ranks time out](#ping-works-but-the-ranks-time-out) |
+| 6 | Does the collective run? | the same collectives, sizes and order on every rank | [Collectives](#collectives) |
+| 7 | Did a failure leave something behind? | `ss -ltnp` (Linux) or `lsof -nP -iTCP -sTCP:LISTEN` (macOS) for stale listeners | [After a failure](#after-a-failure) |
+| 8 | Is it only slow? | the benchmark methodology | [Performance looks wrong](#performance-looks-wrong) |
+
+### Find your symptom
+
+| You see | Go to |
+|---|---|
+| the build or link fails; `find_package(TBCCL)` fails | [Installing and linking](#installing-and-linking) |
+| `protocol_mismatch ... wire protocol` | [Bootstrap](#bootstrap); every rank and adapter must be built against the same TBCCL ([versioning](../reference/versioning.md)) |
+| `timeout: ... waiting for the connection(s)` | [Bootstrap](#bootstrap) |
+| ping works, but the ranks time out | [Ping works but the ranks time out](#ping-works-but-the-ranks-time-out) |
+| no interface, no carrier or no address on the link | [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md) |
+| a collective hangs or the data are wrong | [Collectives](#collectives) |
+| `unsupported:` for a memory kind or datatype | [Installing and linking](#installing-and-linking), [platform capabilities](../reference/platform-capabilities.md) |
+| a process does not exit after an error | [After a failure](#after-a-failure) |
+| it works but is slower than expected | [Performance looks wrong](#performance-looks-wrong) |
+
+### Which layer owns the error
+
+Many failures seen while using TBCCL are not caused by TBCCL. Decide from the first words of the message and from where the symptom starts.
+
+| Layer | What it looks like | What to do |
+|---|---|---|
+| Native TBCCL | a message that starts with a result tag (`protocol_mismatch:`, `timeout:`, `unsupported:`, ...; [errors](../reference/errors.md)) | this guide; report with `tbccl-info --json` |
+| An adapter | a message that starts with `torch-tbccl:`, a vLLM or Exo placement error naming the adapter | the adapter's own troubleshooting guide ([torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/guides/troubleshooting.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/guides/troubleshooting.html), [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/guides/troubleshooting.html)) |
+| PyTorch, vLLM, Exo, MLX | scheduling, executor, model or discovery behavior with no TBCCL frame in the stack | the framework's own project; the adapter guides name the known upstream behaviors |
+| Operating system | a prompt or block (macOS Local Network, firewall), a port in use, permissions | [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md) entries 9 and 10; change settings yourself; the link doctor never does |
+| Network configuration | wrong subnet, traffic leaving by Wi-Fi, an MTU that differs between the ends | entries 5 to 8 of the same guide |
+| External dependencies | the CUDA driver or toolkit, Xcode, a compiler | their own installation notes; `tbccl-info` shows what was found |
+
 ## Installing and linking
 
 | Symptom | Likely cause | Diagnostic | Fix |
@@ -33,6 +77,28 @@ Bootstrap is bounded: it fails with one of these errors within `bootstrap_timeou
 | `unsupported:` naming a rank | that rank's memory kind or datatype cannot do the reduction (for example Float16 at world size above 2, or Int8 in Metal shared memory) | [platform capabilities](../reference/platform-capabilities.md) | use a supported datatype or world size |
 | `unsupported: out-of-place all_reduce ... Cuda` | CUDA `all_reduce` needs the same buffer for send and receive | the call site | pass the same view for both |
 
+## Ping works but the ranks time out
+
+**Symptom.** `ping` answers in both directions, yet a rank reports `timeout: ... waiting for the connection(s)` or hangs at start.
+
+**What that means.** `ping` proves an ICMP path between two addresses. TBCCL needs TCP connections between the ranks' control and data ports, in both directions, over the address each rank advertised. A firewall, a wrong advertised address or traffic leaving by another interface breaks the second without touching the first.
+
+**Checks (all read-only).** Run them while the rank that should be listening is waiting.
+
+```sh
+# 1. Can a TCP connection to the peer's control port be made? (<port> is the rank's control port; run from the other machine)
+python3 -c "import socket; socket.create_connection(('<peer-link-address>', <port>), timeout=3).close(); print('TCP connect ok')"
+# 2. Does traffic to the peer leave by the link you intend?
+ip route get <peer-link-address>          # Linux
+route -n get <peer-link-address>          # macOS
+```
+
+- `TCP connect ok`: the path works for that port. Check that the rank advertised the address you expect, and that the data port (control port + 1000) is also free and reachable.
+- `timed out` (no answer): something drops the packets: a firewall, a wrong address, or a route that goes out another interface. The second command shows which interface is used.
+- `Connection refused`: the host is reachable, nothing listens on that port: the rank is not running yet, or it listens on another address.
+
+**Next.** [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md), entries 8 to 10, and the doctor's TCP mode (`--listen` / `--tcp-port`, [Two machines over Thunderbolt](../getting-started/two-machine-thunderbolt.md)). On macOS also check the Local Network prompt and that the rank runs in a live session. **Do not** change firewall rules, MTU or interface settings as a first step.
+
 ## After a failure
 
 A failure after admission fails the communicator on every rank and there is no recovery: discard the communicator and create a new one ([failure handling](../concepts/failure-handling.md)). If a peer may still be finishing its last collective, quiesce all ranks before aborting or destroying.
@@ -40,3 +106,7 @@ A failure after admission fails the communicator on every rank and there is no r
 ## Performance looks wrong
 
 Check the [benchmark methodology](../development/benchmark-methodology.md): never verify results inside a timed loop, and note that an idle gap between operations makes every thread handoff slower ([execution and progress](../concepts/execution-and-progress.md)). On a GPU benchmark check temperature and clock throttling first ([Thunderbolt link guide](thunderbolt-link.md)).
+
+## When to ask for help
+
+Escalate when the checks above isolate the layer and the layer is TBCCL, or when you cannot isolate it. Collect `tbccl-info --json` from every machine, the exact error text, `python3 tools/collect_diagnostics.py` output (it reports versions and interface names, never your files or secrets, and uploads nothing) and what each rank was doing. See [diagnostics](diagnostics.md) and [getting help](../project/getting-help.md). Security problems follow the [security policy](../project/security-policy.md).
