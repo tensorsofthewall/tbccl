@@ -194,3 +194,11 @@ article .tb-cols > .container { border: 1px solid var(--tbccl-border); border-ra
   .tb-stack-settings td:nth-child(3)::before { content: "Mac Metal node"; }
   .tb-stack-settings td:nth-child(4)::before { content: "Rule"; }
 }
+
+/* The development banner must stay readable on a narrow screen: Furo keeps it on one line and scrolls it, which cuts the warning off below about 340px. */
+.announcement { height: auto; min-height: 2.5rem; }
+.announcement-content { white-space: normal; overflow-wrap: anywhere; padding: 0.4rem 0.5rem; line-height: 1.35; }
+
+/* The general index lists long qualified C++ names; let them wrap instead of widening the page. */
+table.indextable { table-layout: fixed; width: 100%; }
+table.indextable td { overflow-wrap: anywhere; }
