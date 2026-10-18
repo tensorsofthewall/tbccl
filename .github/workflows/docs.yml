@@ -37,6 +37,10 @@ jobs:
         run: python3 tools/check_doc_commands.py
       - name: Test the onboarding, troubleshooting and contributor pages
         run: python3 tests/docs_usability_test.py
+      - name: Check the README against the release metadata (offline)
+        run: python3 tools/check_readme.py
+      - name: Test the README check
+        run: python3 tests/readme_test.py
       - name: Check the repository-internal links (offline)
         run: python3 tools/check_links.py
       - name: Test the maintenance tooling

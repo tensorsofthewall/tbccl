@@ -235,6 +235,14 @@ class Onboarding(unittest.TestCase):
         self.assertIn("must be equal", section(q, "Settings that must agree, and those that must differ"))
 
 
+class Banner(unittest.TestCase):
+    def test_the_development_banner_wraps_and_the_index_cannot_widen_the_page(self):
+        css = (DOCS / "_static" / "custom.css").read_text()
+        self.assertRegex(css, r"\.announcement-content\s*\{[^}]*white-space:\s*normal", "the development banner must wrap, not clip, on a narrow screen")
+        self.assertRegex(css, r"table\.indextable\s*\{[^}]*table-layout:\s*fixed")
+        self.assertIn("Development documentation (not a release)", CONF)
+
+
 class Contributors(unittest.TestCase):
     def test_code_map_paths_exist(self):
         text = read("development/code-map.md")
