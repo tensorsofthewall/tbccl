@@ -62,41 +62,110 @@ def contrast(a, b):
     return (hi + 0.05) / (lo + 0.05)
 
 
+def tables(body):
+    """Pipe tables of a Markdown section as (header cells, rows of cells)."""
+    lines, out, i = body.splitlines(), [], 0
+    split = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
+    while i < len(lines):
+        if lines[i].lstrip().startswith("|") and i + 1 < len(lines) and re.match(r"^\s*\|[\s:|-]+\|\s*$", lines[i + 1]):
+            header, rows, i = split(lines[i]), [], i + 2
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                rows.append(split(lines[i]))
+                i += 1
+            out.append((header, rows))
+        else:
+            i += 1
+    return out
+
+
+def read_cell(page, spec):
+    """The one cell at (row, column) of the cited section; the row is named by its first cell, the column by its header."""
+    found = []
+    for header, rows in tables(section(page, spec["section"])):
+        if spec["column"] in header:
+            j = header.index(spec["column"])
+            found += [(header, r) for r in rows if r[0] == spec["row"] and len(r) == len(header)]
+    assert len(found) == 1, f"{page}: {spec} matches {len(found)} rows, expected exactly one"
+    header, row = found[0]
+    return row[header.index(spec["column"])], dict(zip(header, row))
+
+
+def sections_of(chart):
+    return chart["section"] if isinstance(chart["section"], list) else [chart["section"]]
+
+
 class SourceIntegrity(unittest.TestCase):
-    def test_every_value_is_found_in_the_table_it_cites(self):
+    def test_every_value_is_read_from_the_cell_it_names(self):
         for c in DATA["charts"]:
-            text = "\n".join(sections(c))
             for p in points(c):
-                self.assertIn(p["published"], text, f"{c['id']}: {p['published']!r} is not in the cited section of {c['page']}")
-                if "range_published" in p:
-                    # a range can be printed in the table of another section of the same page (the control of a comparison)
-                    self.assertIn(p["range_published"], (BENCH / c["page"]).read_text(encoding="utf-8"), f"{c['id']}: range {p['range_published']!r} is not on {c['page']}")
+                spec = p["table"]
+                self.assertIn(spec["section"], sections_of(c), f"{c['id']}: {p['published']!r} cites a section the chart does not")
+                cell, _ = read_cell(c["page"], spec)
+                self.assertIn(p["published"], cell, f"{c['id']}: cell ({spec['row']!r}, {spec['column']!r}) is {cell!r}, not {p['published']!r}")
 
-    def test_numeric_value_matches_published_text(self):
-        for c in DATA["charts"]:
-            for p in points(c):
-                self.assertAlmostEqual(first_number(p["published"]), p["value"], places=6, msg=f"{c['id']}: {p['published']!r} against {p['value']}")
-                if "min" in p:
-                    lo, hi = (first_number(x) for x in p["range_published"].split("-", 1))
-                    self.assertEqual((lo, hi), (p["min"], p["max"]), f"{c['id']}: range of {p['published']!r}")
+    def test_a_value_attached_to_the_wrong_row_or_column_is_caught(self):
+        c = DATA["charts"][0]
+        pts = list(points(c))
+        a, b = pts[0], pts[1]
+        self.assertNotEqual(a["table"], b["table"])
+        cell, _ = read_cell(c["page"], b["table"])
+        self.assertNotIn(a["published"], cell, "two different measurements must not sit in the same cell")
+        with self.assertRaises(AssertionError):
+            read_cell(c["page"], dict(a["table"], row="no such row"))
+        with self.assertRaises(AssertionError):
+            read_cell(c["page"], dict(a["table"], column="no such column"))
 
-    def test_a_value_is_published_in_a_table_row(self):
+    def test_ranges_come_from_the_named_cell(self):
         for c in DATA["charts"]:
-            text = "\n".join(sections(c))
             for p in points(c):
-                rows = [l for l in text.splitlines() if l.lstrip().startswith("|") and p["published"] in l]
-                self.assertTrue(rows, f"{c['id']}: {p['published']!r} is not in any table row, so the chart has no adjacent data table")
+                if "range_published" not in p:
+                    continue
+                spec = dict(p["table"])
+                if "range_source" in spec:
+                    spec = spec["range_source"]
+                elif "range_column" in spec:
+                    spec["column"] = spec["range_column"]
+                cell, _ = read_cell(c["page"], spec)
+                self.assertIn(p["range_published"], cell, f"{c['id']}: range of {p['published']!r}")
+
+    def test_a_line_series_is_read_along_one_column_or_one_row(self):
+        for c in DATA["charts"]:
+            if c["kind"] != "lines":
+                continue
+            for s in c["series"]:
+                cols, rows = [p["table"]["column"] for p in s["points"]], [p["table"]["row"] for p in s["points"]]
+                by_column = len(set(cols)) == 1 and len(set(rows)) == len(rows)
+                by_row = len(set(rows)) == 1 and len(set(cols)) == len(cols)
+                self.assertTrue(by_column or by_row or len(s["points"]) == 1, f"{c['id']} / {s['label']}: points are not read along one column or one row")
+
+    def test_bars_of_one_chart_never_share_a_cell(self):
+        for c in DATA["charts"]:
+            cells = [(p["table"]["section"], p["table"]["row"], p["table"]["column"]) for p in points(c)]
+            if c["kind"] == "bars":
+                self.assertEqual(len(cells), len(set(cells)), f"{c['id']}: two bars read the same cell")
+
+    def test_x_values_agree_with_the_row_labels_of_payload_charts(self):
+        sizes = {"1 KiB": 1024, "4 KiB": 4096, "64 KiB": 65536, "1 MiB": 1048576, "4 MiB": 4194304, "16 MiB": 16777216}
+        for c in DATA["charts"]:
+            if c["kind"] == "lines" and c["x_scale"] == "log":
+                for s in c["series"]:
+                    for p in s["points"]:
+                        self.assertEqual(sizes[p["table"]["row"]], p["x"], f"{c['id']}: x of {p['published']!r} disagrees with its row")
+            if c["kind"] == "lines" and c["x_scale"] == "linear":
+                for s in c["series"]:
+                    for p in s["points"]:
+                        self.assertEqual(float(re.sub(r"\D", "", p["table"]["row"] if p["table"]["row"].isdigit() else p["table"]["column"])), float(p["x"]), f"{c['id']}: x of {p['published']!r} disagrees with its row or column")
 
     def test_statistical_classification_is_preserved(self):
         seen = 0
         for c in DATA["charts"]:
-            text = "\n".join(sections(c))
             for p in points(c):
                 if "classification" not in p:
                     continue
                 seen += 1
-                row = next(l for l in text.splitlines() if l.lstrip().startswith("|") and p["published"] in l)
-                self.assertIn(p["classification"].replace("_", " "), row.lower(), f"{c['id']}: the table row does not carry the class {p['classification']!r}")
+                _, row = read_cell(c["page"], p["table"])
+                self.assertIn("Class", row, f"{c['id']}: the cited table has no Class column")
+                self.assertEqual(row["Class"].lower().replace(" ", "_"), p["classification"], f"{c['id']}: the table row says {row['Class']!r}")
         # a chart-level classification (the evidence for the whole comparison) must be stated in the cited section and shown in the picture
         for c in DATA["charts"]:
             if "classification" in c:
@@ -106,6 +175,14 @@ class SourceIntegrity(unittest.TestCase):
                 svg_text = (BENCH / "charts" / f"{c['id']}.html").read_text(encoding="utf-8").lower()
                 self.assertIn(phrase, svg_text, f"{c['id']}: the chart does not show {phrase!r}")
         self.assertGreaterEqual(seen, 0)
+
+    def test_numeric_value_matches_published_text(self):
+        for c in DATA["charts"]:
+            for p in points(c):
+                self.assertAlmostEqual(first_number(p["published"]), p["value"], places=6, msg=f"{c['id']}: {p['published']!r} against {p['value']}")
+                if "min" in p:
+                    lo, hi = (first_number(x) for x in p["range_published"].split("-", 1))
+                    self.assertEqual((lo, hi), (p["min"], p["max"]), f"{c['id']}: range of {p['published']!r}")
 
     def test_provenance_says_curated_not_raw(self):
         self.assertRegex(DATA["provenance"], r"(?i)curated")
@@ -133,6 +210,66 @@ class SourceIntegrity(unittest.TestCase):
         for page in BENCH.glob("*.md"):
             embedded |= set(re.findall(r":file: charts/([a-z0-9-]+)\.html", page.read_text(encoding="utf-8")))
         self.assertEqual(embedded, {c["id"] for c in DATA["charts"]})
+
+
+def synthetic(scale, xs=(1, 2, 4, 12)):
+    point = lambda x, v: {"x": x, "value": v, "published": f"{v} u", "exact": True, "n": 1, "table": {"section": "s", "row": str(x), "column": "c"}}
+    return {"id": "synthetic", "title": "t", "summary": "s", "conditions": "c.", "page": "p.md", "section": "s", "statistic": "x", "kind": "lines",
+            "x_label": "X", "y_label": "Y", "y_unit": "u", "y_scale": "linear", "x_scale": scale,
+            "x_ticks": [{"x": x, "label": str(x)} for x in xs],
+            "series": [{"label": "a", "marker": "circle", "dash": "solid", "color": "accent", "points": [point(x, 10 * (i + 1)) for i, x in enumerate(xs)]}]}
+
+
+class XAxis(unittest.TestCase):
+    """The x scale is stated, validated and drawn as stated."""
+
+    @staticmethod
+    def tick_positions(chart):
+        svg = ET.fromstring(re.search(r"<svg\b.*?</svg>", bc.render(chart, "tbccl"), re.S).group(0))
+        return [float(t.get("x")) for t in svg.iter(f"{SVG}text") if t.get("class") == "tb-chart-tick" and t.get("text-anchor") == "middle"]
+
+    def test_scale_must_be_stated_and_valid(self):
+        for bad in (None, "", "sqrt", "Linear"):
+            c = synthetic("linear")
+            if bad is None:
+                del c["x_scale"]
+            else:
+                c["x_scale"] = bad
+            with self.assertRaisesRegex(bc.ChartDataError, "x_scale"):
+                bc.validate({"schema": bc.SCHEMA, "accent": "tbccl", "provenance": "p", "charts": [c]})
+
+    def test_log_axis_rejects_zero_and_linear_accepts_it(self):
+        ok = synthetic("linear", (0, 2, 4))
+        bc.validate({"schema": bc.SCHEMA, "accent": "tbccl", "provenance": "p", "charts": [ok]})
+        bad = synthetic("log", (0, 2, 4))
+        with self.assertRaises(bc.ChartDataError):
+            bc.validate({"schema": bc.SCHEMA, "accent": "tbccl", "provenance": "p", "charts": [bad]})
+
+    def test_linear_ticks_are_evenly_proportional(self):
+        pos = self.tick_positions(synthetic("linear"))
+        xs = (1, 2, 4, 12)
+        for p, x in zip(pos, xs):
+            self.assertAlmostEqual((p - pos[0]) / (pos[-1] - pos[0]), (x - xs[0]) / (xs[-1] - xs[0]), places=2)
+
+    def test_log_ticks_are_proportional_to_the_logarithm(self):
+        import math
+        pos = self.tick_positions(synthetic("log"))
+        xs = (1, 2, 4, 12)
+        for p, x in zip(pos, xs):
+            self.assertAlmostEqual((p - pos[0]) / (pos[-1] - pos[0]), math.log2(x / xs[0]) / math.log2(xs[-1] / xs[0]), places=2)
+
+    def test_the_label_says_logarithmic_only_for_a_log_axis(self):
+        self.assertIn("X (logarithmic)", bc.render(synthetic("log"), "tbccl"))
+        self.assertNotIn("X (logarithmic)", bc.render(synthetic("linear"), "tbccl"))
+
+    def test_the_published_charts_use_the_scale_their_x_variable_needs(self):
+        for c in DATA["charts"]:
+            if c["kind"] != "lines":
+                continue
+            if re.search(r"(?i)size|payload", c["x_label"]):
+                self.assertEqual(c["x_scale"], "log", c["id"])
+            if re.search(r"(?i)concurren", c["x_label"]):
+                self.assertEqual(c["x_scale"], "linear", c["id"])
 
 
 class Generator(unittest.TestCase):
@@ -179,6 +316,7 @@ class Generator(unittest.TestCase):
         broken(lambda d: first(d).update(value=-1), "positive")
         broken(lambda d: first(d).update(value=float("nan")), "positive")
         broken(lambda d: first(d).pop("n"), "never leave it out")
+        broken(lambda d: first(d).pop("table"), "table must name")
         broken(lambda d: first(d).pop("exact"), "exact")
         broken(lambda d: first(d).update(min=1, max=2), "outside its range")
         broken(lambda d: first(d).update(classification="faster"), "classification")
