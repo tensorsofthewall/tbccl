@@ -116,10 +116,10 @@ class Troubleshooting(unittest.TestCase):
             self.assertIn(layer, owner)
         self.assertRegex(owner, r"native tbccl")
 
-    def test_checks_are_read_only_and_say_not_to_change_settings(self):
+    def test_checks_say_not_to_change_settings(self):
         t = read(self.PAGE)
         self.assertRegex(t, r"(?i)do not\*\* change firewall rules, mtu or interface settings")
-        self.assertRegex(t, r"(?i)read-only")
+        self.assertRegex(t, r"(?i)No step changes network, firewall, driver or hardware settings")
 
     def test_no_guide_block_recovers_hardware_or_changes_the_system(self):
         risky = re.compile(r"\b(rmmod|modprobe|setpci|ufw|iptables|firewall-cmd|pfctl|nmcli\s+\S+\s+modify|ip\s+link\s+set|ifconfig\s+\S+\s+mtu|sudo)\b|/sys/bus/pci|pci=noaer|iommu=off")
@@ -139,6 +139,40 @@ class Troubleshooting(unittest.TestCase):
             fetched = "curl -fsSLO" in text and "thunderbolt_link_doctor.py" in text
             linked = re.search(r"\]\([^)]*(thunderbolt-troubleshooting|two-machine-thunderbolt)", text)
             self.assertTrue(fetched or linked, f"{page.relative_to(DOCS)} runs the link doctor without saying where to get it")
+
+    def test_steps_are_marked_observe_or_action_and_nothing_claims_all_read_only(self):
+        t = read(self.PAGE)
+        order = section(t, "Work through it in this order")
+        self.assertNotRegex(order, r"(?i)each step is read-only")
+        self.assertIn("**Observe**", order)
+        self.assertIn("**Action**", order)
+        rows = [r for r in order.splitlines() if re.match(r"^\| \d \|", r)]
+        self.assertEqual(len(rows), 8)
+        for row in rows:
+            check = row.split(" | ")[2]
+            self.assertTrue("**Observe:**" in check or "**Action:**" in check, f"unlabelled check: {row[:60]}")
+        ping = section(t, re.search(r"(?m)^## (Ping works but[^\n]*)$", t).group(1))
+        self.assertIn("**action**", ping)
+        self.assertNotRegex(ping, r"(?i)all read-only")
+
+    def test_wide_new_tables_stack_on_small_screens(self):
+        t = read(self.PAGE)
+        self.assertIn(":class: tb-stack tb-stack-steps", t)
+        self.assertIn(":class: tb-stack tb-stack-find", t)
+        css = (DOCS / "_static" / "custom.css").read_text()
+        media = css[css.index("/* Stacked tables"):]
+        self.assertIn("@media (max-width: 44em)", media)
+        used = set()
+        for page in DOCS.rglob("*.md"):
+            if "_build" not in page.parts:
+                used |= set(re.findall(r":class: tb-stack (tb-stack-[a-z]+)", page.read_text(encoding="utf-8")))
+        self.assertTrue({"tb-stack-steps", "tb-stack-find", "tb-stack-owner", "tb-stack-tiers", "tb-stack-map"} <= used)
+        for cls in used:
+            self.assertIn(f".{cls}", media, f"{cls} has no stacked layout")
+        for label in ("Step", "Check", "If it fails", "Go to", "What to do", "Needs", "Start at"):
+            self.assertIn(f'content: "{label}"', media)
+        self.assertNotRegex(media, r"#[0-9a-fA-F]{3,8}\b|\brgba?\(")
+        self.assertRegex(media, r"clip: rect\(0 0 0 0\)", "the header row stays available to assistive technology")
 
     def test_escalation_names_what_to_collect(self):
         t = read(self.PAGE)
