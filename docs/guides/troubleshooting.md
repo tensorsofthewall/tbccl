@@ -6,20 +6,27 @@ Find your symptom, check the likely cause with the diagnostic command, apply the
 
 ### Work through it in this order
 
-Each step is read-only. Stop at the first step that fails: later steps depend on it.
+Each step is marked **Observe** (it reads state; nothing starts, stops or changes) or **Action** (you start, stop or configure a process, or run a test). No step changes network, firewall, driver or hardware settings. Stop at the first step that fails: later steps depend on it.
+
+```{table}
+:class: tb-stack tb-stack-steps
 
 | Step | Question | Check | If it fails |
 |---|---|---|---|
-| 1 | Which versions are installed? | `tbccl-info --json` on **every** machine (the wire protocol must be equal) | [Diagnostics](diagnostics.md); [Bootstrap](#bootstrap) for `protocol_mismatch` |
-| 2 | Is the device or backend you need present? | `tbccl-info` lists the providers (`cuda`, `metal_shared`) | [Installing and linking](#installing-and-linking) |
-| 3 | Is the link ready? | `python3 thunderbolt_link_doctor.py --peer <peer-link-address>` (read-only; [how to get it](thunderbolt-troubleshooting.md)) | [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md) |
-| 4 | Do the ranks agree on who is who? | print rank, world size and communicator id on each rank | [Bootstrap](#bootstrap) |
-| 5 | Does the transport come up? | `TBCCL_TRACE=1` on every rank; a `timeout:` within `bootstrap_timeout` | [Bootstrap](#bootstrap), [ping works but the ranks time out](#ping-works-but-the-ranks-time-out) |
-| 6 | Does the collective run? | the same collectives, sizes and order on every rank | [Collectives](#collectives) |
-| 7 | Did a failure leave something behind? | `ss -ltnp` (Linux) or `lsof -nP -iTCP -sTCP:LISTEN` (macOS) for stale listeners | [After a failure](#after-a-failure) |
-| 8 | Is it only slow? | the benchmark methodology | [Performance looks wrong](#performance-looks-wrong) |
+| 1 | Which versions are installed? | **Observe:** `tbccl-info --json` on **every** machine (the wire protocol must be equal) | [Diagnostics](diagnostics.md); [Bootstrap](#bootstrap) for `protocol_mismatch` |
+| 2 | Is the device or backend you need present? | **Observe:** `tbccl-info` lists the providers (`cuda`, `metal_shared`) | [Installing and linking](#installing-and-linking) |
+| 3 | Is the link ready? | **Observe:** `python3 thunderbolt_link_doctor.py --peer <peer-link-address>` (with `--peer` it also sends a ping and opens one TCP connection to the peer, and changes nothing; [how to get it](thunderbolt-troubleshooting.md)) | [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md) |
+| 4 | Do the ranks agree on who is who? | **Observe:** read the rank, world size and communicator id that your launcher gives each rank | [Bootstrap](#bootstrap) |
+| 5 | Does the transport come up? | **Action:** set `TBCCL_TRACE=1` on every rank and start them again (more logging, nothing else changes); look for a `timeout:` within `bootstrap_timeout` | [Bootstrap](#bootstrap), [ping works but the ranks time out](#ping-works-but-the-ranks-time-out) |
+| 6 | Does the collective run? | **Observe:** the same collectives, sizes and order on every rank | [Collectives](#collectives) |
+| 7 | Did a failure leave something behind? | **Observe:** `ss -ltnp` (Linux) or `lsof -nP -iTCP -sTCP:LISTEN` (macOS) for stale listeners | [After a failure](#after-a-failure) |
+| 8 | Is it only slow? | **Observe:** the benchmark methodology | [Performance looks wrong](#performance-looks-wrong) |
+```
 
 ### Find your symptom
+
+```{table}
+:class: tb-stack tb-stack-find
 
 | You see | Go to |
 |---|---|
@@ -32,10 +39,14 @@ Each step is read-only. Stop at the first step that fails: later steps depend on
 | `unsupported:` for a memory kind or datatype | [Installing and linking](#installing-and-linking), [platform capabilities](../reference/platform-capabilities.md) |
 | a process does not exit after an error | [After a failure](#after-a-failure) |
 | it works but is slower than expected | [Performance looks wrong](#performance-looks-wrong) |
+```
 
 ### Which layer owns the error
 
 Many failures seen while using TBCCL are not caused by TBCCL. Decide from the first words of the message and from where the symptom starts.
+
+```{table}
+:class: tb-stack tb-stack-owner
 
 | Layer | What it looks like | What to do |
 |---|---|---|
@@ -45,6 +56,7 @@ Many failures seen while using TBCCL are not caused by TBCCL. Decide from the fi
 | Operating system | a prompt or block (macOS Local Network, firewall), a port in use, permissions | [Thunderbolt link troubleshooting](thunderbolt-troubleshooting.md) entries 9 and 10; change settings yourself; the link doctor never does |
 | Network configuration | wrong subnet, traffic leaving by Wi-Fi, an MTU that differs between the ends | entries 5 to 8 of the same guide |
 | External dependencies | the CUDA driver or toolkit, Xcode, a compiler | their own installation notes; `tbccl-info` shows what was found |
+```
 
 ## Installing and linking
 
@@ -83,12 +95,12 @@ Bootstrap is bounded: it fails with one of these errors within `bootstrap_timeou
 
 **What that means.** `ping` proves an ICMP path between two addresses. TBCCL needs TCP connections between the ranks' control and data ports, in both directions, over the address each rank advertised. A firewall, a wrong advertised address or traffic leaving by another interface breaks the second without touching the first.
 
-**Checks (all read-only).** Run them while the rank that should be listening is waiting.
+**Checks.** The route and environment commands are observations. The connection test is an **action**: it opens one TCP connection and closes it at once, which the listening side may log as a failed handshake, so run it only when no job you care about is starting. The link doctor's listener on a spare port (`--listen` / `--tcp-port`) tests the same path without touching a running job. Run them while the listening side is waiting.
 
 ```sh
-# 1. Can a TCP connection to the peer's control port be made? (<port> is the rank's control port; run from the other machine)
+# ACTION (opens and closes one TCP connection) - Can a TCP connection to the peer's control port be made? (<port> is the rank's control port; run from the other machine)
 python3 -c "import socket; socket.create_connection(('<peer-link-address>', <port>), timeout=3).close(); print('TCP connect ok')"
-# 2. Does traffic to the peer leave by the link you intend?
+# observe - Does traffic to the peer leave by the link you intend?
 ip route get <peer-link-address>          # Linux
 route -n get <peer-link-address>          # macOS
 ```

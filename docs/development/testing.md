@@ -38,6 +38,9 @@ make check-compat      # compatibility.json must agree with the C ABI header and
 
 You do not need a GPU, a Mac or Thunderbolt hardware to contribute. Pick the lowest tier that covers your change and say in the pull request which tiers you ran.
 
+```{table}
+:class: tb-stack tb-stack-tiers
+
 | Tier | Needs | Commands (above) | Covers |
 |---|---|---|---|
 | Documentation only | Python 3 | `make docs`, `make docs-linkcheck`, `make check-compat`, `python3 tools/check_doc_commands.py`, `python3 tools/check_release_docs.py` | links, builds, commands named in the docs, version facts |
@@ -47,6 +50,7 @@ You do not need a GPU, a Mac or Thunderbolt hardware to contribute. Pick the low
 | Physical link | two machines and a Thunderbolt cable | opt-in only; [Thunderbolt link guide](../guides/thunderbolt-link.md) and a health snapshot before and after | real-link behavior; never part of a generic run |
 | Benchmarks | CPython 3.13, built benchmark executables | the benchmark suite tests below | the suite's own logic, never speed |
 | Packaging | a clean directory | `scripts/package_native.sh` | the release archive and its consumers |
+```
 
 Changes to the runtime that touch only host-memory behavior can be fully validated on the loopback tier. A change that affects a device path should be run on the matching tier by someone who has the hardware; say so in the pull request instead of skipping it silently.
 
