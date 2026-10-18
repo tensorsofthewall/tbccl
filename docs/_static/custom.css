@@ -133,3 +133,28 @@ article .tb-cols > .container { border: 1px solid var(--tbccl-border); border-ra
   .tb-lead { font-size: 1.05rem; }
   article .tb-actions a.reference { flex: 1 1 100%; text-align: center; }
 }
+
+/* Benchmark charts: inline SVG that follows the page tokens, readable without scripts. */
+.tb-chart { margin: 1.5rem 0; }
+.tb-chart-title { font-weight: 650; margin: 0 0 0.5rem; }
+.tb-chart-scroll { overflow-x: auto; border: 1px solid var(--tbccl-border); border-radius: var(--tbccl-radius); background: var(--color-background-primary); padding: 0.5rem; }
+.tb-chart svg { display: block; width: 100%; min-width: 36rem; height: auto; }
+.tb-chart text { fill: var(--color-foreground-primary); font-family: var(--font-stack); font-size: 13px; }
+.tb-chart .tb-chart-heading { font-weight: 650; font-size: 14px; }
+.tb-chart .tb-chart-group { font-weight: 650; }
+.tb-chart .tb-chart-group, .tb-chart .tb-chart-note { paint-order: stroke; stroke: var(--color-background-primary); stroke-width: 5px; stroke-linejoin: round; }
+.tb-chart .tb-chart-value { font-weight: 600; }
+.tb-chart .tb-chart-label { font-weight: 400; }
+.tb-chart .tb-chart-note, .tb-chart .tb-chart-tick, .tb-chart .tb-chart-unit { fill: var(--color-foreground-secondary); }
+.tb-chart .tb-chart-grid { stroke: var(--color-background-border); stroke-width: 1; fill: none; }
+.tb-chart .tb-chart-minor { stroke-dasharray: 2 4; }
+.tb-chart .tb-chart-axis { stroke: var(--color-foreground-muted); stroke-width: 1.5; fill: none; }
+.tb-chart .tb-chart-bar { stroke: var(--color-foreground-secondary); stroke-width: 1.5; }
+.tb-chart .tb-chart-range { stroke: var(--color-foreground-primary); stroke-width: 1.5; fill: none; }
+.tb-chart .tb-chart-line { fill: none; stroke-width: 2; }
+.tb-chart .tb-chart-marker { stroke-width: 2; }
+.tb-chart .tb-chart-hatch-bg { fill: var(--color-background-primary); }
+.tb-chart .tb-chart-hatch-line { stroke: var(--color-foreground-secondary); stroke-width: 3; }
+.tb-chart-hint { display: none; margin: 0.25rem 0 0; font-size: 0.85rem; color: var(--color-foreground-secondary); }
+@media (max-width: 44em) { .tb-chart-hint { display: block; } }
+.tb-chart figcaption { margin-top: 0.5rem; font-size: 0.9rem; color: var(--color-foreground-secondary); }
