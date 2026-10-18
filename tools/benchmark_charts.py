@@ -105,6 +105,9 @@ def _check_point(where, p):
         _need(p["min"] <= p["value"] <= p["max"], where, f"value {p['value']} is outside its range {p['min']}..{p['max']}")
         _need(p["min"] > 0, where, "range must be positive")
         _need(isinstance(p.get("range_published"), str) and p["range_published"], where, "the range as published is required beside min and max")
+    t = p.get("table")
+    _need(isinstance(t, dict) and all(isinstance(t.get(k), str) and t[k].strip() for k in ("section", "row", "column")), where,
+          "table must name the section, the row (its first cell) and the column header the value was read from")
     n = p.get("n")
     _need((isinstance(n, int) and not isinstance(n, bool) and n >= 1) or (isinstance(n, str) and n.strip()), where,
           "n (independent repetitions or lifecycles) must be an integer of 1 or more, or the published text such as '3-6'; never leave it out")
@@ -144,11 +147,13 @@ def _validate_lines(c):
     cid = c["id"]
     for key in ("x_label", "y_label", "y_unit"):
         _need(isinstance(c.get(key), str) and c[key], cid, f"{key} is required")
+    _need(c.get("x_scale") in ("linear", "log"), cid, "x_scale must be linear or log; it is never guessed")
     _need(c.get("y_scale") in ("log", "linear"), cid, "y_scale must be log or linear")
     ticks = c.get("x_ticks")
     _need(isinstance(ticks, list) and len(ticks) >= 2, cid, "x_ticks needs at least two entries")
     for t in ticks:
-        _need(_num(t.get("x")) and t["x"] > 0 and isinstance(t.get("label"), str), cid, "each x tick needs x > 0 and a label")
+        _need(_num(t.get("x")) and t["x"] >= 0 and (c["x_scale"] == "linear" or t["x"] > 0) and isinstance(t.get("label"), str), cid,
+              "each x tick needs a label and a positive x (a non-negative x on a linear axis)")
     xs = [t["x"] for t in ticks]
     _need(xs == sorted(xs) and len(set(xs)) == len(xs), cid, "x_ticks must be strictly increasing")
     series = c.get("series")
@@ -159,9 +164,9 @@ def _validate_lines(c):
         _need(s.get("marker") in MARKERS and s.get("dash") in DASHES, sw, f"marker must be one of {MARKERS} and dash one of {tuple(DASHES)}")
         _need(s.get("color") in ("accent", "neutral"), sw, "color must be accent or neutral")
         _need(isinstance(s.get("points"), list) and s["points"], sw, "points is required")
-        last = 0
+        last = -1
         for p in s["points"]:
-            _need(_num(p.get("x")) and p["x"] > 0, sw, "x must be a positive number")
+            _need(_num(p.get("x")) and p["x"] >= 0 and (c["x_scale"] == "linear" or p["x"] > 0), sw, "x must be a positive number (non-negative on a linear axis)")
             _need(p["x"] in xs, sw, f"x={p['x']} has no tick, so the reader cannot read its payload")
             _need(p["x"] > last, sw, "points must be in increasing x")
             last = p["x"]
@@ -249,7 +254,12 @@ def _lines_svg(c, accent):
     left, right, top, plot_h = 78, 24, 14, 250
     plot_w = WIDTH - left - right
     xs = [t["x"] for t in c["x_ticks"]]
-    lx = lambda v: left + (math.log2(v) - math.log2(xs[0])) / (math.log2(xs[-1]) - math.log2(xs[0])) * plot_w
+    pad = 14
+    if c["x_scale"] == "log":
+        frac = lambda v: (math.log2(v) - math.log2(xs[0])) / (math.log2(xs[-1]) - math.log2(xs[0]))
+    else:
+        frac = lambda v: (v - xs[0]) / (xs[-1] - xs[0])
+    lx = lambda v: left + pad + frac(v) * (plot_w - 2 * pad)
     vals = [p.get(k, p["value"]) for s in c["series"] for p in s["points"] for k in ("value", "min", "max") if k in p or k == "value"]
     lo, hi = min(vals), max(vals)
     body = []
@@ -273,7 +283,7 @@ def _lines_svg(c, accent):
         body.append(f'<path class="tb-chart-grid" d="M{_n(lx(t["x"]))} {top}V{top + plot_h}"/>')
         body.append(f'<text class="tb-chart-tick" x="{_n(lx(t["x"]))}" y="{top + plot_h + 17}" text-anchor="middle">{escape(t["label"])}</text>')
     body.append(f'<path class="tb-chart-axis" d="M{left} {top}V{top + plot_h}H{WIDTH - right}"/>')
-    body.append(f'<text class="tb-chart-unit" x="{_n(left + plot_w / 2)}" y="{top + plot_h + 40}" text-anchor="middle">{escape(c["x_label"])} (logarithmic)</text>')
+    body.append(f'<text class="tb-chart-unit" x="{_n(left + plot_w / 2)}" y="{top + plot_h + 40}" text-anchor="middle">{escape(c["x_label"])}{" (logarithmic)" if c["x_scale"] == "log" else ""}</text>')
     body.append(f'<text class="tb-chart-unit" transform="translate(14 {_n(top + plot_h / 2)}) rotate(-90)" text-anchor="middle">{escape(c["y_label"])}, {escape(c["y_unit"])}{" (logarithmic)" if c["y_scale"] == "log" else ""}</text>')
     for s in c["series"]:
         color = f"var(--tb-accent-{accent})" if s["color"] == "accent" else "var(--color-foreground-primary)"
