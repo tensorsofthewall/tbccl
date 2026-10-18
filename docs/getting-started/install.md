@@ -24,6 +24,8 @@ Release archives are attached to the GitHub release of each version (currently [
 | `tbccl-0.6.1-linux-x86_64.tar.gz` | Linux x86-64, host buffers only |
 | `tbccl-0.6.1-macos-arm64.tar.gz` | macOS Apple silicon (`Host` and `MetalShared` buffers) |
 
+The archives hold the library, headers, CMake and pkg-config packages and `tbccl-info`. The Python benchmark suite (the runner) is **not** in them: it is part of the source of each release (the source archive of the tag), as described in [run benchmarks](../benchmarks/quickstart.md). The runtime version, `0.6.1`, is a different number from the C ABI (`1`) and the wire protocol (`4`); `tbccl-info` prints all three.
+
 Pick the archive for your machine, then run the commands for your operating system in an empty directory. They need only `curl`, a checksum tool and `tar`, and nothing else from this repository.
 
 **Linux x86-64** (host buffers only; use `linux-x86_64-cuda13` instead for CUDA buffers):

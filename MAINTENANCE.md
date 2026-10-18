@@ -65,9 +65,9 @@ GitHub-hosted CI has no GPU, no Mac pair and no Thunderbolt link, so it cannot q
 
 | What | Where | When | Reads | Writes |
 |---|---|---|---|---|
-| Release state, tooling tests, internal links, framework pin (offline) | `docs` workflow | every pull request | the repository | nothing |
+| Release state, release documentation (the README, homepage and installation commands against the package version), tooling tests, internal links, framework pin (offline) | `docs` workflow | every pull request | the repository | nothing |
 | Weekly health check (`maintenance`): release state, pins, stable release surface, links, documentation hosts, documentation build | `maintenance` workflow | weekly, and by hand | the repository, GitHub, the documentation hosts | job summary only |
-| Release readiness (`release-preflight`) | `release-preflight` workflow | by hand, with the intended tag | the repository, the release-artifacts run | job summary only |
+| Release readiness (`release-preflight`), including the release documentation against the intended tag before it is tagged | `release-preflight` workflow | by hand, with the intended tag | the repository, the release-artifacts run | job summary only |
 | Wrong-version guard | `guard` job of `release-artifacts` | every artifact build | the repository, the TBCCL core | nothing |
 | Upstream drift | `upstream-drift` workflow in each fork | weekly, and by hand | the fork and its upstream | job summary only |
 
