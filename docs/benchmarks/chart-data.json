@@ -1,0 +1,543 @@
+{
+  "schema": "tbccl-doc-chart-data/1",
+  "accent": "tbccl",
+  "provenance": "Curated by hand from the tables of docs/benchmarks/native-results.md. These are published aggregates, not raw measurement records: each value carries the exact text of the table cell it was read from, and no error bar or repetition count has been added that the page does not state. The Markdown tables are authoritative; a test fails when a chart input no longer appears in them.",
+  "charts": [
+    {
+      "id": "native-throughput",
+      "title": "Host-memory transfer rate over a direct Thunderbolt 4 link, 16 MiB, by direction",
+      "summary": "Grouped horizontal bars. Linux to Mac: TBCCL 15.5 Gbit/s, iperf3 single stream 15.81 Gbit/s. Mac to Linux: TBCCL 18.3 Gbit/s, iperf3 single stream 18.81 Gbit/s. The two programs agree within about 3 percent in both directions, and the Mac to Linux direction is faster in both. These are TCP goodput through two operating-system kernels, not the Thunderbolt 4 link rate.",
+      "conditions": "One completion-confirmed 16 MiB message at a time, host memory, TCP/IPv4 over IP over Thunderbolt, MTU 9000, TBCCL 0.6.0, one pair of machines. The iperf3 bars are a single TCP stream (receiver goodput).",
+      "page": "native-results.md",
+      "section": "Large transfers, host memory",
+      "statistic": "TCP goodput through two operating-system kernels (TBCCL: effective rate from the median completion time over 3 repetitions; iperf3: receiver goodput), not the physical link rate",
+      "kind": "bars",
+      "series": [
+        {
+          "id": "tbccl",
+          "style": "solid"
+        },
+        {
+          "id": "iperf3",
+          "style": "hatch"
+        }
+      ],
+      "panels": [
+        {
+          "unit": "Gbit/s of TCP payload",
+          "direction": "higher is better",
+          "groups": [
+            {
+              "label": "Linux to Mac (A to B)",
+              "bars": [
+                {
+                  "label": "TBCCL",
+                  "series": "tbccl",
+                  "value": 15.5,
+                  "published": "15.5 Gbit/s",
+                  "exact": false,
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "A to B",
+                    "column": "Effective rate"
+                  }
+                },
+                {
+                  "label": "iperf3, single stream",
+                  "series": "iperf3",
+                  "value": 15.81,
+                  "published": "15.81 Gbit/s",
+                  "exact": true,
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "A to B",
+                    "column": "iperf3 single stream"
+                  }
+                }
+              ]
+            },
+            {
+              "label": "Mac to Linux (B to A)",
+              "bars": [
+                {
+                  "label": "TBCCL",
+                  "series": "tbccl",
+                  "value": 18.3,
+                  "published": "18.3 Gbit/s",
+                  "exact": false,
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "B to A",
+                    "column": "Effective rate"
+                  }
+                },
+                {
+                  "label": "iperf3, single stream",
+                  "series": "iperf3",
+                  "value": 18.81,
+                  "published": "18.81 Gbit/s",
+                  "exact": true,
+                  "n": 3,
+                  "table": {
+                    "section": "Large transfers, host memory",
+                    "row": "B to A",
+                    "column": "iperf3 single stream"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "native-latency-size",
+      "title": "Completion-confirmed transfer time against message size, host memory, Linux to Mac",
+      "summary": "Line chart on logarithmic axes, one series: completion-confirmed TBCCL transfers from 4 KiB to 16 MiB. The time is 126 microseconds at 4 KiB, 269 at 64 KiB, 1,118 at 1 MiB (range 779 to 1,480 over repetitions), 2,432 at 4 MiB and 8,669 at 16 MiB. Each time includes the acknowledgement's return trip. Small and medium messages are latency- and variability-bound. Ping-pong round trips are a different kind of measurement and are left in the table.",
+      "conditions": "Host memory, TBCCL 0.6.0 over TCP/IPv4, direct Thunderbolt 4 link, MTU 9000. Each point times one transfer up to its acknowledgement. The round-trip measurements (raw TCP and TBCCL ping-pongs at 64 B and 4 KiB) use a different timing method and statistic and are not drawn here; they are in the Latency table.",
+      "page": "native-results.md",
+      "section": "Large transfers, host memory",
+      "statistic": "medians over independent repetitions (3-6) of each repetition's median",
+      "kind": "lines",
+      "x_label": "Message size",
+      "y_label": "Time",
+      "y_unit": "microseconds",
+      "y_scale": "log",
+      "x_ticks": [
+        {
+          "x": 4096,
+          "label": "4 KiB"
+        },
+        {
+          "x": 65536,
+          "label": "64 KiB"
+        },
+        {
+          "x": 1048576,
+          "label": "1 MiB"
+        },
+        {
+          "x": 4194304,
+          "label": "4 MiB"
+        },
+        {
+          "x": 16777216,
+          "label": "16 MiB"
+        }
+      ],
+      "series": [
+        {
+          "label": "TBCCL, completion-confirmed transfer",
+          "marker": "circle",
+          "dash": "solid",
+          "color": "accent",
+          "points": [
+            {
+              "x": 4096,
+              "value": 126,
+              "published": "126 us",
+              "exact": true,
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "4 KiB",
+                "column": "Time"
+              }
+            },
+            {
+              "x": 65536,
+              "value": 269,
+              "published": "269 us",
+              "exact": true,
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "64 KiB",
+                "column": "Time"
+              }
+            },
+            {
+              "x": 1048576,
+              "value": 1118,
+              "published": "1,118 us",
+              "exact": true,
+              "n": "3-6",
+              "min": 779,
+              "max": 1480,
+              "range_published": "779-1,480",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "1 MiB",
+                "column": "Time"
+              }
+            },
+            {
+              "x": 4194304,
+              "value": 2432,
+              "published": "2,432 us",
+              "exact": true,
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "4 MiB",
+                "column": "Time"
+              }
+            },
+            {
+              "x": 16777216,
+              "value": 8669,
+              "published": "8,669 us",
+              "exact": true,
+              "n": "3-6",
+              "table": {
+                "section": "Large transfers, host memory",
+                "row": "16 MiB",
+                "column": "Time"
+              }
+            }
+          ]
+        }
+      ],
+      "x_scale": "log"
+    },
+    {
+      "id": "native-staging",
+      "title": "Completion time of a 16 MiB transfer by memory path, Linux (CUDA) to Mac (Metal)",
+      "summary": "Horizontal bars, lower is better. Host memory control 8,667 microseconds. CUDA pinned memory to Metal shared memory with synchronous staging 9,968 microseconds, which is 1,301 more than the control. Asynchronous chunked staging with 256 KiB chunks at depth 2 took 8,677 microseconds, equal to the control, so the staging was overlapped with the transfer. This shows an overlap benefit in completion time; it is not direct device-to-device DMA.",
+      "conditions": "16 MiB, completion-confirmed, A to B, TBCCL 0.6.0 over TCP/IPv4. Both device paths stage through host memory; there is no direct CUDA-to-Metal DMA. Submitting an asynchronous operation returns in microseconds and says nothing about completion; the bars are completion times.",
+      "page": "native-results.md",
+      "section": "Device memory",
+      "statistic": "medians over 3 independent repetitions; the whisker is the minimum to maximum over those repetitions",
+      "kind": "bars",
+      "series": [
+        {
+          "id": "host",
+          "style": "hatch"
+        },
+        {
+          "id": "sync",
+          "style": "solid"
+        },
+        {
+          "id": "async",
+          "style": "hatch-accent"
+        }
+      ],
+      "panels": [
+        {
+          "unit": "microseconds to completion",
+          "direction": "lower is better",
+          "note": [
+            "Local CUDA device-to-host staging alone (16 MiB, no network): 1,279 us"
+          ],
+          "groups": [
+            {
+              "label": "16 MiB, A to B",
+              "bars": [
+                {
+                  "label": "Host memory (control)",
+                  "series": "host",
+                  "value": 8667,
+                  "published": "8,667 us",
+                  "exact": true,
+                  "n": 3,
+                  "min": 8664,
+                  "max": 8669,
+                  "range_published": "8,664-8,669",
+                  "table": {
+                    "section": "Device memory",
+                    "row": "host memory (control)",
+                    "column": "Time",
+                    "range_source": {
+                      "section": "Large transfers, host memory",
+                      "row": "A to B",
+                      "column": "TBCCL completion time"
+                    }
+                  }
+                },
+                {
+                  "label": "CUDA to Metal, synchronous",
+                  "series": "sync",
+                  "value": 9968,
+                  "published": "9,968 us",
+                  "exact": true,
+                  "n": 3,
+                  "min": 9957,
+                  "max": 9984,
+                  "range_published": "9,957-9,984",
+                  "table": {
+                    "section": "Device memory",
+                    "row": "CUDA pinned to Metal shared, synchronous",
+                    "column": "Time"
+                  }
+                },
+                {
+                  "label": "CUDA to Metal, async chunks",
+                  "series": "async",
+                  "value": 8677,
+                  "published": "8,677 us",
+                  "exact": true,
+                  "n": 3,
+                  "min": 8671,
+                  "max": 8717,
+                  "range_published": "8,671-8,717",
+                  "table": {
+                    "section": "Device memory",
+                    "row": "asynchronous chunked (256 KiB chunks, depth 2)",
+                    "column": "Time"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "native-collectives",
+      "title": "all_reduce time against payload size by algorithm, two ranks, host memory",
+      "summary": "Line chart on logarithmic axes. Ring is slower than the reference algorithm at 1 KiB (138 against 124 microseconds) and 64 KiB (254 against 201) and faster from about 1 MiB (855 against 1,251; 3,541 against 4,749 at 4 MiB; 16,192 against 18,163 at 16 MiB). Auto selected the reference algorithm at every size on this two-rank setup, so its line follows the reference line.",
+      "conditions": "Two ranks, host memory, all_reduce, slowest rank per iteration, 3 process pairs per point. A two-rank setup cannot show how the algorithms scale with more ranks, and the faster algorithm at one size or rank count is not the fastest in general.",
+      "page": "native-results.md",
+      "section": "Collectives",
+      "statistic": "medians over 3 process pairs of the slowest rank's time per iteration",
+      "kind": "lines",
+      "x_label": "Payload",
+      "y_label": "Time",
+      "y_unit": "microseconds",
+      "y_scale": "log",
+      "x_ticks": [
+        {
+          "x": 1024,
+          "label": "1 KiB"
+        },
+        {
+          "x": 65536,
+          "label": "64 KiB"
+        },
+        {
+          "x": 1048576,
+          "label": "1 MiB"
+        },
+        {
+          "x": 4194304,
+          "label": "4 MiB"
+        },
+        {
+          "x": 16777216,
+          "label": "16 MiB"
+        }
+      ],
+      "series": [
+        {
+          "label": "ring",
+          "marker": "circle",
+          "dash": "solid",
+          "color": "accent",
+          "points": [
+            {
+              "x": 1024,
+              "value": 138,
+              "published": "138 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 KiB",
+                "column": "ring"
+              }
+            },
+            {
+              "x": 65536,
+              "value": 254,
+              "published": "254 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "64 KiB",
+                "column": "ring"
+              }
+            },
+            {
+              "x": 1048576,
+              "value": 855,
+              "published": "855 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 MiB",
+                "column": "ring"
+              }
+            },
+            {
+              "x": 4194304,
+              "value": 3541,
+              "published": "3,541 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "4 MiB",
+                "column": "ring"
+              }
+            },
+            {
+              "x": 16777216,
+              "value": 16192,
+              "published": "16,192 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "16 MiB",
+                "column": "ring"
+              }
+            }
+          ]
+        },
+        {
+          "label": "reference",
+          "marker": "square",
+          "dash": "dashed",
+          "color": "neutral",
+          "points": [
+            {
+              "x": 1024,
+              "value": 124,
+              "published": "124 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 KiB",
+                "column": "reference"
+              }
+            },
+            {
+              "x": 65536,
+              "value": 201,
+              "published": "201 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "64 KiB",
+                "column": "reference"
+              }
+            },
+            {
+              "x": 1048576,
+              "value": 1251,
+              "published": "1,251 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 MiB",
+                "column": "reference"
+              }
+            },
+            {
+              "x": 4194304,
+              "value": 4749,
+              "published": "4,749 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "4 MiB",
+                "column": "reference"
+              }
+            },
+            {
+              "x": 16777216,
+              "value": 18163,
+              "published": "18,163 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "16 MiB",
+                "column": "reference"
+              }
+            }
+          ]
+        },
+        {
+          "label": "auto (selected reference at every size)",
+          "marker": "diamond",
+          "dash": "dotted",
+          "color": "neutral",
+          "points": [
+            {
+              "x": 1024,
+              "value": 125,
+              "published": "125 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 KiB",
+                "column": "auto"
+              }
+            },
+            {
+              "x": 65536,
+              "value": 205,
+              "published": "205 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "64 KiB",
+                "column": "auto"
+              }
+            },
+            {
+              "x": 1048576,
+              "value": 1237,
+              "published": "1,237 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "1 MiB",
+                "column": "auto"
+              }
+            },
+            {
+              "x": 4194304,
+              "value": 4683,
+              "published": "4,683 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "4 MiB",
+                "column": "auto"
+              }
+            },
+            {
+              "x": 16777216,
+              "value": 18145,
+              "published": "18,145 us",
+              "exact": true,
+              "n": 3,
+              "table": {
+                "section": "Collectives",
+                "row": "16 MiB",
+                "column": "auto"
+              }
+            }
+          ]
+        }
+      ],
+      "x_scale": "log"
+    }
+  ]
+}

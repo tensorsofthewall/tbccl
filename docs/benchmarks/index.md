@@ -15,16 +15,22 @@ troubleshooting
 frameworks
 ```
 
-| Question | Where |
+## What do you want to do?
+
+| I want to... | Go to |
 |---|---|
-| How do I run a benchmark in five minutes? | [Quickstart](quickstart.md) |
-| How do I benchmark my own machines and link? | [Running on your hardware](your-hardware.md) |
-| How does TBCCL perform, on what hardware, and what do the numbers mean? | [Native performance](native-results.md) |
-| What exactly is timed, and what are the limits of a number? | [Benchmark methodology](methodology.md) |
-| How do I get a report from my own run? | [Report generation](reports.md) |
-| How do I compare two runs? | [Comparing runs](comparing.md) |
-| Something failed. | [Troubleshooting](troubleshooting.md) |
-| PyTorch, vLLM or Exo? | [Framework benchmarks](frameworks.md) |
+| see reference measurements with charts | [Native performance](native-results.md) |
+| understand what is timed and what a number means | [Benchmark methodology](methodology.md) |
+| run a benchmark in five minutes | [Quickstart](quickstart.md) |
+| benchmark my own machines and link | [Running on your hardware](your-hardware.md) |
+| generate a report from my run | [Report generation](reports.md) |
+| compare two of my runs | [Comparing runs](comparing.md) |
+| find out why a run failed | [Troubleshooting](troubleshooting.md) |
+| benchmark PyTorch, vLLM or Exo | [Framework benchmarks](frameworks.md) |
+
+## How the native and framework benchmarks fit together
+
+One suite, one result schema and one report format cover everything. The native benchmarks are built from this repository. The PyTorch, vLLM and Exo workloads live in their own repositories as *providers* that the same runner drives, so a framework result is stored, reported and compared the same way as a native one. Each adapter site also documents how to run its workloads on their own, without the runner: [torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/benchmarks/index.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/benchmarks/index.html) and [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/benchmarks/index.html).
 
 ## What it can and cannot tell you
 
