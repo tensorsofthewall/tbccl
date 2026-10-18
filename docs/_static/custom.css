@@ -30,6 +30,9 @@ label:focus-visible {
   border-radius: 2px;
 }
 
+/* Furo removes the outline of the search field and marks focus with a thin line only; give the whole field a ring. */
+.sidebar-search-container:focus-within { outline: 2px solid var(--color-brand-primary); outline-offset: -2px; border-radius: var(--tbccl-radius); }
+
 /* Links in running text. */
 article a.reference { text-underline-offset: 0.2em; text-decoration-thickness: 1px; }
 article a.reference:hover { text-decoration-thickness: 2px; }
