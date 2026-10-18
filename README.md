@@ -108,7 +108,7 @@ Only TCP over IPv4 (no RDMA); no direct CUDA-to-Metal DMA; `Sum` is the only red
 
 ## Development
 
-`CONTRIBUTING.md` explains the workflow and `AGENTS.md` the rules for the code base. The [development documentation](docs/development/index.md) covers building, testing and where a change belongs across the four repositories. Security: `SECURITY.md`. Changes for users: `CHANGELOG.md`. Releasing: `RELEASE.md`.
+`CONTRIBUTING.md` explains the workflow and `AGENTS.md` the rules for the code base. The [development documentation](docs/development/index.md) covers building, testing and where a change belongs across the four repositories. The [code map](docs/development/code-map.md) points to the first files for each topic, and [testing](docs/development/testing.md) says which checks need a GPU, a Mac or a Thunderbolt link (most do not). Security: `SECURITY.md`. Changes for users: `CHANGELOG.md`. Releasing: `RELEASE.md`.
 
 ## License
 
