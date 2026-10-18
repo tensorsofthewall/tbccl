@@ -38,3 +38,7 @@ A P2P receive validates the header as soon as it arrives and never reads beyond 
 ## Security
 
 The communicator id in the handshake is an identity token that keeps independent communicators apart; it is not a secret and has no cryptographic property. The protocol and the library contain no encryption or authentication code. Use it only between peers you trust, on networks you trust.
+
+## Adapters and the wire protocol
+
+Each adapter wheel bundles a libtbccl built for one wire protocol version and records it in its compatibility page ([torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/reference/compatibility.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/reference/compatibility.html) and [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/reference/compatibility.html)). Ranks can only connect when those versions are equal.

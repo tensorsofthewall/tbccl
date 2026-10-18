@@ -158,3 +158,39 @@ article .tb-cols > .container { border: 1px solid var(--tbccl-border); border-ra
 .tb-chart-hint { display: none; margin: 0.25rem 0 0; font-size: 0.85rem; color: var(--color-foreground-secondary); }
 @media (max-width: 44em) { .tb-chart-hint { display: block; } }
 .tb-chart figcaption { margin-top: 0.5rem; font-size: 0.9rem; color: var(--color-foreground-secondary); }
+
+/* Stacked tables: on a narrow screen each row of a table marked tb-stack becomes a block with its cells labelled, so a row can be read
+   without scrolling sideways. The table stays an ordinary table on wider screens and in the page source. */
+@media (max-width: 44em) {
+  article table.tb-stack, .tb-stack tbody, .tb-stack tr, .tb-stack td { display: block; width: 100%; box-sizing: border-box; }
+  article table.tb-stack { border: 0; margin: 1rem 0; }
+  .tb-stack thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  table.docutils.tb-stack tbody tr { margin: 0 0 0.75rem; padding: 0.3rem 0; border: 1px solid var(--tbccl-border); border-radius: var(--tbccl-radius); background: var(--tbccl-stripe); }
+  table.docutils.tb-stack tbody tr td { border: 0; padding: 0.3rem 0.8rem; background: none; overflow-wrap: anywhere; }
+  .tb-stack td:first-child { font-weight: 650; }
+  .tb-stack td:not(:first-child)::before, .tb-stack-steps td::before, .tb-stack-ladder td::before { display: block; margin-bottom: 0.1rem; font-size: 0.78rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-foreground-secondary); }
+  .tb-stack-steps tr { display: grid; grid-template-columns: 4.4rem 1fr; }
+  .tb-stack-steps td:nth-child(n+3) { grid-column: 1 / -1; }
+  .tb-stack-steps td:nth-child(2) { font-weight: 650; }
+  .tb-stack-steps td:nth-child(1)::before { content: "Step"; }
+  .tb-stack-steps td:nth-child(3)::before { content: "Check"; }
+  .tb-stack-steps td:nth-child(4)::before { content: "If it fails"; }
+  .tb-stack-steps td:nth-child(2)::before { content: none; }
+  .tb-stack-ladder td:nth-child(1)::before { content: "Step"; }
+  .tb-stack-ladder td:nth-child(2)::before { content: "Question"; }
+  .tb-stack-ladder td:nth-child(3)::before { content: "Layer"; }
+  .tb-stack-ladder td:nth-child(4)::before { content: "Check"; }
+  .tb-stack-ladder td:nth-child(5)::before { content: "A pass looks like"; }
+  .tb-stack-owner td:nth-child(2)::before { content: "What it looks like"; }
+  .tb-stack-owner td:nth-child(3)::before { content: "What to do"; }
+  .tb-stack-find td:first-child { font-weight: 400; }
+  .tb-stack-find td:nth-child(2)::before { content: "Go to"; }
+  .tb-stack-tiers td:nth-child(2)::before { content: "Needs"; }
+  .tb-stack-tiers td:nth-child(3)::before { content: "Commands"; }
+  .tb-stack-tiers td:nth-child(4)::before { content: "Covers"; }
+  .tb-stack-map td:nth-child(2)::before { content: "Start at"; }
+  .tb-stack-map td:nth-child(3)::before { content: "Read with"; }
+  .tb-stack-settings td:nth-child(2)::before { content: "Linux CUDA node"; }
+  .tb-stack-settings td:nth-child(3)::before { content: "Mac Metal node"; }
+  .tb-stack-settings td:nth-child(4)::before { content: "Rule"; }
+}

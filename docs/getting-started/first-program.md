@@ -23,6 +23,10 @@ async_allreduce --rank 1 --peers HOST0:PORT0,HOST1:PORT1 --backend host
 
 Each rank's data endpoint is its control port plus 1000, so keep both ports free.
 
+## What success looks like
+
+`version_check` prints `TBCCL 0.6.1, C ABI 1`, and `two_rank_threads` prints `TBCCL 0.6.1: all_reduce(Sum) of 1 and 2 -> 3 and 3` and exits with status 0 (the program returns non-zero if either rank's result is not 3). **This showed** a working two-rank `all_reduce` through the real transport on one machine. **It did not show** behavior across machines or over a physical link, and these two programs use host memory only (`async_allreduce` can use device memory with `--backend cuda` or `--backend metal-shared`). **Read next:** the list below. **If it fails:** [Troubleshooting](../guides/troubleshooting.md), starting at "Start here".
+
 ## What to read next
 
 - [C++ API overview](../reference/cpp-api-overview.md) and [Ordering domains](../concepts/ordering-domains.md) for the programming model.

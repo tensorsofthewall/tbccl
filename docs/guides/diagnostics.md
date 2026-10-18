@@ -1,6 +1,6 @@
 # Diagnostics
 
-Run these checks, in this order, before reporting a problem or digging into a failure. Each one is read-only.
+Run these checks, in this order, before reporting a problem or digging into a failure. Checks 1 and 2 only read state; check 3 is an **action**: it asks you to start the ranks again with more logging.
 
 ## 1. `tbccl-info`: which TBCCL is this machine using?
 

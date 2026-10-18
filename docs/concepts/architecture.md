@@ -55,3 +55,7 @@ The package also contains a legacy synchronous two-rank `World` API used by benc
 - **Explicit bootstrap.** TBCCL never discovers peers; the application supplies every rank's endpoints ({doc}`communicators`).
 - **Independent ordering domains.** Collectives and point-to-point traffic never share a byte stream ({doc}`ordering-domains`).
 - **Explicit compatibility.** The package version, the C ABI version and the wire protocol version are separate ([versioning](../reference/versioning.md)).
+
+## Adapters
+
+The layers above are the runtime only. How PyTorch, vLLM and Exo use it is described in the architecture pages of [torch-tbccl](https://torch-tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html), [vllm-tbccl](https://vllm-tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html) and [exo-tbccl](https://exo-tbccl.tensorsofthewall.com/en/latest/concepts/architecture.html). Each adapter depends on this runtime through the C ABI and on no other adapter.

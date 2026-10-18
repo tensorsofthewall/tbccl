@@ -9,13 +9,14 @@ This repository, **tbccl**, is the runtime. It owns the transport, the collectiv
 | CUDA staging and Metal-shared handling | framework error types and lifecycle hooks |
 | `tbccl-info`, release archives, the compatibility manifest | anything that only one adapter needs |
 
-Start with [contributing](contributing.md), then [where should this change go?](where-should-this-change-go.md). The rules for the code base are in `AGENTS.md` at the repository root.
+Start with [contributing](contributing.md), then [where should this change go?](where-should-this-change-go.md) and the [code map](code-map.md). The rules for the code base are in `AGENTS.md` at the repository root.
 
 ```{toctree}
 :maxdepth: 1
 
 contributing
 where-should-this-change-go
+code-map
 testing
 benchmark-methodology
 benchmark-suite
