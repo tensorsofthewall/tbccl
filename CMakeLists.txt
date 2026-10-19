@@ -645,6 +645,9 @@ target_link_libraries(communicator_nrank_bench PRIVATE tbccl Threads::Threads)
 # process-per-rank small-message latency benchmark (loopback or two hosts).
 add_executable(small_message_latency benchmarks/small_message_latency.cpp)
 target_link_libraries(small_message_latency PRIVATE tbccl Threads::Threads)
+# Communicator probe: verified results for every operation, submit/wait split, raw samples (two hosts or loopback).
+add_executable(communicator_probe benchmarks/communicator_probe.cpp)
+target_link_libraries(communicator_probe PRIVATE tbccl Threads::Threads)
 
 add_executable(tbccl_hetero_allreduce_bench
     benchmarks/tbccl_hetero_allreduce_bench.cpp
