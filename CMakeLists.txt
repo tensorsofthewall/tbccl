@@ -1929,6 +1929,26 @@ if(BUILD_TESTING)
     add_test(NAME communicator_staged_chunk_test_chunked_odd COMMAND communicator_staged_chunk_test)
     set_tests_properties(communicator_staged_chunk_test_chunked_odd PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=100003")
 
+    add_executable(communicator_staged_chunk_config_test tests/communicator_staged_chunk_config_test.cpp)
+    target_link_libraries(communicator_staged_chunk_config_test PRIVATE tbccl Threads::Threads)
+    # The setting is read once per process: one ctest entry per value. "unset" and "empty" use the unmodified environment / an empty value.
+    foreach(case IN ITEMS "valid:0:0" "valid:4096:4096" "valid:131072:131072" "valid:100003:100003" "valid:max:18446744073709551615"
+                          "invalid:text:abc" "invalid:suffix:128K" "invalid:negative:-1" "invalid:plus:+8192" "invalid:fraction:1.5" "invalid:hex:0x20000"
+                          "invalid:below_min:4095" "invalid:one:1" "invalid:overflow:18446744073709551616" "invalid:huge:99999999999999999999999")
+        string(REPLACE ":" ";" parts "${case}")
+        list(GET parts 0 expect)
+        list(GET parts 1 label)
+        list(GET parts 2 value)
+        add_test(NAME communicator_staged_chunk_config_${expect}_${label} COMMAND communicator_staged_chunk_config_test ${expect})
+        set_tests_properties(communicator_staged_chunk_config_${expect}_${label} PROPERTIES TIMEOUT 60 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=${value}")
+    endforeach()
+    add_test(NAME communicator_staged_chunk_config_invalid_space COMMAND communicator_staged_chunk_config_test invalid)
+    set_tests_properties(communicator_staged_chunk_config_invalid_space PROPERTIES TIMEOUT 60 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES= 8192")
+    add_test(NAME communicator_staged_chunk_config_valid_unset COMMAND communicator_staged_chunk_config_test valid)
+    set_tests_properties(communicator_staged_chunk_config_valid_unset PROPERTIES TIMEOUT 60 ENVIRONMENT_MODIFICATION "TBCCL_STAGED_CHUNK_BYTES=unset:")
+    add_test(NAME communicator_staged_chunk_config_valid_empty COMMAND communicator_staged_chunk_config_test valid)
+    set_tests_properties(communicator_staged_chunk_config_valid_empty PROPERTIES TIMEOUT 60 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=")
+
     add_executable(communicator_collectives_test
         tests/communicator_collectives_test.cpp
     )
