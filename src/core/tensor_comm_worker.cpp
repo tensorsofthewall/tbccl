@@ -1,4 +1,5 @@
 #include "../transport/latency_trace.hpp"
+#include "tensor_comm_worker_probe.hpp"
 #include <stdexcept>
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/error.hpp>
@@ -226,6 +227,29 @@ namespace
         progress.cv.notify_all();
     }
 
+    constexpr std::size_t kNoSlot = static_cast<std::size_t>(-1);
+
+    // The single failure transition of a staged transfer, used by every stage at every failure site. A stage that cannot continue must not leave the other stage
+    // asleep, and a slot must not be handed back to a pool that is still active, because the other stage could then take it, publish a chunk nobody will consume and
+    // block again in StagingPool::acquire() with every slot occupied (the lane would never become idle).
+    //   1. the first error is recorded; later errors, including the cancellation a woken stage sees, never replace it;
+    //   2. the pool is cancelled, which wakes every thread blocked in acquire() and makes any later acquire() fail;
+    //   3. only then does the failing stage give back the slot it owns (release() does not undo the cancellation).
+    // No internal lock is held across the steps (each takes and drops its own), and no backend or transport call is made here.
+    void fail_transfer(const char *stage, ChunkProgress &progress, StagingPool &pool, const std::exception &error, std::size_t owned_slot = kNoSlot)
+    {
+        detail::pipeline_failure_probe(stage, "begin");
+        mark_failed(progress, error);
+        detail::pipeline_failure_probe(stage, "recorded");
+        pool.cancel();
+        detail::pipeline_failure_probe(stage, "cancelled");
+        if (owned_slot != kNoSlot)
+        {
+            pool.release(owned_slot);
+            detail::pipeline_failure_probe(stage, "slot_released");
+        }
+    }
+
     // Staging thread's role for a Send request: acquire a slot, ask the
     // backend to fill it from the source tensor, publish it as ready.
     //
@@ -251,7 +275,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                mark_failed(progress, error);
+                fail_transfer("send.staging", progress, pool, error);
                 return;
             }
 
@@ -267,8 +291,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("send.staging", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -328,8 +351,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("send.network", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -361,7 +383,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                mark_failed(progress, error);
+                fail_transfer("recv.network", progress, pool, error);
                 return;
             }
 
@@ -377,8 +399,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("recv.network", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -439,8 +460,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("recv.staging", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -869,23 +889,44 @@ struct TensorCommWorker::Impl
             ChunkProgress progress(chunks.size());
             ensure_staging_thread();
 
-            if (request.direction == TransferDirection::Send)
+            const bool is_send = request.direction == TransferDirection::Send;
+            if (is_send)
             {
                 submit_job(
                     [&]() { staging_produce_send(request, chunks, pool, progress); });
-                network_consume_send(request, chunks, pool, progress);
-                wait_job();
             }
             else
             {
                 submit_job(
                     [&]() { staging_consume_recv(request, chunks, pool, progress); });
-                network_produce_recv(request, chunks, pool, progress);
-                wait_job();
             }
+            // The staging job refers to `chunks`, `pool` and `progress`, so wait_job() must run on every path once it is submitted. The network stage reports its own
+            // transport/backend failures through fail_transfer(); an exception that escapes it is turned into the same failure so that the staging stage stops.
+            try
+            {
+                if (is_send)
+                {
+                    network_consume_send(request, chunks, pool, progress);
+                }
+                else
+                {
+                    network_produce_recv(request, chunks, pool, progress);
+                }
+            }
+            catch (const std::exception &error)
+            {
+                fail_transfer(is_send ? "send.network" : "recv.network", progress, pool, error);
+            }
+            catch (...)
+            {
+                fail_transfer(is_send ? "send.network" : "recv.network", progress, pool, std::runtime_error("unknown exception in the network stage"));
+            }
+            wait_job();
 
             if (progress.failed)
             {
+                // Both stages have returned (wait_job), so nothing references the cancelled pool: discard it. It is never reused or reset; the next request builds a fresh one.
+                cached_pool.reset();
                 const bool was_aborted = aborted.load();
                 fatal(progress.error_message);
                 retire(request.direction);

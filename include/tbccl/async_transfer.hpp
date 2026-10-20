@@ -102,6 +102,14 @@ enum class StagingSlotState
 // acquire() blocks (via condition_variable, never spins,
 //) until a slot is Free, and marks it in use;
 // release() returns it to Free and wakes one waiter.
+//
+// cancel() ends the pool's use for good: it wakes every thread blocked in
+// acquire(), and from then on acquire() throws instead of handing out a slot.
+// A pool is cancelled when the transfer using it can no longer make progress
+// (a stage failed), so that a stage waiting for a free slot is not left asleep
+// for a slot that will never be released. A cancelled pool is never reset or
+// reused. cancel() cannot interrupt a thread that is inside a backend or
+// transport call; that call has to return on its own.
 class StagingPool
 {
 public:
@@ -114,8 +122,16 @@ public:
     std::size_t slot_bytes() const noexcept { return slot_bytes_; }
     std::size_t depth() const noexcept { return depth_; }
 
-    // Returns the index of a now-owned slot; blocks until one is free.
+    // Returns the index of a now-owned slot; blocks until one is free or the
+    // pool is cancelled. Throws Error(ErrorCode::Aborted) if the pool is (or
+    // becomes, while waiting) cancelled: no slot is handed out after cancel().
     std::size_t acquire();
+
+    // Idempotent and non-blocking apart from the pool's own short mutex.
+    // Safe from any thread. Slots already owned stay valid and may still be
+    // release()d; release() does not undo the cancellation.
+    void cancel() noexcept;
+    bool cancelled() const noexcept;
 
     // `data()`'s validity is tied to the pool's own lifetime, not to
     // any particular acquire()/release() cycle -- buffers are
@@ -137,6 +153,7 @@ private:
     std::vector<StagingSlotState> states_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
+    bool cancelled_ = false; // guarded by mutex_
 };
 
 // ---------------------------------------------------------------------

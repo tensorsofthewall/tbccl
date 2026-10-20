@@ -38,6 +38,10 @@ std::size_t StagingPool::acquire()
         lock,
         [&]()
         {
+            if (cancelled_)
+            {
+                return true;
+            }
             for (std::size_t i = 0; i < depth_; ++i)
             {
                 if (states_[i] == StagingSlotState::Free)
@@ -47,6 +51,12 @@ std::size_t StagingPool::acquire()
             }
             return false;
         });
+
+    // Checked before any slot is handed out, so a free slot is never given away after cancel().
+    if (cancelled_)
+    {
+        throw Error(ErrorCode::Aborted, "aborted: staging pool cancelled");
+    }
 
     for (std::size_t i = 0; i < depth_; ++i)
     {
@@ -60,6 +70,21 @@ std::size_t StagingPool::acquire()
     // Unreachable: the predicate above guarantees a Free slot exists
     // when wait() returns.
     throw Error(ErrorCode::InternalError, "StagingPool::acquire() invariant violated");
+}
+
+void StagingPool::cancel() noexcept
+{
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        cancelled_ = true;
+    }
+    cv_.notify_all();
+}
+
+bool StagingPool::cancelled() const noexcept
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return cancelled_;
 }
 
 void *StagingPool::data(std::size_t slot_index) noexcept
