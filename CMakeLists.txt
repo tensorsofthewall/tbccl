@@ -1931,6 +1931,8 @@ if(BUILD_TESTING)
 
     add_executable(communicator_staged_chunk_test tests/communicator_staged_chunk_test.cpp)
     target_link_libraries(communicator_staged_chunk_test PRIVATE tbccl Threads::Threads)
+    # -rdynamic: the test's stall watchdog prints thread backtraces, which then carry function names (Linux only; no effect on other targets)
+    target_link_options(communicator_staged_chunk_test PRIVATE $<$<PLATFORM_ID:Linux>:-rdynamic>)
     add_test(NAME communicator_staged_chunk_test COMMAND communicator_staged_chunk_test)
     set_tests_properties(communicator_staged_chunk_test PROPERTIES TIMEOUT 120)
     add_test(NAME communicator_staged_chunk_test_chunked COMMAND communicator_staged_chunk_test)
@@ -1942,6 +1944,10 @@ if(BUILD_TESTING)
     add_test(NAME communicator_cuda_stream_chunk_driver_test
              COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/communicator_cuda_stream_chunk_driver_test.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/communicator_cuda_stream_chunk_test.sh)
     set_tests_properties(communicator_cuda_stream_chunk_driver_test PROPERTIES TIMEOUT 120)
+
+    # The stall watchdog of communicator_staged_chunk_test must report a deliberate stall (a section that blocks on purpose) and end the process with status 124.
+    add_test(NAME communicator_staged_chunk_watchdog_test COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/communicator_staged_chunk_watchdog_test.sh $<TARGET_FILE:communicator_staged_chunk_test>)
+    set_tests_properties(communicator_staged_chunk_watchdog_test PROPERTIES TIMEOUT 60)
 
     add_executable(communicator_direct_path_test tests/communicator_direct_path_test.cpp)
     target_link_libraries(communicator_direct_path_test PRIVATE tbccl Threads::Threads)

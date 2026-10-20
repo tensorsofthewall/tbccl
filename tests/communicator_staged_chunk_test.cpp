@@ -4,16 +4,20 @@
 // ceil(bytes / chunk), no chunk larger than the setting, and every result byte-identical).
 
 #include "mesh_test_support.hpp"
+#include "test_progress.hpp"
 
 #include <tbccl/communicator.hpp>
 #include <tbccl/hetero_allreduce.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -123,6 +127,7 @@ void reset_counters()
 // One send/recv of `bytes` rank 0 -> rank 1: the sender stages ceil(bytes/chunk) chunks, the receiver commits as many, contents identical.
 void p2p_case(tbccl::Communicator &comm, std::size_t rank, std::size_t bytes, std::size_t seq)
 {
+    test_progress::mark("n2 rank=" + std::to_string(rank) + " op=p2p bytes=" + std::to_string(bytes));
     comm.barrier().wait();
     if (rank == 0) reset_counters();
     comm.barrier().wait();
@@ -148,6 +153,7 @@ void p2p_case(tbccl::Communicator &comm, std::size_t rank, std::size_t bytes, st
 
 void collectives_case(tbccl::Communicator &comm, std::size_t rank)
 {
+    test_progress::mark("n2 rank=" + std::to_string(rank) + " op=collectives");
     const std::size_t bytes = std::size_t{3} << 20, elems = bytes / 4;
     {   // all_reduce: float32 SUM of (rank + 1) * k
         std::vector<std::uint8_t> raw(bytes);
@@ -176,6 +182,7 @@ void collectives_case(tbccl::Communicator &comm, std::size_t rank)
 // ranks, all posted before any wait, must deliver identical bytes with the expected number of chunks; a tree broadcast must be unaffected (one chunk per transfer).
 void three_rank_case(tbccl::Communicator &comm, std::size_t rank)
 {
+    test_progress::mark("n3 rank=" + std::to_string(rank) + " op=ring_and_broadcast");
     const std::size_t world = 3, next = (rank + 1) % world, prev = (rank + world - 1) % world;
     for (std::size_t bytes : {std::size_t{100000}, (std::size_t{2} << 20) + 12345})
     {
@@ -210,57 +217,117 @@ void three_rank_case(tbccl::Communicator &comm, std::size_t rank)
 }
 } // namespace
 
-int main()
+// Usage: communicator_staged_chunk_test [--section all|n2|n3|abort|watchdog-selftest]. ctest runs the default (all sections, in this order). Single sections exist to isolate a stall;
+// watchdog-selftest blocks on purpose to check that the watchdog reports it (ctest entry communicator_staged_chunk_watchdog_test).
+int main(int argc, char **argv)
 {
+    std::string section = "all";
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], "--section") == 0 && i + 1 < argc) section = argv[++i];
+        else
+        {
+            std::fprintf(stderr, "usage: communicator_staged_chunk_test [--section all|n2|n3|abort|watchdog-selftest]\n");
+            return 2;
+        }
+    }
+    const bool all = section == "all";
+    if (!all && section != "n2" && section != "n3" && section != "abort" && section != "watchdog-selftest")
+    {
+        std::fprintf(stderr, "unknown section '%s'\n", section.c_str());
+        return 2;
+    }
+    test_progress::start("STAGED_CHUNK_TEST");
+    test_progress::mark("config chunk=" + std::to_string(configured_chunk()) + " section=" + section);
+    if (section == "watchdog-selftest")
+    {
+        // never completes: a thread that waits for a condition nobody sets; the watchdog must report this and end the process with status 124
+        test_progress::mark("SECTION watchdog-selftest blocking");
+        std::mutex m;
+        std::condition_variable cv;
+        std::unique_lock<std::mutex> lock(m);
+        cv.wait(lock, [] { return false; });
+    }
     try
     {
         tbccl::register_memory_provider_factory(tbccl::MemoryKind::MetalShared, [](const tbccl::BufferView &b, const tbccl::ExecutionContext &) -> std::unique_ptr<tbccl::ExternalMemoryProvider> {
             return std::make_unique<StagedProvider>(b);
         });
         std::printf("TBCCL_STAGED_CHUNK_BYTES=%zu\n", configured_chunk());
+        if (all || section == "n2")
         {
-            World w(2);
-            w.run([](std::size_t rank, tbccl::Communicator &comm) {
-                std::size_t seq = 0;
-                for (std::size_t bytes : {std::size_t{1}, std::size_t{4096}, std::size_t{100000}, std::size_t{1} << 20, (std::size_t{3} << 20) + 12345, std::size_t{9} << 20})
-                    p2p_case(comm, rank, bytes, seq++);
-                collectives_case(comm, rank);
-                comm.barrier().wait();
-            });
+            test_progress::mark("SECTION n2 begin");
+            {
+                World w(2);
+                test_progress::mark("SECTION n2 world_ready");
+                w.run([](std::size_t rank, tbccl::Communicator &comm) {
+                    std::size_t seq = 0;
+                    for (std::size_t bytes : {std::size_t{1}, std::size_t{4096}, std::size_t{100000}, std::size_t{1} << 20, (std::size_t{3} << 20) + 12345, std::size_t{9} << 20})
+                        p2p_case(comm, rank, bytes, seq++);
+                    collectives_case(comm, rank);
+                    comm.barrier().wait();
+                });
+                test_progress::mark("SECTION n2 world_run_returned");
+            }
+            test_progress::mark("SECTION n2 end");
             std::printf("contents and chunk counts ok\n");
         }
+        if (all || section == "n3")
         {
-            World w(3);
-            w.run([](std::size_t rank, tbccl::Communicator &comm) { three_rank_case(comm, rank); });
+            test_progress::mark("SECTION n3 begin");
+            {
+                World w(3);
+                test_progress::mark("SECTION n3 world_ready");
+                w.run([](std::size_t rank, tbccl::Communicator &comm) { three_rank_case(comm, rank); });
+                test_progress::mark("SECTION n3 world_run_returned");
+            }
+            test_progress::mark("SECTION n3 end");
             std::printf("three-rank point-to-point and broadcast ok\n");
         }
+        if (all || section == "abort")
         {
             // a chunked staged send to a silent peer, then abort: the Work becomes terminal in bounded time and the communicator (with its staging thread) is destroyed
-            World w(2);
-            w.run([](std::size_t rank, tbccl::Communicator &comm) {
-                if (rank == 0)
-                {
-                    const std::size_t bytes = std::size_t{64} << 20;
-                    std::vector<std::uint8_t> buf(bytes, 7);
-                    auto work = comm.send(view(buf), bytes, tbccl::DataType::UInt8, 1);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(150));
-                    comm.abort("test abort during a staged send");
-                    expect(work.wait_for(std::chrono::seconds(20)), "staged send still pending 20 s after abort");
-                    expect(work.has_error(), "the aborted staged send must report an error");
-                }
-                else
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(600));
-                }
-            });
+            test_progress::mark("SECTION abort begin");
+            {
+                World w(2);
+                test_progress::mark("SECTION abort world_ready");
+                w.run([](std::size_t rank, tbccl::Communicator &comm) {
+                    if (rank == 0)
+                    {
+                        const std::size_t bytes = std::size_t{64} << 20;
+                        std::vector<std::uint8_t> buf(bytes, 7);
+                        auto work = comm.send(view(buf), bytes, tbccl::DataType::UInt8, 1);
+                        test_progress::mark("SECTION abort rank=0 send_posted");
+                        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                        test_progress::mark("SECTION abort rank=0 abort_enter");
+                        comm.abort("test abort during a staged send");
+                        test_progress::mark("SECTION abort rank=0 abort_return");
+                        const bool terminal = work.wait_for(std::chrono::seconds(20));
+                        test_progress::mark(std::string("SECTION abort rank=0 work_terminal=") + (terminal ? "yes" : "no"));
+                        expect(terminal, "staged send still pending 20 s after abort");
+                        expect(work.has_error(), "the aborted staged send must report an error");
+                    }
+                    else
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+                        test_progress::mark("SECTION abort rank=1 peer_idle_exit");
+                    }
+                });
+                test_progress::mark("SECTION abort world_run_returned");
+            }
+            test_progress::mark("SECTION abort end");
             std::printf("abort ok\n");
         }
     }
     catch (const std::exception &e)
     {
         std::fprintf(stderr, "FAILED: %s\n", e.what());
+        test_progress::mark("FAILED");
+        test_progress::finish();
         return 1;
     }
     std::printf("communicator_staged_chunk_test passed\n");
+    test_progress::mark("complete_ok");
+    test_progress::finish();
     return 0;
 }
