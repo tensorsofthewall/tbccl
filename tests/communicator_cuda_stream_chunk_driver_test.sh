@@ -26,7 +26,9 @@ chmod +x "$work/fake_rank"
 export FAKE_PIDDIR=$work
 
 # 1. selected ports: all four endpoints free at selection time and below the kernel's ephemeral range, over many selections
-floor=32768; [ -r /proc/sys/net/ipv4/ip_local_port_range ] && floor=$(cut -f1 /proc/sys/net/ipv4/ip_local_port_range)
+floor=32768
+if [ -r /proc/sys/net/ipv4/ip_local_port_range ]; then floor=$(cut -f1 /proc/sys/net/ipv4/ip_local_port_range)
+elif f=$(sysctl -n net.inet.ip.portrange.first 2>/dev/null); then floor=$f; fi
 bad=
 for i in $(seq 1 30); do
   p=$(TBCCL_STREAM_TEST_PRINT_PORT=1 "$driver") || { bad="selection $i exited $?"; break; }
@@ -76,7 +78,7 @@ for mode in fail0 fail1; do
 done
 
 # 7. no temporary directory is left behind by any run above
-left=$(ls -d "$work"/cuda_stream_chunk.* 2>/dev/null | wc -l)
+left=$(ls -d "$work"/cuda_stream_chunk.* 2>/dev/null | wc -l | tr -d ' ')
 [ "$left" = 0 ] && check "no driver temporary directory left behind" ok || check "temporary files" bad "$left left"
 
 [ $fails = 0 ] && echo "driver self-test passed" || { echo "driver self-test: $fails failure(s)"; exit 1; }
