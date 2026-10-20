@@ -21,8 +21,11 @@
 #include <atomic>
 #include <new>
 #include <condition_variable>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -580,6 +583,35 @@ std::string Communicator::abort_reason() const
     return impl_->reason;
 }
 
+// TBCCL_STAGED_CHUNK_BYTES is validated once, when the first Communicator is created (like the algorithm overrides), so a typo is an error rather than a silently unchunked run.
+// Accepted: unset, empty or "0" (one chunk per transfer), or a decimal byte count of at least kMinStagedChunkBytes. Anything else is invalid_argument.
+namespace
+{
+constexpr unsigned long long kMinStagedChunkBytes = 4096; // smaller chunks only multiply the per-chunk bookkeeping
+
+std::size_t parse_staged_chunk_bytes()
+{
+    const char *text = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
+    if (!text || !*text) return 0;
+    const std::string v(text);
+    auto invalid = [&](const char *why) {
+        return Error(ErrorCode::InvalidArgument, std::string("invalid_argument: TBCCL_STAGED_CHUNK_BYTES='") + v + "' " + why);
+    };
+    if (v.find_first_not_of("0123456789") != std::string::npos) throw invalid("is not a non-negative decimal byte count");
+    errno = 0;
+    const unsigned long long n = std::strtoull(v.c_str(), nullptr, 10);
+    if (errno == ERANGE || n > std::numeric_limits<std::size_t>::max()) throw invalid("is too large");
+    if (n != 0 && n < kMinStagedChunkBytes) throw invalid("is below the 4096 byte minimum (use 0 for one chunk per transfer)");
+    return static_cast<std::size_t>(n);
+}
+
+std::size_t staged_chunk_setting()
+{
+    static const std::size_t configured = parse_staged_chunk_bytes(); // a failed initialisation is retried, so every creation reports the same error
+    return configured;
+}
+} // namespace
+
 std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
 {
     const detail::ResolvedBootstrap boot = detail::resolve_bootstrap(options);
@@ -602,6 +634,7 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
 
     impl.trace = detail::Trace(boot.communicator_id.prefix(), boot.rank, boot.world_size);
     impl.overrides = detail::planner_overrides_from_environment();
+    staged_chunk_setting(); // reject an invalid TBCCL_STAGED_CHUNK_BYTES at creation
     impl.fatal_cb = [&impl](const std::string &why) { impl.request_abort(why); };
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
@@ -645,6 +678,23 @@ void require_not_failed(const Communicator &comm)
 namespace
 {
 
+// Staged transfers (a backend that cannot be read or written by the transport directly, such as CUDA device memory) move their payload through host staging buffers.
+// With the default (one chunk for the whole payload) the device-to-host copy, the network transfer and the host-to-device copy run one after the other.
+// TBCCL_STAGED_CHUNK_BYTES=<n> (opt-in, unset or 0 = unchanged) splits a staged point-to-point transfer or an N=2 all_reduce leg into chunks of n bytes that pipeline across
+// those three stages. Payloads of at most n bytes are still one chunk. Direct-access backends (Host, MetalShared) ignore it. The bytes on the wire are identical either way
+// (the frame header travels once, then the raw payload stream), so the two ranks need not use the same value. Read once per process.
+std::size_t staged_chunk_hint(const AsyncMemoryBackend &backend)
+{
+    return backend.supports_direct_transport_access() ? 0 : staged_chunk_setting();
+}
+
+// One hint serves both legs of the two-rank all_reduce (receive into `a`, send from `b`). A leg whose memory is directly accessible must stay on the direct path,
+// so the setting applies only when neither backend is.
+std::size_t staged_chunk_hint(const AsyncMemoryBackend &a, const AsyncMemoryBackend &b)
+{
+    return a.supports_direct_transport_access() || b.supports_direct_transport_access() ? 0 : staged_chunk_setting();
+}
+
 // P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the peer's
 // persistent progress thread picks up in FIFO order. An allocation failure while admitting is reported at once as ResourceExhausted; nothing was
 // accepted, so the communicator stays usable. Any other failure after admission began poisons the communicator, as before. (A template only because
@@ -669,7 +719,7 @@ Work post_p2p(
         request.backend = &provider->primary_backend();
         request.transport = channel.data.get();
         request.total_bytes = buffer.bytes;
-        request.chunk_hint = 0;
+        request.chunk_hint = staged_chunk_hint(*request.backend);
         request.framed = true; // a receive of a different size fails with protocol_mismatch instead of hanging
         if (impl.debug_fail_admission.load(std::memory_order_relaxed) > 0 && impl.debug_fail_admission.fetch_sub(1) > 0) throw std::bad_alloc();
     }
@@ -775,7 +825,7 @@ void run_transfer(
     request.backend = &backend;
     request.transport = &transport;
     request.total_bytes = bytes;
-    request.chunk_hint = 0;
+    request.chunk_hint = staged_chunk_hint(backend);
     request.shared_lane = true; // N=2 specialised path: strictly sequential, single FIFO as before duplex lanes
     TransferWork work = worker.enqueue(request);
     const std::uint64_t child = detail::tl_lat_last_enqueued_id;
@@ -865,11 +915,11 @@ Work Communicator::all_reduce(
             {
                 AsyncMemoryBackend &scratch = provider->scratch_backend();
                 LocalReduceBackend &reduce = provider->reduce_backend();
-                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, staged_chunk_hint(scratch, primary), count, datatype);
             }
             else
             {
-                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, primary, primary, nullptr, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, primary, primary, nullptr, rank, kRoot, total_bytes, staged_chunk_hint(primary), count, datatype);
             }
             return;
         }
