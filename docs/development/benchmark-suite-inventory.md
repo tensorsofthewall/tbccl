@@ -54,6 +54,20 @@ How to read the audit: everything below was read from the benchmark sources in t
 | Platforms | Linux, macOS. Host memory only. N=2 only. |
 | Limitations | Aggregates only; rank-0 view; per-mode verification gaps. |
 
+### `communicator_probe`
+
+| Item | Detail |
+|---|---|
+| Operation | N=2 Communicator, one process per rank; `--ops` any of `p2p`, `simul`, `stream01`, `stream10`, `allreduce`, `allgather`, `broadcast0`, `broadcast1`, `bcastpp`, `barrier`. `--mem host\|metal\|cuda` selects the buffer kind; `communicator_probe_cuda` (built with `TBCCL_ENABLE_CUDA`) is needed for `cuda`. |
+| CLI | `--rank R --peers ip:port,ip:port --ops LIST [--sizes LIST] [--iters N] [--label S] [--samples PATH] [--mem KIND] [--timeout-s N]`. `--peers` has no default, so a run always names its endpoints. Default `--timeout-s` is 1800; the process exits with status 5 when it expires. Exit status: 0 success, 2 invalid arguments (including `--mem cuda` on a build without CUDA), 3 a content check failed, 4 a device allocation failed, 5 timeout. |
+| Output | One JSON object per line on **each rank's** stdout: `meta` (version, build type, units, `TBCCL_STAGED_CHUNK_BYTES` as seen by the process), `init`, `calibration`, then one line per (op, size) with `total_us`, `submit_us`, `wait_us` (`median p25 p75 p95 p99 min max mean`), CPU use, context switches. `--samples PATH` also writes raw per-iteration samples to `PATH.r<rank>.csv`. |
+| Units | microseconds; sizes in bytes; clocks are per process and never compared across hosts. |
+| Timing boundary | `steady_clock`. `submit_us` is the posting call, `wait_us` is `Work::wait`, `total_us` covers both. `p2p` and `bcastpp` are round trips. `broadcast0`/`broadcast1` in a free-running loop are the root's local completion, a pipelined throughput figure, not a destination-complete latency. `streamXY` reports sender-complete, acknowledged, and acknowledged minus half a calibrated 64-byte round trip. Initialisation is reported separately and is not part of any sample. |
+| Percentile definition | Nearest rank by floor, as `small_message_latency`. |
+| Verification | Every point runs an untimed content check before and after the timed loop (exit code 3 on mismatch); nothing is verified inside the timed loop. `barrier` also checks that it waits for a rank that enters 30 ms late. |
+| Platforms | Linux and macOS; `communicator_probe_cuda` on Linux/NVIDIA. N=2 only. |
+| Limitations | Not a pass/fail gate: results depend on the host, link and CPU state and are never compared against thresholds in CI. Physical-link runs are manual. |
+
 ### `tbccl_tensor_transfer_bench`
 
 | Item | Detail |
