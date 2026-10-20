@@ -648,6 +648,11 @@ target_link_libraries(small_message_latency PRIVATE tbccl Threads::Threads)
 # Communicator probe: verified results for every operation, submit/wait split, raw samples (two hosts or loopback).
 add_executable(communicator_probe benchmarks/communicator_probe.cpp)
 target_link_libraries(communicator_probe PRIVATE tbccl Threads::Threads)
+if(TBCCL_ENABLE_CUDA)
+    add_executable(communicator_probe_cuda benchmarks/communicator_probe.cpp)
+    target_compile_definitions(communicator_probe_cuda PRIVATE PROBE_CUDA=1)
+    target_link_libraries(communicator_probe_cuda PRIVATE tbccl_tensor_backend tbccl CUDA::cudart Threads::Threads)
+endif()
 
 add_executable(tbccl_hetero_allreduce_bench
     benchmarks/tbccl_hetero_allreduce_bench.cpp

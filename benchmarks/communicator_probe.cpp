@@ -17,11 +17,17 @@
 //              calibrated 64-byte round trip. The receiver reports its own first-post-to-last-complete time. Payload only (no framing) is counted.
 //   allreduce  in-place Float32 SUM of bytes/4 elements (the buffer is restored before each timed call, untimed).
 //   allgather  every rank contributes `bytes`, both receive 2*bytes (traffic: bytes each way).
-//   broadcastN root N sends `bytes` to the other rank.
+//   broadcastN root N sends `bytes` to the other rank. In a free-running loop this is a LOCAL completion (the root's sends finish when the bytes are in the kernel,
+//              the receiver's receives can find data already arrived), i.e. a pipelined throughput figure, not a latency.
+//   bcastpp    broadcast with root 0 then broadcast with root 1 per iteration: a round trip, the latency form of broadcast.
 //   barrier    Communicator::barrier().
 // The operation list never combines an unsupported operation and size. Internal trace sites are enabled by the library with TBCCL_LATENCY_TRACE.
 
 #include <tbccl/communicator.hpp>
+#ifdef PROBE_CUDA
+#include <tbccl/cuda_support.hpp>
+#include <cuda_runtime.h>
+#endif
 
 #include <sys/resource.h>
 
@@ -32,6 +38,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -77,7 +84,63 @@ Usage usage()
     return u;
 }
 
-BufferView host(void *p, std::size_t bytes) { return {MemoryKind::Host, p, bytes, -1}; }
+// This rank's memory kind (--mem). host: ordinary memory. metal: MemoryKind::MetalShared over ordinary CPU-visible memory (the library's MetalShared provider is the host
+// provider; real MTLBuffer contents are plain CPU pointers). cuda: MemoryKind::Cuda device buffers (one device twin per host vector, uploaded/downloaded only OUTSIDE the
+// timed regions); needs the PROBE_CUDA build, which links the optional CUDA component and registers its provider.
+enum class Mem { Host, Metal, Cuda };
+Mem g_mem = Mem::Host;
+std::map<const void *, std::pair<void *, std::size_t>> g_dev; // host pointer -> (device twin, its size); host vectors are freed between points and their addresses reused
+
+BufferView host(void *p, std::size_t bytes)
+{
+    if (g_mem == Mem::Metal) return {MemoryKind::MetalShared, p, bytes, -1};
+#ifdef PROBE_CUDA
+    if (g_mem == Mem::Cuda)
+    {
+        auto &slot = g_dev[p];
+        if (slot.first && slot.second < bytes)
+        {
+            cudaFree(slot.first);
+            slot = {nullptr, 0};
+        }
+        if (!slot.first)
+        {
+            if (cudaMalloc(&slot.first, std::max<std::size_t>(bytes, 1)) != cudaSuccess) { std::fprintf(stderr, "cudaMalloc failed\n"); std::_Exit(4); }
+            slot.second = std::max<std::size_t>(bytes, 1);
+        }
+        return {MemoryKind::Cuda, slot.first, bytes, 0};
+    }
+#endif
+    return {MemoryKind::Host, p, bytes, -1};
+}
+
+void up(const void *p, std::size_t bytes)
+{
+#ifdef PROBE_CUDA
+    if (g_mem == Mem::Cuda)
+    {
+        host(const_cast<void *>(p), bytes);
+        cudaMemcpy(g_dev[p].first, p, bytes, cudaMemcpyHostToDevice);
+        cudaDeviceSynchronize();
+    }
+#else
+    (void)p; (void)bytes;
+#endif
+}
+
+void down(void *p, std::size_t bytes)
+{
+#ifdef PROBE_CUDA
+    if (g_mem == Mem::Cuda)
+    {
+        host(p, bytes);
+        cudaMemcpy(p, g_dev[p].first, bytes, cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+    }
+#else
+    (void)p; (void)bytes;
+#endif
+}
 
 struct Series
 {
@@ -116,10 +179,18 @@ std::uint8_t pat(std::size_t rank, std::size_t msg, std::size_t j) { return stat
 void fill_pat(std::vector<std::uint8_t> &v, std::size_t rank, std::size_t msg)
 {
     for (std::size_t j = 0; j < v.size(); ++j) v[j] = pat(rank, msg, j);
+    up(v.data(), v.size());
 }
 
-void check_pat(const std::vector<std::uint8_t> &v, std::size_t rank, std::size_t msg, const std::string &what)
+void zero(std::vector<std::uint8_t> &v)
 {
+    std::fill(v.begin(), v.end(), 0);
+    up(v.data(), v.size());
+}
+
+void check_pat(std::vector<std::uint8_t> &v, std::size_t rank, std::size_t msg, const std::string &what)
+{
+    down(v.data(), v.size());
     for (std::size_t j = 0; j < v.size(); ++j)
         if (v[j] != pat(rank, msg, j)) fail(what + " first mismatch at byte " + std::to_string(j));
 }
@@ -144,7 +215,9 @@ int iterations_for(std::size_t bytes, int base)
     return std::max(n, 12);
 }
 
-void emit(Context &c, const char *op, std::size_t bytes, double traffic_bytes, const Series &s, const Usage &u0, const Usage &u1, double wall_s, const std::string &note = std::string())
+long long ns_now() { return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count(); }
+
+void emit(Context &c, const char *op, std::size_t bytes, double traffic_bytes, const Series &s, const Usage &u0, const Usage &u1, double wall_s, long long t_begin_ns, long long t_end_ns, const std::string &note = std::string())
 {
     const double cores = (u1.cpu_user + u1.cpu_sys - u0.cpu_user - u0.cpu_sys) / std::max(wall_s, 1e-9);
     const double med = pct(s.total, 0.5);
@@ -156,9 +229,9 @@ void emit(Context &c, const char *op, std::size_t bytes, double traffic_bytes, c
     if (!s.extra2.empty()) j += "," + stats_json("extra2_us", s.extra2);
     char buf[420];
     std::snprintf(buf, sizeof buf,
-                  ",\"traffic_bytes_per_op\":%.0f,\"gbit_s_at_median\":%.3f,\"cpu_cores\":%.3f,\"cpu_user_s\":%.4f,\"cpu_sys_s\":%.4f,\"nvcsw\":%ld,\"nivcsw\":%ld,\"wall_s\":%.3f,\"maxrss_kb\":%ld",
+                  ",\"traffic_bytes_per_op\":%.0f,\"gbit_s_at_median\":%.3f,\"cpu_cores\":%.3f,\"cpu_user_s\":%.4f,\"cpu_sys_s\":%.4f,\"nvcsw\":%ld,\"nivcsw\":%ld,\"wall_s\":%.3f,\"maxrss_kb\":%ld,\"timed_begin_ns\":%lld,\"timed_end_ns\":%lld",
                   traffic_bytes, med > 0 ? traffic_bytes * 8.0 / (med * 1e3) : 0.0, cores, u1.cpu_user - u0.cpu_user, u1.cpu_sys - u0.cpu_sys, u1.nvcsw - u0.nvcsw, u1.nivcsw - u0.nivcsw,
-                  wall_s, u1.maxrss_kb);
+                  wall_s, u1.maxrss_kb, t_begin_ns, t_end_ns);
     j += buf;
     if (!note.empty()) j += ",\"note\":\"" + note + "\"";
     j += "}";
@@ -177,6 +250,7 @@ using One = std::function<void(Series &, bool timed)>;
 
 void run_point(Context &c, const char *op, std::size_t bytes, double traffic_bytes, int iters, const One &one, const std::function<void()> &verify, const std::string &note = std::string())
 {
+    const long long point_begin = ns_now(); // steady_clock ns of this process, the same clock as TBCCL_LATENCY_TRACE; delimits this point (verification, warmup and timed loop) in a trace
     verify();
     c.comm.barrier().wait();
     Series s;
@@ -192,7 +266,7 @@ void run_point(Context &c, const char *op, std::size_t bytes, double traffic_byt
     const Usage u1 = usage();
     c.comm.barrier().wait();
     verify();
-    emit(c, op, bytes, traffic_bytes, s, u0, u1, wall, note);
+    emit(c, op, bytes, traffic_bytes, s, u0, u1, wall, point_begin, ns_now(), note);
 }
 
 void point_p2p(Context &c, std::size_t bytes, int base)
@@ -229,7 +303,7 @@ void point_p2p(Context &c, std::size_t bytes, int base)
         }
     };
     const auto verify = [&] {
-        std::fill(in.begin(), in.end(), 0);
+        zero(in);
         if (c.leader)
         {
             c.comm.send(host(out.data(), bytes), bytes, DataType::UInt8, c.peer).wait();
@@ -266,7 +340,7 @@ void point_simul(Context &c, std::size_t bytes, int base)
         }
     };
     const auto verify = [&] {
-        std::fill(in.begin(), in.end(), 0);
+        zero(in);
         auto sw = c.comm.send(host(out.data(), bytes), bytes, DataType::UInt8, c.peer);
         auto rw = c.comm.recv(host(in.data(), bytes), bytes, DataType::UInt8, c.peer);
         sw.wait();
@@ -330,7 +404,7 @@ void point_stream(Context &c, std::size_t sender, std::size_t bytes, int base)
     const int batches = std::max(iterations_for(bytes, base) / static_cast<int>(std::max<std::size_t>(window / 4, 1)), 8);
     const auto one = [&](Series &s, bool timed) { batch(timed ? &s : nullptr, window, false); };
     const auto verify = [&] {
-        if (!is_sender) for (auto &b : bufs) std::fill(b.begin(), b.end(), 0);
+        if (!is_sender) for (auto &b : bufs) zero(b);
         batch(nullptr, std::min<std::size_t>(window, 4), true);
     };
     char note[200];
@@ -347,6 +421,7 @@ void point_allreduce(Context &c, std::size_t bytes, int base)
     for (std::size_t i = 0; i < elems; ++i) pristine[i] = static_cast<float>((c.rank + 1) * ((i % 251) + 1));
     const auto one = [&](Series &s, bool timed) {
         std::memcpy(f.data(), pristine.data(), bytes);
+        up(f.data(), bytes);
         const auto t0 = Clock::now();
         auto w = c.comm.all_reduce(host(f.data(), bytes), host(f.data(), bytes), elems, DataType::Float32, tbccl::ReduceOp::Sum);
         const auto t1 = Clock::now();
@@ -361,7 +436,9 @@ void point_allreduce(Context &c, std::size_t bytes, int base)
     };
     const auto verify = [&] {
         std::memcpy(f.data(), pristine.data(), bytes);
+        up(f.data(), bytes);
         c.comm.all_reduce(host(f.data(), bytes), host(f.data(), bytes), elems, DataType::Float32, tbccl::ReduceOp::Sum).wait();
+        down(f.data(), bytes);
         for (std::size_t i = 0; i < elems; ++i)
             if (f[i] != static_cast<float>(3 * ((i % 251) + 1))) fail("allreduce element " + std::to_string(i) + " of " + std::to_string(elems));
     };
@@ -386,8 +463,8 @@ void point_allgather(Context &c, std::size_t bytes, int base)
         }
     };
     const auto verify = [&] {
-        std::fill(g0.begin(), g0.end(), 0);
-        std::fill(g1.begin(), g1.end(), 0);
+        zero(g0);
+        zero(g1);
         c.comm.all_gather(host(in.data(), bytes), {host(g0.data(), bytes), host(g1.data(), bytes)}).wait();
         check_pat(g0, 0, 2, "allgather slot 0 " + std::to_string(bytes));
         check_pat(g1, 1, 2, "allgather slot 1 " + std::to_string(bytes));
@@ -414,11 +491,42 @@ void point_broadcast(Context &c, std::size_t root, std::size_t bytes, int base)
         }
     };
     const auto verify = [&] {
-        if (!is_root) std::fill(buf.begin(), buf.end(), 0);
+        if (!is_root) zero(buf);
         c.comm.broadcast(host(buf.data(), bytes), root).wait();
         check_pat(buf, root, 3, "broadcast from " + std::to_string(root) + " " + std::to_string(bytes));
     };
     run_point(c, root == 0 ? "broadcast0" : "broadcast1", bytes, static_cast<double>(bytes), iterations_for(bytes, base), one, verify, "one-way payload from the root");
+}
+
+void point_bcastpp(Context &c, std::size_t bytes, int base)
+{
+    std::vector<std::uint8_t> a(bytes), b(bytes); // a travels 0 -> 1, b travels 1 -> 0
+    if (c.rank == 0) fill_pat(a, 0, 4); else fill_pat(b, 1, 4);
+    const auto one = [&](Series &s, bool timed) {
+        const auto t0 = Clock::now();
+        auto w0 = c.comm.broadcast(host(a.data(), bytes), 0);
+        const auto t1 = Clock::now();
+        w0.wait();
+        const auto t2 = Clock::now();
+        auto w1 = c.comm.broadcast(host(b.data(), bytes), 1);
+        const auto t3 = Clock::now();
+        w1.wait();
+        const auto t4 = Clock::now();
+        if (timed)
+        {
+            s.total.push_back(us_between(t0, t4));
+            s.submit.push_back(us_between(t0, t1) + us_between(t2, t3));
+            s.wait.push_back(us_between(t1, t2) + us_between(t3, t4));
+        }
+    };
+    const auto verify = [&] {
+        if (c.rank == 1) zero(a); else zero(b);
+        c.comm.broadcast(host(a.data(), bytes), 0).wait();
+        c.comm.broadcast(host(b.data(), bytes), 1).wait();
+        check_pat(a, 0, 4, "bcastpp a " + std::to_string(bytes));
+        check_pat(b, 1, 4, "bcastpp b " + std::to_string(bytes));
+    };
+    run_point(c, "bcastpp", bytes, 2.0 * bytes, iterations_for(bytes, base), one, verify, "broadcast root 0 then root 1 per iteration (round trip); traffic is bytes each way");
 }
 
 void point_barrier(Context &c, int base)
@@ -440,6 +548,7 @@ void point_barrier(Context &c, int base)
         // the late rank enters 30 ms late; the early rank's barrier must not return before that (checked on the early rank's own clock)
         for (std::size_t late = 0; late < 2; ++late)
         {
+            c.comm.barrier().wait(); // align the ranks first: the previous point's output work (samples file) leaves them skewed by milliseconds
             if (c.rank == late) std::this_thread::sleep_for(std::chrono::milliseconds(30));
             const auto t0 = Clock::now();
             c.comm.barrier().wait();
@@ -468,7 +577,21 @@ int main(int argc, char **argv)
         else if (a == "--iters") iters = std::atoi(next().c_str());
         else if (a == "--label") label = next();
         else if (a == "--samples") samples_path = next();
+        else if (a == "--mem")
+        {
+            const std::string m = next();
+            g_mem = m == "cuda" ? Mem::Cuda : m == "metal" ? Mem::Metal : Mem::Host;
+        }
     }
+#ifdef PROBE_CUDA
+    if (g_mem == Mem::Cuda) tbccl::register_cuda_support();
+#else
+    if (g_mem == Mem::Cuda)
+    {
+        std::fprintf(stderr, "--mem cuda needs the PROBE_CUDA build\n");
+        return 2;
+    }
+#endif
     tbccl::CommunicatorOptions o;
     o.rank = rank;
     for (const auto &p : split(peers_arg, ','))
@@ -489,7 +612,7 @@ int main(int argc, char **argv)
     const Usage init1 = usage();
     Context c{*comm, rank, 1 - rank, rank == 0, label};
     if (!samples_path.empty()) c.samples = std::fopen((samples_path + ".r" + std::to_string(rank) + ".csv").c_str(), "w");
-    std::printf("{\"label\":\"%s\",\"rank\":%zu,\"op\":\"init\",\"init_us\":%.0f,\"cpu_s\":%.4f,\"note\":\"Communicator::create including the bootstrap handshake and waiting for the peer\"}\n", label.c_str(), rank, init_us,
+    std::printf("{\"label\":\"%s\",\"rank\":%zu,\"mem\":\"%s\",\"op\":\"init\",\"init_us\":%.0f,\"cpu_s\":%.4f,\"note\":\"Communicator::create including the bootstrap handshake and waiting for the peer\"}\n", label.c_str(), rank, g_mem == Mem::Cuda ? "cuda" : g_mem == Mem::Metal ? "metal" : "host", init_us,
                 init1.cpu_user + init1.cpu_sys - init0.cpu_user - init0.cpu_sys);
     std::fflush(stdout);
     comm->barrier().wait();
@@ -540,6 +663,7 @@ int main(int argc, char **argv)
             else if (op == "allgather") point_allgather(c, bytes, iters);
             else if (op == "broadcast0") point_broadcast(c, 0, bytes, iters);
             else if (op == "broadcast1") point_broadcast(c, 1, bytes, iters);
+            else if (op == "bcastpp") point_bcastpp(c, bytes, iters);
             else
             {
                 std::fprintf(stderr, "unknown op %s\n", op.c_str());
