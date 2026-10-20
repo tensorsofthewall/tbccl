@@ -21,6 +21,7 @@
 #include <atomic>
 #include <new>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -645,6 +646,24 @@ void require_not_failed(const Communicator &comm)
 namespace
 {
 
+
+// Staged transfers (a backend that cannot be read or written by the transport directly, such as CUDA device memory) move their payload through host staging buffers.
+// With the default (one chunk for the whole payload) the device-to-host copy, the network transfer and the host-to-device copy run one after the other.
+// TBCCL_STAGED_CHUNK_BYTES=<n> (opt-in, unset or 0 = unchanged) splits a staged point-to-point transfer or an N=2 all_reduce leg into chunks of n bytes that pipeline across
+// those three stages. Payloads of at most n bytes are still one chunk. Direct-access backends (Host, MetalShared) ignore it. The bytes on the wire are identical either way
+// (the frame header travels once, then the raw payload stream), so the two ranks need not use the same value. Read once per process.
+std::size_t staged_chunk_hint(const AsyncMemoryBackend &backend)
+{
+    static const std::size_t configured = [] {
+        const char *text = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
+        if (!text || !*text) return std::size_t{0};
+        char *end = nullptr;
+        const unsigned long long v = std::strtoull(text, &end, 10);
+        return (end && *end == '\0') ? static_cast<std::size_t>(v) : std::size_t{0}; // a malformed value leaves the default in place
+    }();
+    return backend.supports_direct_transport_access() ? 0 : configured;
+}
+
 // P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the peer's
 // persistent progress thread picks up in FIFO order. An allocation failure while admitting is reported at once as ResourceExhausted; nothing was
 // accepted, so the communicator stays usable. Any other failure after admission began poisons the communicator, as before. (A template only because
@@ -669,7 +688,7 @@ Work post_p2p(
         request.backend = &provider->primary_backend();
         request.transport = channel.data.get();
         request.total_bytes = buffer.bytes;
-        request.chunk_hint = 0;
+        request.chunk_hint = staged_chunk_hint(*request.backend);
         request.framed = true; // a receive of a different size fails with protocol_mismatch instead of hanging
         if (impl.debug_fail_admission.load(std::memory_order_relaxed) > 0 && impl.debug_fail_admission.fetch_sub(1) > 0) throw std::bad_alloc();
     }
@@ -775,7 +794,7 @@ void run_transfer(
     request.backend = &backend;
     request.transport = &transport;
     request.total_bytes = bytes;
-    request.chunk_hint = 0;
+    request.chunk_hint = staged_chunk_hint(backend);
     request.shared_lane = true; // N=2 specialised path: strictly sequential, single FIFO as before duplex lanes
     TransferWork work = worker.enqueue(request);
     const std::uint64_t child = detail::tl_lat_last_enqueued_id;
@@ -865,11 +884,11 @@ Work Communicator::all_reduce(
             {
                 AsyncMemoryBackend &scratch = provider->scratch_backend();
                 LocalReduceBackend &reduce = provider->reduce_backend();
-                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, staged_chunk_hint(primary), count, datatype);
             }
             else
             {
-                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, primary, primary, nullptr, rank, kRoot, total_bytes, /*chunk_hint=*/0, count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, primary, primary, nullptr, rank, kRoot, total_bytes, staged_chunk_hint(primary), count, datatype);
             }
             return;
         }
