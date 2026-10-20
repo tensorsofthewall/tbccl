@@ -1929,6 +1929,15 @@ if(BUILD_TESTING)
     add_test(NAME communicator_staged_chunk_test_chunked_odd COMMAND communicator_staged_chunk_test)
     set_tests_properties(communicator_staged_chunk_test_chunked_odd PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=100003")
 
+    add_executable(communicator_direct_path_test tests/communicator_direct_path_test.cpp)
+    target_link_libraries(communicator_direct_path_test PRIVATE tbccl Threads::Threads)
+    add_test(NAME communicator_direct_path_test COMMAND communicator_direct_path_test)
+    set_tests_properties(communicator_direct_path_test PROPERTIES TIMEOUT 120)
+    add_test(NAME communicator_direct_path_test_chunked COMMAND communicator_direct_path_test)
+    set_tests_properties(communicator_direct_path_test_chunked PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=131072")
+    add_test(NAME communicator_direct_path_test_chunked_odd COMMAND communicator_direct_path_test)
+    set_tests_properties(communicator_direct_path_test_chunked_odd PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=4096")
+
     add_executable(communicator_staged_chunk_config_test tests/communicator_staged_chunk_config_test.cpp)
     target_link_libraries(communicator_staged_chunk_config_test PRIVATE tbccl Threads::Threads)
     # The setting is read once per process: one ctest entry per value. "unset" and "empty" use the unmodified environment / an empty value.
@@ -2139,6 +2148,21 @@ if(BUILD_TESTING)
         target_link_libraries(communicator_cuda_staging_test PRIVATE tbccl_tensor_backend CUDA::cudart Threads::Threads)
         add_test(NAME communicator_cuda_staging_test COMMAND communicator_cuda_staging_test)
         set_tests_properties(communicator_cuda_staging_test PROPERTIES TIMEOUT 300)
+
+        # Producer/consumer ordering of CUDA memory, two processes (one rank each) so each rank can have its own TBCCL_STAGED_CHUNK_BYTES ("-" = unset).
+        add_executable(communicator_cuda_stream_chunk_test tests/communicator_cuda_stream_chunk_test.cu)
+        target_include_directories(communicator_cuda_stream_chunk_test PRIVATE ${CMAKE_SOURCE_DIR}/benchmarks/tensor)
+        target_link_libraries(communicator_cuda_stream_chunk_test PRIVATE tbccl_tensor_backend tbccl CUDA::cudart Threads::Threads)
+        foreach(pair IN ITEMS "-:-" "131072:131072" "262144:262144" "100003:100003" "131072:-" "-:262144" "4096:524288")
+            string(REPLACE ":" ";" settings "${pair}")
+            list(GET settings 0 chunk0)
+            list(GET settings 1 chunk1)
+            string(REPLACE "-" "unset" label0 "${chunk0}")
+            string(REPLACE "-" "unset" label1 "${chunk1}")
+            add_test(NAME communicator_cuda_stream_chunk_test_${label0}_${label1}
+                     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/communicator_cuda_stream_chunk_test.sh $<TARGET_FILE:communicator_cuda_stream_chunk_test> ${chunk0} ${chunk1})
+            set_tests_properties(communicator_cuda_stream_chunk_test_${label0}_${label1} PROPERTIES TIMEOUT 300)
+        endforeach()
 
         add_executable(cuda_submit_bench benchmarks/tensor/cuda_submit_bench.cpp)
         target_link_libraries(cuda_submit_bench PRIVATE tbccl_tensor_backend CUDA::cudart Threads::Threads ${CMAKE_DL_LIBS})

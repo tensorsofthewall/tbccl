@@ -171,6 +171,43 @@ void collectives_case(tbccl::Communicator &comm, std::size_t rank)
             expect(g0[j] == pat(0, 80, j) && g1[j] == pat(1, 80, j), "all_gather byte " + std::to_string(j));
     }
 }
+
+// N=3: point-to-point is the only operation that reads the setting beyond N=2 (the N>2 collectives post their transfers with one chunk). A ring of sends/receives between three
+// ranks, all posted before any wait, must deliver identical bytes with the expected number of chunks; a tree broadcast must be unaffected (one chunk per transfer).
+void three_rank_case(tbccl::Communicator &comm, std::size_t rank)
+{
+    const std::size_t world = 3, next = (rank + 1) % world, prev = (rank + world - 1) % world;
+    for (std::size_t bytes : {std::size_t{100000}, (std::size_t{2} << 20) + 12345})
+    {
+        comm.barrier().wait();
+        if (rank == 0) reset_counters();
+        comm.barrier().wait();
+        std::vector<std::uint8_t> out(bytes), in(bytes, 0);
+        for (std::size_t j = 0; j < bytes; ++j) out[j] = pat(rank, 900 + bytes % 7, j);
+        auto sent = comm.send(view(out), bytes, tbccl::DataType::UInt8, next);
+        auto got = comm.recv(view(in), bytes, tbccl::DataType::UInt8, prev);
+        got.wait();
+        sent.wait();
+        for (std::size_t j = 0; j < bytes; ++j) expect(in[j] == pat(prev, 900 + bytes % 7, j), "ring byte " + std::to_string(j) + " of " + std::to_string(bytes));
+        comm.barrier().wait();
+        if (rank == 0)
+        {
+            expect(g_stage_calls == 3 * expected_chunks(bytes), "ring " + std::to_string(bytes) + ": stage calls " + std::to_string(g_stage_calls.load()) + " expected " + std::to_string(3 * expected_chunks(bytes)));
+            expect(g_commit_calls == 3 * expected_chunks(bytes), "ring " + std::to_string(bytes) + ": commit calls " + std::to_string(g_commit_calls.load()));
+        }
+    }
+    comm.barrier().wait();
+    if (rank == 0) reset_counters();
+    comm.barrier().wait();
+    const std::size_t bytes = (std::size_t{2} << 20) + 12345;
+    std::vector<std::uint8_t> buf(bytes, 0);
+    if (rank == 1) for (std::size_t j = 0; j < bytes; ++j) buf[j] = pat(1, 950, j);
+    comm.broadcast(view(buf), 1).wait();
+    for (std::size_t j = 0; j < bytes; ++j) expect(buf[j] == pat(1, 950, j), "N=3 broadcast byte " + std::to_string(j));
+    comm.barrier().wait();
+    if (rank == 0)
+        expect(g_max_chunk == 0 || g_max_chunk == bytes, "an N=3 broadcast transfer was split into chunks (largest chunk " + std::to_string(g_max_chunk.load()) + " of " + std::to_string(bytes) + ")");
+}
 } // namespace
 
 int main()
@@ -191,6 +228,11 @@ int main()
                 comm.barrier().wait();
             });
             std::printf("contents and chunk counts ok\n");
+        }
+        {
+            World w(3);
+            w.run([](std::size_t rank, tbccl::Communicator &comm) { three_rank_case(comm, rank); });
+            std::printf("three-rank point-to-point and broadcast ok\n");
         }
         {
             // a chunked staged send to a silent peer, then abort: the Work becomes terminal in bounded time and the communicator (with its staging thread) is destroyed
