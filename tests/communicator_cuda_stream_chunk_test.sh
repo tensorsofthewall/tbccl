@@ -4,7 +4,22 @@
 # "-" leaves the variable unset for that rank.
 set -u
 bin=$1; s0=$2; s1=$3; scenarios=${4:-zero,producer,delayed,outstanding,war,repeated,collectives,abort}
-port=$((30000 + ($$ % 20000)))
+# two adjacent ports that are free right now (a PID-derived port collided with other tests' sockets in 2 of ~14 full-suite runs)
+port=$(python3 - <<'PY'
+import random, socket
+while True:
+    p = random.randrange(20000, 60000)
+    socks = []
+    try:
+        for q in (p, p + 1):
+            s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", q)); socks.append(s)
+        print(p); break
+    except OSError:
+        continue
+    finally:
+        for s in socks: s.close()
+PY
+)
 run() { # rank setting
   if [ "$2" = "-" ]; then env -u TBCCL_STAGED_CHUNK_BYTES "$bin" --rank "$1" --port "$port" --scenarios "$scenarios";
   else env TBCCL_STAGED_CHUNK_BYTES="$2" "$bin" --rank "$1" --port "$port" --scenarios "$scenarios"; fi
