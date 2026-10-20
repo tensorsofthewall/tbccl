@@ -856,6 +856,21 @@ if(BUILD_TESTING)
     )
     set_tests_properties(async_transfer_test PROPERTIES TIMEOUT 60)
 
+    # StagingPool cancellation and the failure handling of the staged pipeline of TensorCommWorker (fake transport and backend, bounded scenarios).
+    add_executable(staging_pool_cancel_test tests/staging_pool_cancel_test.cpp)
+    target_link_libraries(staging_pool_cancel_test PRIVATE tbccl Threads::Threads)
+    add_test(NAME staging_pool_cancel_test COMMAND staging_pool_cancel_test)
+    set_tests_properties(staging_pool_cancel_test PROPERTIES TIMEOUT 150)
+
+    add_executable(tensor_comm_worker_failure_test tests/tensor_comm_worker_failure_test.cpp)
+    target_link_libraries(tensor_comm_worker_failure_test PRIVATE tbccl Threads::Threads)
+    if(NOT MSVC)
+        target_compile_options(tensor_comm_worker_failure_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(staging_pool_cancel_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME tensor_comm_worker_failure_test COMMAND tensor_comm_worker_failure_test)
+    set_tests_properties(tensor_comm_worker_failure_test PROPERTIES TIMEOUT 300)
+
     add_executable(hetero_allreduce_test
         tests/hetero_allreduce_test.cpp
     )
