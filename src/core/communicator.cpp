@@ -21,9 +21,11 @@
 #include <atomic>
 #include <new>
 #include <condition_variable>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -581,6 +583,35 @@ std::string Communicator::abort_reason() const
     return impl_->reason;
 }
 
+// TBCCL_STAGED_CHUNK_BYTES is validated once, when the first Communicator is created (like the algorithm overrides), so a typo is an error rather than a silently unchunked run.
+// Accepted: unset, empty or "0" (one chunk per transfer), or a decimal byte count of at least kMinStagedChunkBytes. Anything else is invalid_argument.
+namespace
+{
+constexpr unsigned long long kMinStagedChunkBytes = 4096; // smaller chunks only multiply the per-chunk bookkeeping
+
+std::size_t parse_staged_chunk_bytes()
+{
+    const char *text = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
+    if (!text || !*text) return 0;
+    const std::string v(text);
+    auto invalid = [&](const char *why) {
+        return Error(ErrorCode::InvalidArgument, std::string("invalid_argument: TBCCL_STAGED_CHUNK_BYTES='") + v + "' " + why);
+    };
+    if (v.find_first_not_of("0123456789") != std::string::npos) throw invalid("is not a non-negative decimal byte count");
+    errno = 0;
+    const unsigned long long n = std::strtoull(v.c_str(), nullptr, 10);
+    if (errno == ERANGE || n > std::numeric_limits<std::size_t>::max()) throw invalid("is too large");
+    if (n != 0 && n < kMinStagedChunkBytes) throw invalid("is below the 4096 byte minimum (use 0 for one chunk per transfer)");
+    return static_cast<std::size_t>(n);
+}
+
+std::size_t staged_chunk_setting()
+{
+    static const std::size_t configured = parse_staged_chunk_bytes(); // a failed initialisation is retried, so every creation reports the same error
+    return configured;
+}
+} // namespace
+
 std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
 {
     const detail::ResolvedBootstrap boot = detail::resolve_bootstrap(options);
@@ -603,6 +634,7 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
 
     impl.trace = detail::Trace(boot.communicator_id.prefix(), boot.rank, boot.world_size);
     impl.overrides = detail::planner_overrides_from_environment();
+    staged_chunk_setting(); // reject an invalid TBCCL_STAGED_CHUNK_BYTES at creation
     impl.fatal_cb = [&impl](const std::string &why) { impl.request_abort(why); };
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
@@ -646,7 +678,6 @@ void require_not_failed(const Communicator &comm)
 namespace
 {
 
-
 // Staged transfers (a backend that cannot be read or written by the transport directly, such as CUDA device memory) move their payload through host staging buffers.
 // With the default (one chunk for the whole payload) the device-to-host copy, the network transfer and the host-to-device copy run one after the other.
 // TBCCL_STAGED_CHUNK_BYTES=<n> (opt-in, unset or 0 = unchanged) splits a staged point-to-point transfer or an N=2 all_reduce leg into chunks of n bytes that pipeline across
@@ -654,14 +685,7 @@ namespace
 // (the frame header travels once, then the raw payload stream), so the two ranks need not use the same value. Read once per process.
 std::size_t staged_chunk_hint(const AsyncMemoryBackend &backend)
 {
-    static const std::size_t configured = [] {
-        const char *text = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
-        if (!text || !*text) return std::size_t{0};
-        char *end = nullptr;
-        const unsigned long long v = std::strtoull(text, &end, 10);
-        return (end && *end == '\0') ? static_cast<std::size_t>(v) : std::size_t{0}; // a malformed value leaves the default in place
-    }();
-    return backend.supports_direct_transport_access() ? 0 : configured;
+    return backend.supports_direct_transport_access() ? 0 : staged_chunk_setting();
 }
 
 // P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the peer's
