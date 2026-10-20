@@ -4,14 +4,19 @@
 # "-" leaves the variable unset for that rank.
 set -u
 bin=$1; s0=$2; s1=$3; scenarios=${4:-zero,producer,delayed,outstanding,war,repeated,collectives,abort}
-# two adjacent ports that are free right now (a PID-derived port collided with other tests' sockets in 2 of ~14 full-suite runs)
+# The Communicator listens on peers[r].port (control) and peers[r].port + 1000 (data). Pick a base below the OS ephemeral range, where outgoing connections of other
+# processes take their source ports, such that the control and data ports of both ranks (p, p+1, p+1000, p+1001) are free right now.
 port=$(python3 - <<'PY'
 import random, socket
+try:
+    floor = int(open("/proc/sys/net/ipv4/ip_local_port_range").read().split()[0])
+except OSError:
+    floor = 32768
 while True:
-    p = random.randrange(20000, 60000)
+    p = random.randrange(20000, max(20001, floor - 1002))
     socks = []
     try:
-        for q in (p, p + 1):
+        for q in (p, p + 1, p + 1000, p + 1001):
             s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", q)); socks.append(s)
         print(p); break
     except OSError:
