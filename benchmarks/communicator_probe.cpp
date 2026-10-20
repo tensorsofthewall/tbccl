@@ -1,7 +1,7 @@
 // Communicator probe: process-per-rank measurement of the modern N=2 Communicator on host memory (two hosts or loopback).
 //
 //   communicator_probe --rank R --peers <ip0:port0,ip1:port1> --ops p2p,simul,stream01,stream10,allreduce,allgather,broadcast0,broadcast1,barrier
-//                      [--sizes 64,4096,...] [--iters N] [--label NAME] [--samples PATH]
+//                      [--sizes 64,4096,...] [--iters N] [--label NAME] [--samples PATH] [--mem host|metal|cuda] [--timeout-s N]
 //
 // Why a new probe: small_message_latency has no broadcast or barrier, verifies only p2p, and does not separate submission from completion.
 // Every (op, size) point here
@@ -21,6 +21,8 @@
 //              the receiver's receives can find data already arrived), i.e. a pipelined throughput figure, not a latency.
 //   bcastpp    broadcast with root 0 then broadcast with root 1 per iteration: a round trip, the latency form of broadcast.
 //   barrier    Communicator::barrier().
+// Output: one JSON object per line on each rank's stdout: "meta" (build identity and units), "init", "calibration", then one line per (op, size). All durations are microseconds.
+// --timeout-s (default 1800) bounds the whole run: the process exits with status 5 if it has not finished, so a dead peer cannot hang a run forever.
 // The operation list never combines an unsupported operation and size. Internal trace sites are enabled by the library with TBCCL_LATENCY_TRACE.
 
 #include <tbccl/communicator.hpp>
@@ -31,12 +33,20 @@
 
 #include <sys/resource.h>
 
+#ifndef PROBE_VERSION
+#define PROBE_VERSION "unknown"
+#endif
+#ifndef PROBE_BUILD_TYPE
+#define PROBE_BUILD_TYPE "unknown"
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <sstream>
@@ -566,6 +576,7 @@ int main(int argc, char **argv)
     std::size_t rank = 0;
     std::string peers_arg, ops_arg = "p2p", sizes_arg = "64,4096,65536,262144,1048576,4194304,16777216", label = "run", samples_path;
     int iters = 1500;
+    int timeout_s = 1800;
     for (int i = 1; i < argc; ++i)
     {
         const std::string a = argv[i];
@@ -577,6 +588,7 @@ int main(int argc, char **argv)
         else if (a == "--iters") iters = std::atoi(next().c_str());
         else if (a == "--label") label = next();
         else if (a == "--samples") samples_path = next();
+        else if (a == "--timeout-s") timeout_s = std::atoi(next().c_str());
         else if (a == "--mem")
         {
             const std::string m = next();
@@ -592,6 +604,25 @@ int main(int argc, char **argv)
         return 2;
     }
 #endif
+    if (timeout_s > 0)
+        std::thread([timeout_s] {
+            std::this_thread::sleep_for(std::chrono::seconds(timeout_s));
+            std::fprintf(stderr, "communicator_probe: --timeout-s %d exceeded\n", timeout_s);
+            std::fflush(stderr);
+            std::_Exit(5);
+        }).detach();
+    {
+        const char *chunk = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
+        std::printf("{\"label\":\"%s\",\"rank\":%zu,\"op\":\"meta\",\"tbccl_version\":\"%s\",\"build_type\":\"%s\",\"cuda_build\":%s,\"units\":\"microseconds\",\"clock\":\"steady_clock\",\"env_TBCCL_STAGED_CHUNK_BYTES\":\"%s\"}\n",
+                    label.c_str(), rank, PROBE_VERSION, PROBE_BUILD_TYPE,
+#ifdef PROBE_CUDA
+                    "true",
+#else
+                    "false",
+#endif
+                    chunk ? chunk : "");
+        std::fflush(stdout);
+    }
     tbccl::CommunicatorOptions o;
     o.rank = rank;
     for (const auto &p : split(peers_arg, ','))
