@@ -1920,6 +1920,15 @@ if(BUILD_TESTING)
     add_test(NAME communicator_abort_test COMMAND communicator_abort_test)
     set_tests_properties(communicator_abort_test PROPERTIES TIMEOUT 120)
 
+    add_executable(communicator_staged_chunk_test tests/communicator_staged_chunk_test.cpp)
+    target_link_libraries(communicator_staged_chunk_test PRIVATE tbccl Threads::Threads)
+    add_test(NAME communicator_staged_chunk_test COMMAND communicator_staged_chunk_test)
+    set_tests_properties(communicator_staged_chunk_test PROPERTIES TIMEOUT 120)
+    add_test(NAME communicator_staged_chunk_test_chunked COMMAND communicator_staged_chunk_test)
+    set_tests_properties(communicator_staged_chunk_test_chunked PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=131072")
+    add_test(NAME communicator_staged_chunk_test_chunked_odd COMMAND communicator_staged_chunk_test)
+    set_tests_properties(communicator_staged_chunk_test_chunked_odd PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=100003")
+
     add_executable(communicator_collectives_test
         tests/communicator_collectives_test.cpp
     )

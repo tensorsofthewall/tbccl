@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -177,6 +178,14 @@ void test_correctness_all_pairings()
     }
 }
 
+// With TBCCL_STAGED_CHUNK_BYTES set, the pinned block only has to hold one chunk, so its capacity is the chunk size rather than the whole payload.
+std::size_t expected_pinned_capacity(std::size_t size)
+{
+    const char *e = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
+    const std::size_t chunk = e && *e ? static_cast<std::size_t>(std::strtoull(e, nullptr, 10)) : 0;
+    return chunk != 0 && chunk < size ? chunk : size;
+}
+
 void test_steady_state_reuse()
 {
     for (std::size_t size : {25 * MiB, 16 * MiB})
@@ -184,18 +193,32 @@ void test_steady_state_reuse()
         Pair p;
         run_op(p, Op::AllReduce, size, true, false); // warmup
         const auto warm = p.stats();
-        expect(warm.pinned_alloc_count == 1 && warm.pinned_capacity == size, "one pinned block after warmup");
+        expect(warm.pinned_alloc_count == 1 && warm.pinned_capacity == expected_pinned_capacity(size), "one pinned block after warmup (alloc=" + std::to_string(warm.pinned_alloc_count) + " capacity=" + std::to_string(warm.pinned_capacity) + ")");
         expect(warm.device_scratch_alloc_count == 1, "one device scratch after warmup");
         for (int i = 0; i < 100; ++i) run_op(p, Op::AllReduce, size, true, false);
         const auto s = p.stats();
         expect(s.pinned_alloc_count == 1 && s.pinned_free_count == 0, "no pinned alloc/free in steady state");
         expect(s.device_scratch_alloc_count == 1 && s.device_scratch_free_count == 0, "no device scratch alloc/free in steady state");
-        expect(s.pinned_capacity == size && s.pinned_peak_capacity == size, "capacity stable");
+        expect(s.pinned_capacity == expected_pinned_capacity(size) && s.pinned_peak_capacity == expected_pinned_capacity(size), "capacity stable");
     }
+}
+
+// These tests assert the pinned block's size against the PAYLOAD size (the unchunked design). With TBCCL_STAGED_CHUNK_BYTES the block only holds one chunk, so they do not apply;
+// the correctness, ordering and abort tests above and below still run with chunking.
+bool sized_by_payload()
+{
+    const char *e = std::getenv("TBCCL_STAGED_CHUNK_BYTES");
+    if (e && *e && std::strtoull(e, nullptr, 10) != 0)
+    {
+        std::cout << "  (not applicable: pinned capacity is chunk-sized under TBCCL_STAGED_CHUNK_BYTES)\n";
+        return false;
+    }
+    return true;
 }
 
 void test_varying_sizes_grow_only()
 {
+    if (!sized_by_payload()) return;
     Pair p;
     for (std::size_t mib : {1, 4, 16, 25, 4, 1, 16, 25}) run_op(p, Op::AllReduce, mib * MiB, true, false);
     auto s = p.stats();
@@ -250,6 +273,7 @@ void test_queued_and_dropped_work()
 
 void test_two_communicators_independent()
 {
+    if (!sized_by_payload()) return;
     Pair a, b;
     run_op(a, Op::AllReduce, 25 * MiB, true, false);
     run_op(b, Op::AllReduce, 4 * MiB, true, false);
@@ -262,6 +286,7 @@ void test_two_communicators_independent()
 
 void test_destroy_frees_exactly_once()
 {
+    if (!sized_by_payload()) return;
     for (int round = 0; round < 6; ++round)
     {
         std::shared_ptr<void> held;
@@ -285,6 +310,7 @@ void test_destroy_frees_exactly_once()
 
 void test_failed_growth_keeps_old_block()
 {
+    if (!sized_by_payload()) return;
     Pair p;
     run_op(p, Op::AllReduce, MiB, true, false);
     const auto before = p.stats();
