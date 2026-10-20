@@ -1938,6 +1938,11 @@ if(BUILD_TESTING)
     add_test(NAME communicator_staged_chunk_test_chunked_odd COMMAND communicator_staged_chunk_test)
     set_tests_properties(communicator_staged_chunk_test_chunked_odd PROPERTIES TIMEOUT 120 ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=100003")
 
+    # Self-test of the CUDA stream-ordering test driver (port selection, failure propagation, cleanup). It uses a fake rank program, so it needs no GPU.
+    add_test(NAME communicator_cuda_stream_chunk_driver_test
+             COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/tests/communicator_cuda_stream_chunk_driver_test.sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/communicator_cuda_stream_chunk_test.sh)
+    set_tests_properties(communicator_cuda_stream_chunk_driver_test PROPERTIES TIMEOUT 120)
+
     add_executable(communicator_direct_path_test tests/communicator_direct_path_test.cpp)
     target_link_libraries(communicator_direct_path_test PRIVATE tbccl Threads::Threads)
     add_test(NAME communicator_direct_path_test COMMAND communicator_direct_path_test)
