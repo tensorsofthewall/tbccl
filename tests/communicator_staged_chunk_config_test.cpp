@@ -9,11 +9,45 @@
 
 using namespace mesh_test;
 
+// `late-ignored`: a valid (or unset) value is latched by the first communicator; an invalid value set afterwards is not looked at again.
+// `late-recovers`: an invalid value makes creation fail, and the next creation after the variable is fixed succeeds (a failed latch is retried).
+int late_mode(const char *mode)
+{
+    try
+    {
+        if (std::strcmp(mode, "late-ignored") == 0)
+        {
+            { World w(2); w.run([](std::size_t, tbccl::Communicator &comm) { comm.barrier().wait(); }); }
+            ::setenv("TBCCL_STAGED_CHUNK_BYTES", "128K", 1);
+            { World w(2); w.run([](std::size_t, tbccl::Communicator &comm) { comm.barrier().wait(); }); }
+            std::printf("a value set after the first communicator was ignored\n");
+        }
+        else
+        {
+            ::setenv("TBCCL_STAGED_CHUNK_BYTES", "128K", 1);
+            bool rejected = false;
+            try { World w(2); } catch (const std::exception &) { rejected = true; }
+            if (!rejected) { std::fprintf(stderr, "FAILED: invalid value accepted\n"); return 1; }
+            ::setenv("TBCCL_STAGED_CHUNK_BYTES", "131072", 1);
+            { World w(2); w.run([](std::size_t, tbccl::Communicator &comm) { comm.barrier().wait(); }); }
+            std::printf("creation succeeded after the variable was fixed\n");
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::fprintf(stderr, "FAILED: %s\n", e.what());
+        return 1;
+    }
+    std::printf("communicator_staged_chunk_config_test passed\n");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 2 && (std::strcmp(argv[1], "late-ignored") == 0 || std::strcmp(argv[1], "late-recovers") == 0)) return late_mode(argv[1]);
     if (argc != 2 || (std::strcmp(argv[1], "valid") != 0 && std::strcmp(argv[1], "invalid") != 0))
     {
-        std::fprintf(stderr, "usage: communicator_staged_chunk_config_test valid|invalid\n");
+        std::fprintf(stderr, "usage: communicator_staged_chunk_config_test valid|invalid|late-ignored|late-recovers\n");
         return 2;
     }
     const bool want_valid = std::strcmp(argv[1], "valid") == 0;
