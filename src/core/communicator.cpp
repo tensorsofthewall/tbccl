@@ -688,6 +688,13 @@ std::size_t staged_chunk_hint(const AsyncMemoryBackend &backend)
     return backend.supports_direct_transport_access() ? 0 : staged_chunk_setting();
 }
 
+// One hint serves both legs of the two-rank all_reduce (receive into `a`, send from `b`). A leg whose memory is directly accessible must stay on the direct path,
+// so the setting applies only when neither backend is.
+std::size_t staged_chunk_hint(const AsyncMemoryBackend &a, const AsyncMemoryBackend &b)
+{
+    return a.supports_direct_transport_access() || b.supports_direct_transport_access() ? 0 : staged_chunk_setting();
+}
+
 // P2P admission. Nothing here waits for transport progress, a peer, a lane slot or staging: the request is a lightweight descriptor that the peer's
 // persistent progress thread picks up in FIFO order. An allocation failure while admitting is reported at once as ResourceExhausted; nothing was
 // accepted, so the communicator stays usable. Any other failure after admission began poisons the communicator, as before. (A template only because
@@ -908,7 +915,7 @@ Work Communicator::all_reduce(
             {
                 AsyncMemoryBackend &scratch = provider->scratch_backend();
                 LocalReduceBackend &reduce = provider->reduce_backend();
-                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, staged_chunk_hint(primary), count, datatype);
+                n2_all_reduce_tensor(*sole.coll_data, *sole.coll_worker, scratch, primary, &reduce, rank, kRoot, total_bytes, staged_chunk_hint(scratch, primary), count, datatype);
             }
             else
             {
