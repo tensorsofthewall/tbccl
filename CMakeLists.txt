@@ -2247,6 +2247,18 @@ if(BUILD_TESTING)
         set_tests_properties(communicator_nrank_cuda_test PROPERTIES TIMEOUT 300)
         list(APPEND tbccl_dynamic_port_tests communicator_nrank_cuda_test)
 
+        # N=2 all_gather with device memory: contents, abort, peer exit, destruction, no access to the buffers after a terminal Work. Unset and two staged chunk settings.
+        add_executable(communicator_n2_all_gather_cuda_test tests/communicator_n2_all_gather_cuda_test.cpp)
+        target_include_directories(communicator_n2_all_gather_cuda_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+        target_link_libraries(communicator_n2_all_gather_cuda_test PRIVATE tbccl_tensor_backend tbccl CUDA::cudart Threads::Threads)
+        add_test(NAME communicator_n2_all_gather_cuda_test COMMAND communicator_n2_all_gather_cuda_test)
+        add_test(NAME communicator_n2_all_gather_cuda_test_chunk131072 COMMAND communicator_n2_all_gather_cuda_test)
+        add_test(NAME communicator_n2_all_gather_cuda_test_chunk100003 COMMAND communicator_n2_all_gather_cuda_test)
+        set_tests_properties(communicator_n2_all_gather_cuda_test communicator_n2_all_gather_cuda_test_chunk131072 communicator_n2_all_gather_cuda_test_chunk100003 PROPERTIES TIMEOUT 900)
+        set_tests_properties(communicator_n2_all_gather_cuda_test_chunk131072 PROPERTIES ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=131072")
+        set_tests_properties(communicator_n2_all_gather_cuda_test_chunk100003 PROPERTIES ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=100003")
+        list(APPEND tbccl_dynamic_port_tests communicator_n2_all_gather_cuda_test communicator_n2_all_gather_cuda_test_chunk131072 communicator_n2_all_gather_cuda_test_chunk100003)
+
         add_executable(reduction_low_precision_cuda_test
             tests/reduction_low_precision_cuda_test.cpp
         )

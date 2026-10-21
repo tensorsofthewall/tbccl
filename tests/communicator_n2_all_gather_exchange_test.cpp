@@ -4,6 +4,7 @@
 // bounded termination under abort, a silent peer and a peer that goes away. The deterministic proof that the two legs really overlap is in n2_exchange_unit_test.
 // Run once per TBCCL_STAGED_CHUNK_BYTES setting (the setting only affects non-direct memory, so host runs must be unaffected by it).
 
+#include "communicator_debug.hpp"
 #include "mesh_test_support.hpp"
 
 #include <tbccl/communicator.hpp>
@@ -205,6 +206,41 @@ int main()
                 }
             });
             std::printf("abort ok\n");
+        }
+        {
+            // The second admission of one rank's exchange fails (as if out of memory) after its send was accepted. The failing job aborts the communicator from the
+            // collective executor thread, so that abort must not wait for the executor (a blocking abort there would hang this test): the job's Work fails, the
+            // communicator is aborted, the peer's Work becomes terminal, and later submissions are refused.
+            World w(2);
+            tbccl::detail::g_n2_exchange_fail_second_enqueue = 1;
+            w.run([](std::size_t rank, tbccl::Communicator &comm) {
+                const std::size_t bytes = std::size_t{8} << 20;
+                std::vector<std::uint8_t> in(bytes, static_cast<std::uint8_t>(rank + 1)), g0(bytes), g1(bytes);
+                std::optional<tbccl::Work> work;
+                try
+                {
+                    work = comm.all_gather(view(in), {view(g0), view(g1)});
+                }
+                catch (const std::exception &)
+                {
+                    expect(comm.aborted(), "a refused submission means the communicator was already aborted by the peer's failure");
+                }
+                if (work) expect(work->wait_for(30s), "rank " + std::to_string(rank) + ": the Work did not become terminal after a partial admission");
+                for (int i = 0; i < 300 && !comm.aborted(); ++i) std::this_thread::sleep_for(100ms);
+                expect(comm.aborted(), "rank " + std::to_string(rank) + ": the failed exchange must abort the communicator");
+                bool refused = false;
+                try
+                {
+                    comm.all_gather(view(in), {view(g0), view(g1)});
+                }
+                catch (const std::exception &)
+                {
+                    refused = true;
+                }
+                expect(refused, "an aborted communicator must refuse new collectives");
+            });
+            expect(tbccl::detail::g_n2_exchange_fail_second_enqueue.load() == 0, "the injected admission failure was consumed");
+            std::printf("partial admission ok\n");
         }
         {
             // a peer that never joins the collective, then aborts: the waiting rank's Work fails instead of hanging

@@ -78,6 +78,8 @@ private:
     std::thread thread_;
 };
 
+constexpr std::size_t kBytes = 5 * 4096 + 17; // several chunks (and a partial last one) when TBCCL_STAGED_CHUNK_BYTES=4096
+
 std::uint8_t pat(std::size_t seed, std::size_t j) { return static_cast<std::uint8_t>(seed * 37 + j * 7 + (j >> 9) * 5 + 3); }
 
 struct Script
@@ -159,6 +161,15 @@ public:
         cv_.notify_all();
     }
 
+    // Fresh script and empty wire for the next exchange on the same worker (a prior exchange must be finished).
+    void reconfigure(Script script)
+    {
+        std::lock_guard<std::mutex> lock(m_);
+        script_ = script;
+        wire_.clear();
+        send_entered_ = recv_entered_ = aborted_ = false;
+        preload_offset_ = 0;
+    }
     bool wait_both_entered(std::chrono::milliseconds limit)
     {
         std::unique_lock<std::mutex> lock(m_);
@@ -175,9 +186,14 @@ private:
         ~Active() { t_.active_.fetch_sub(1); }
         ScriptedTransport &t_;
     };
+    // A blocked leg takes a moment to unwind once the transport is aborted, so a run_n2_exchange that returned without waiting for it is caught every time
+    // (not only when the scheduler happens to be slow). The delay widens a window; no assertion depends on how long anything took.
     void hold(std::unique_lock<std::mutex> &lock)
     {
         cv_.wait(lock, [&] { return aborted_; });
+        lock.unlock();
+        std::this_thread::sleep_for(50ms);
+        lock.lock();
         throw_if_aborted();
     }
     void throw_if_aborted()
@@ -218,40 +234,37 @@ public:
     explicit StagedBackend(std::vector<std::uint8_t> &buffer) : buffer_(buffer) {}
     void stage_source_chunk(const tbccl::Chunk &chunk, void *staging) override
     {
-        if (fail_stage) throw tbccl::Error(tbccl::ErrorCode::DeviceError, "injected staging failure");
+        if (fail_stage || (fail_stage_last && chunk.offset + chunk.size == kBytes)) throw tbccl::Error(tbccl::ErrorCode::DeviceError, "injected staging failure");
         std::memcpy(staging, buffer_.data() + chunk.offset, chunk.size);
     }
     void commit_destination_chunk(const tbccl::Chunk &chunk, const void *staging) override
     {
-        if (fail_commit) throw tbccl::Error(tbccl::ErrorCode::DeviceError, "injected commit failure");
+        if (fail_commit || (fail_commit_last && chunk.offset + chunk.size == kBytes)) throw tbccl::Error(tbccl::ErrorCode::DeviceError, "injected commit failure");
         std::memcpy(buffer_.data() + chunk.offset, staging, chunk.size);
     }
-    bool fail_stage = false, fail_commit = false;
+    bool fail_stage = false, fail_commit = false;           // fail on the first chunk
+    bool fail_stage_last = false, fail_commit_last = false; // fail only on the final (partial) chunk, after earlier chunks succeeded
 
 private:
     std::vector<std::uint8_t> &buffer_;
 };
 
-constexpr std::size_t kBytes = 5 * 4096 + 17; // several chunks (and a partial last one) when TBCCL_STAGED_CHUNK_BYTES=4096
 
 struct Rig
 {
-    Rig(Script script, bool staged)
+    // `send_staged` / `recv_staged` choose the provider kind of each direction independently (a direct host buffer or memory that must be staged, like device
+    // memory); the mixed combinations are the heterogeneous case: one leg is chunked through a staging pool while the other is read or written in place.
+    Rig(Script script, bool send_staged, bool recv_staged)
         : transport(script), worker(2, tbccl::TensorCommWorker::kUnboundedAdmission, /*duplex=*/true), source(kBytes), dest(kBytes, 0)
     {
         for (std::size_t j = 0; j < kBytes; ++j) source[j] = pat(1, j);
-        if (staged)
-        {
-            staged_send = std::make_unique<StagedBackend>(source);
-            staged_recv = std::make_unique<StagedBackend>(dest);
-        }
-        else
-        {
-            direct_send = std::make_unique<DirectBackend>(source);
-            direct_recv = std::make_unique<DirectBackend>(dest);
-        }
+        if (send_staged) staged_send = std::make_unique<StagedBackend>(source);
+        else direct_send = std::make_unique<DirectBackend>(source);
+        if (recv_staged) staged_recv = std::make_unique<StagedBackend>(dest);
+        else direct_recv = std::make_unique<DirectBackend>(dest);
         transport.set_preload_seed(7);
     }
+    Rig(Script script, bool staged) : Rig(script, staged, staged) {}
     tbccl::AsyncMemoryBackend &send_backend() { return staged_send ? static_cast<tbccl::AsyncMemoryBackend &>(*staged_send) : *direct_send; }
     tbccl::AsyncMemoryBackend &recv_backend() { return staged_recv ? static_cast<tbccl::AsyncMemoryBackend &>(*staged_recv) : *direct_recv; }
     // What the communicator's abort does to the exchange's transfers: interrupt the worker's lanes and the transport.
@@ -264,11 +277,12 @@ struct Rig
         };
     }
     // Runs the exchange; returns the exception's code (Success when it returned normally) and text.
-    std::pair<tbccl::ErrorCode, std::string> run()
+    std::pair<tbccl::ErrorCode, std::string> run() { return run_with(fatal_callback()); }
+    std::pair<tbccl::ErrorCode, std::string> run_with(const std::function<void(const std::string &)> &fatal)
     {
         try
         {
-            tbccl::detail::run_n2_exchange(worker, transport, send_backend(), recv_backend(), kBytes, "all_gather", fatal_callback());
+            tbccl::detail::run_n2_exchange(worker, transport, send_backend(), recv_backend(), kBytes, "all_gather", fatal);
         }
         catch (const tbccl::Error &e)
         {
@@ -395,30 +409,72 @@ void both_fail(bool staged)
     rig.expect_quiescent();
 }
 
-void staged_source_copy_fails()
+// Failure inside a staged copy, with the other direction direct or staged. `last` fails only the final (partial) chunk, after earlier chunks went through.
+void staged_source_copy_fails(bool recv_staged, bool last)
 {
     Script s;
     s.rendezvous = false;
-    s.hold_recv = true;
-    Rig rig(s, true);
-    rig.staged_send->fail_stage = true;
+    s.hold_recv = true; // the receive is blocked in the transport until the failure aborts it
+    Rig rig(s, /*send_staged=*/true, recv_staged);
+    (last ? rig.staged_send->fail_stage_last : rig.staged_send->fail_stage) = true;
     const auto result = rig.run();
     expect_cause(result, tbccl::ErrorCode::DeviceError, "send");
     expect(rig.fatal_calls.load() == 1, "one abort");
     rig.expect_quiescent();
 }
 
-void staged_destination_commit_fails()
+void staged_destination_commit_fails(bool send_staged, bool last)
 {
     Script s;
     s.rendezvous = false;
     s.recv_preloaded = true;
     s.hold_send = true;
-    Rig rig(s, true);
-    rig.staged_recv->fail_commit = true;
+    Rig rig(s, send_staged, /*recv_staged=*/true);
+    (last ? rig.staged_recv->fail_commit_last : rig.staged_recv->fail_commit) = true;
     const auto result = rig.run();
     expect_cause(result, tbccl::ErrorCode::DeviceError, "recv");
     expect(rig.fatal_calls.load() == 1, "one abort");
+    rig.expect_quiescent();
+}
+
+// Every provider combination (direct/direct, staged/staged and the two mixed ones, i.e. one leg chunked and the other not) completes with the right bytes.
+void hetero_exchange_completes(bool send_staged, bool recv_staged)
+{
+    Rig rig(Script{}, send_staged, recv_staged);
+    const auto result = rig.run();
+    expect(result.first == tbccl::ErrorCode::Success, result.second);
+    expect(rig.dest_matches_source(), "contents (partial final chunk included)");
+    expect(rig.transport.rendezvous_timeouts() == 0, "no leg waited in vain");
+    rig.expect_quiescent();
+}
+
+// Phase 1B.5 guarantee through the exchange: a failed staged leg cancels and discards its pool, and the same worker (both lanes) serves a clean exchange afterwards.
+// Here the abort callback only counts, so the worker is NOT aborted and must recover by itself.
+void worker_recovers_after_staged_failure(bool fail_source)
+{
+    Script s;
+    s.rendezvous = false;
+    s.recv_preloaded = true; // the other leg completes on its own
+    Rig rig(s, /*send_staged=*/true, /*recv_staged=*/true);
+    if (fail_source) rig.staged_send->fail_stage_last = true;
+    else rig.staged_recv->fail_commit_last = true;
+    std::atomic<int> calls{0};
+    const auto count_only = [&](const std::string &) { calls.fetch_add(1); };
+    const auto first = rig.run_with(count_only);
+    expect(first.first == tbccl::ErrorCode::DeviceError, "the staged failure is the reported cause: " + first.second);
+    expect(calls.load() == 1, "the failure requests the abort once");
+    rig.expect_quiescent();
+    rig.staged_send->fail_stage_last = false;
+    rig.staged_recv->fail_commit_last = false;
+    Script clean;
+    clean.rendezvous = false;
+    clean.recv_preloaded = true;
+    rig.transport.reconfigure(clean);
+    std::fill(rig.dest.begin(), rig.dest.end(), 0);
+    const auto second = rig.run_with(count_only);
+    expect(second.first == tbccl::ErrorCode::Success, "the worker must serve a clean exchange after a staged failure: " + second.second);
+    expect(rig.dest_matches_preload(), "contents of the second exchange");
+    expect(calls.load() == 1, "the clean exchange must not abort");
     rig.expect_quiescent();
 }
 
@@ -498,8 +554,21 @@ int main()
         scenario(name("abort with both legs in flight").c_str(), [&] { abort_with_both_legs_in_flight(staged); });
         scenario(name("second admission fails after the first leg is in flight").c_str(), [&] { partial_admission(staged); });
     }
-    scenario("failure during the staged source copy", staged_source_copy_fails);
-    scenario("failure during the staged destination commit", staged_destination_commit_fails);
+    for (const bool send_staged : {false, true})
+        for (const bool recv_staged : {false, true})
+        {
+            const std::string tag = std::string(" (send ") + (send_staged ? "staged" : "direct") + ", recv " + (recv_staged ? "staged" : "direct") + ")";
+            scenario(("heterogeneous exchange completes" + tag).c_str(), [&] { hetero_exchange_completes(send_staged, recv_staged); });
+        }
+    for (const bool other_staged : {false, true})
+        for (const bool last : {false, true})
+        {
+            const std::string tag = std::string(other_staged ? " (other leg staged" : " (other leg direct") + (last ? ", final chunk)" : ", first chunk)");
+            scenario(("failure during the staged source copy" + tag).c_str(), [&] { staged_source_copy_fails(other_staged, last); });
+            scenario(("failure during the staged destination commit" + tag).c_str(), [&] { staged_destination_commit_fails(other_staged, last); });
+        }
+    scenario("worker recovers after a staged source failure (pool discarded)", [] { worker_recovers_after_staged_failure(true); });
+    scenario("worker recovers after a staged commit failure (pool discarded)", [] { worker_recovers_after_staged_failure(false); });
     scenario("300 repeated exchanges", repeated_exchanges_keep_both_lanes_usable);
     std::puts("n2_exchange_unit_test passed");
     return 0;
