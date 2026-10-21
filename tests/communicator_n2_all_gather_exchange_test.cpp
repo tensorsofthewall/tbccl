@@ -166,7 +166,13 @@ int main()
                 for (int i = 0; i < 2000; ++i) gather_and_check(comm, rank, 64 + static_cast<std::size_t>(i % 50), 1000 + static_cast<std::size_t>(i));
             });
             expect(open_fd_count() == fds_before, "file descriptors grew over repeated all_gathers");
-            if (threads_before >= 0) expect(thread_count() <= threads_before, "threads grew over repeated all_gathers");
+            if (threads_before >= 0)
+            {
+                // The test's own just-joined rank threads can still be listed for an instant while they exit; a real leak does not go away.
+                const auto settle = std::chrono::steady_clock::now() + 10s;
+                while (thread_count() > threads_before && std::chrono::steady_clock::now() < settle) std::this_thread::sleep_for(10ms);
+                expect(thread_count() <= threads_before, "threads grew over repeated all_gathers: " + std::to_string(threads_before) + " -> " + std::to_string(thread_count()));
+            }
             std::printf("resource stability ok\n");
         }
         {
