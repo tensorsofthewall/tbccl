@@ -70,7 +70,7 @@ if (work.has_error()) { /* work.error_code(), work.error() */ }
 |---|---|---|---|
 | `barrier()` | completes locally | descriptor exchange | reference below N=9; dissemination from N=9 |
 | `broadcast(buffer, root)` | no-op | specialised single transfer | binomial tree |
-| `all_gather(input, outputs)` | local copy | specialised pairwise exchange | ring |
+| `all_gather(input, outputs)` | local copy | concurrent pairwise exchange (send and receive in flight together) | ring |
 | `all_reduce(send, recv, count, dtype, op)` | local | specialised heterogeneous engine | recursive doubling, binomial tree or ring by size |
 
 `all_reduce` accepts `ReduceOp::Sum` of Float32, Float64, Int32, Int64 everywhere, Int8 and UInt8, and Float16 and BFloat16 only at world size 2. `broadcast` and `all_gather` are byte-generic. See [Collectives](../concepts/collectives.md), [Collective algorithms](collective-algorithms.md) and [Numerical semantics](numerical-semantics.md).
