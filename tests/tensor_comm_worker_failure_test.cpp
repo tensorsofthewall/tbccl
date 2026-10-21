@@ -174,8 +174,14 @@ private:
 std::uint8_t pattern(std::size_t request, std::size_t offset) { return static_cast<std::uint8_t>(request * 31 + offset * 7 + (offset >> 8) * 3 + 1); }
 
 // One scenario's behaviour. Chunk indices are counted per request.
+// Thrown by the fake transport when a scenario asks for an exception that is not a std::exception.
+struct OpaqueFailure
+{
+};
+
 struct Plan
 {
+    bool opaque = false;          // transport failures throw OpaqueFailure instead of tbccl::Error
     std::size_t request_id = 1;
     int fail_stage_at = -1;       // send: stage_source_chunk throws at this chunk index; recv: not used
     int fail_commit_at = -1;      // recv: commit_destination_chunk throws at this chunk index
@@ -237,6 +243,7 @@ public:
         const int index = static_cast<int>(send_calls_.value());
         send_calls_.add();
         if (plan_.hold_send && index == 0) plan_.hold_send->wait(30s);
+        if (index == plan_.fail_send_at && plan_.opaque) throw OpaqueFailure{};
         if (index == plan_.fail_send_at) throw tbccl::Error(tbccl::ErrorCode::TransportError, "injected send failure");
         const auto *p = static_cast<const std::uint8_t *>(data);
         std::lock_guard<std::mutex> lock(m_);
@@ -246,6 +253,7 @@ public:
     {
         const int index = static_cast<int>(recv_calls.value());
         recv_calls.add();
+        if (index == plan_.fail_recv_at && plan_.opaque) throw OpaqueFailure{};
         if (index == plan_.fail_recv_at) throw tbccl::Error(tbccl::ErrorCode::TransportError, "injected recv failure");
         auto *p = static_cast<std::uint8_t *>(data);
         const std::size_t offset = static_cast<std::size_t>(index) * kChunk;
@@ -320,14 +328,15 @@ bool let_other_stage_run(Counter &progress, std::size_t target, std::chrono::mil
 // --- scenarios --------------------------------------------------------------------------------------------------------------------------------------------------------------
 // Send. depth 2, 6 chunks: the staging stage fills both slots with chunks 0 and 1 and blocks in acquire() for chunk 2 while the network stage is inside send() of chunk 0.
 // send() of chunk 0 then fails; the failing network stage is stalled after `step`.
-void scenario_send_network_failure(const char *step)
+void scenario_send_network_failure(const char *step, bool opaque = false)
 {
-    g_scenario = std::string("send network failure, stalled after ") + step;
+    g_scenario = std::string(opaque ? "send network failure (not a std::exception), stalled after " : "send network failure, stalled after ") + step;
     Deadline deadline(40s);
     Plan plan;
     Gate hold_send;
     plan.hold_send = &hold_send;
     plan.fail_send_at = 0;
+    plan.opaque = opaque;
     FakeBackend backend(6 * kChunk, plan);
     FakeTransport transport(plan);
     tbccl::TensorCommWorker worker(2, 8);
@@ -344,7 +353,8 @@ void scenario_send_network_failure(const char *step)
     // Let the staging stage run on while the failing stage is stalled. Before the fix, it took the freed slot, published chunk 2 and blocked in acquire() for chunk 3.
     let_other_stage_run(backend.staged, 3, std::string(step) == "slot_released" ? 700ms : 100ms);
     g_probe.release.open();
-    check_failed(work, tbccl::ErrorCode::TransportError, "injected send failure");
+    if (opaque) check_failed(work, tbccl::ErrorCode::InternalError, "unknown exception");
+    else check_failed(work, tbccl::ErrorCode::TransportError, "injected send failure");
     worker.wait_idle();
     const auto stats = worker.stats();
     expect(stats.submitted == 1 && stats.failed == 1 && stats.completed == 0, "exactly one terminal completion, a failure");
@@ -385,6 +395,38 @@ void scenario_recv_staging_failure(const char *step)
     worker.wait_idle();
     const auto stats = worker.stats();
     expect(stats.submitted == 1 && stats.failed == 1 && stats.completed == 0, "exactly one terminal completion, a failure");
+    tbccl::detail::set_pipeline_failure_probe(nullptr);
+    g_probe.armed = false;
+    std::printf("PASS %s\n", g_scenario.c_str());
+}
+
+// Receive, failure in the network stage that is not a std::exception. The staging stage is waiting on the progress condition variable for chunk 0, which will never be
+// published: only the recorded failure (and its notification) can end it. The failing stage is stalled after `step`.
+void scenario_recv_network_unknown_exception(const char *step)
+{
+    g_scenario = std::string("recv network failure (not a std::exception), stalled after ") + step;
+    Deadline deadline(40s);
+    Plan plan;
+    plan.request_id = 5;
+    plan.fail_recv_at = 0;
+    plan.opaque = true;
+    FakeBackend backend(6 * kChunk, plan);
+    FakeTransport transport(plan);
+    tbccl::TensorCommWorker worker(2, 8);
+    g_probe.stage = "recv.network";
+    g_probe.step = step;
+    g_probe.hits = 0;
+    g_probe.armed = true;
+    tbccl::detail::set_pipeline_failure_probe(&probe_fn);
+    auto work = worker.enqueue(make_request(tbccl::TransferDirection::Recv, backend, transport, 6, 5));
+    expect(g_probe.reached.wait(10s), std::string("the failure transition never reached step ") + step);
+    std::this_thread::sleep_for(100ms); // the staging stage, if it can run at all, does so now
+    g_probe.release.open();
+    check_failed(work, tbccl::ErrorCode::InternalError, "unknown exception");
+    worker.wait_idle();
+    const auto stats = worker.stats();
+    expect(stats.submitted == 1 && stats.failed == 1 && stats.completed == 0, "exactly one terminal completion, a failure");
+    expect(backend.committed_calls.value() == 0, "nothing may be committed after the network stage failed on chunk 0");
     tbccl::detail::set_pipeline_failure_probe(nullptr);
     g_probe.armed = false;
     std::printf("PASS %s\n", g_scenario.c_str());
@@ -534,6 +576,8 @@ int main(int argc, char **argv)
     {
         if (wanted(std::string("send network failure, stalled after ") + step)) { scenario_send_network_failure(step); ++ran; }
         if (wanted(std::string("recv commit failure, stalled after ") + step)) { scenario_recv_staging_failure(step); ++ran; }
+        if (wanted(std::string("send network failure (not a std::exception), stalled after ") + step)) { scenario_send_network_failure(step, true); ++ran; }
+        if (wanted(std::string("recv network failure (not a std::exception), stalled after ") + step)) { scenario_recv_network_unknown_exception(step); ++ran; }
     }
 
     const Injection injections[] = {
@@ -541,6 +585,8 @@ int main(int argc, char **argv)
         {"send: source staging failure", tbccl::TransferDirection::Send, tbccl::ErrorCode::DeviceError, "injected staging failure", [](Plan &p, int at) { p.fail_stage_at = at; }},
         {"recv: transport failure", tbccl::TransferDirection::Recv, tbccl::ErrorCode::TransportError, "injected recv failure", [](Plan &p, int at) { p.fail_recv_at = at; }},
         {"recv: destination commit failure", tbccl::TransferDirection::Recv, tbccl::ErrorCode::DeviceError, "injected commit failure", [](Plan &p, int at) { p.fail_commit_at = at; }},
+        {"send: transport throws a non-std exception", tbccl::TransferDirection::Send, tbccl::ErrorCode::InternalError, "unknown exception", [](Plan &p, int at) { p.fail_send_at = at; p.opaque = true; }},
+        {"recv: transport throws a non-std exception", tbccl::TransferDirection::Recv, tbccl::ErrorCode::InternalError, "unknown exception", [](Plan &p, int at) { p.fail_recv_at = at; p.opaque = true; }},
     };
     for (const auto &inj : injections)
         for (std::size_t depth : {1u, 2u, 4u})
