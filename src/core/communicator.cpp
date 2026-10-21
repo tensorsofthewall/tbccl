@@ -849,6 +849,8 @@ void run_transfer(
 //  * If a child fails, `fatal` is invoked at once (the failed exchange has desynchronised the collective sequence anyway) so the other child is interrupted instead of
 //    waiting for a peer that may never answer; then both are waited for. The send is polled while the receive blocks, so a send failure is noticed without waiting for the receive.
 //  * The reported error is the first cause observed; an Aborted that is only the consequence of the abort we triggered never replaces it.
+//  * `fatal` runs on the collective executor thread, so it must be the non-blocking abort request (Impl::request_abort through fatal_cb). Communicator::abort() waits for the
+//    executor to go idle and would wait for this very job. A throwing `fatal` is swallowed: the legs are still waited for, and the exchange's own error is what propagates.
 void run_exchange(
     TensorCommWorker &worker,
     Transport &transport,
@@ -856,8 +858,17 @@ void run_exchange(
     AsyncMemoryBackend &recv_backend,
     std::size_t bytes,
     const char *what,
-    const std::function<void(const std::string &)> &fatal)
+    const std::function<void(const std::string &)> &request_abort)
 {
+    const auto fatal = [&](const std::string &why) {
+        try
+        {
+            request_abort(why);
+        }
+        catch (...)
+        {
+        }
+    };
     const auto make_request = [&](TransferDirection direction, AsyncMemoryBackend &backend) {
         TransferRequest request;
         request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
