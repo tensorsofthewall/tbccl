@@ -18,6 +18,7 @@ contributing
 where-should-this-change-go
 code-map
 testing
+staged-transfer-cancellation
 benchmark-methodology
 benchmark-suite
 benchmark-suite-inventory

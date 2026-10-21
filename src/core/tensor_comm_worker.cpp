@@ -1,4 +1,5 @@
 #include "../transport/latency_trace.hpp"
+#include "tensor_comm_worker_probe.hpp"
 #include <stdexcept>
 #include <tbccl/async_transfer.hpp>
 #include <tbccl/error.hpp>
@@ -212,7 +213,7 @@ namespace
         std::string error_message;
     };
 
-    void mark_failed(ChunkProgress &progress, const std::exception &error)
+    void mark_failed(ChunkProgress &progress, const std::exception &error) noexcept
     {
         {
             std::lock_guard<std::mutex> lock(progress.mutex);
@@ -220,10 +221,79 @@ namespace
             {
                 progress.failed = true;
                 progress.error_code = error_code_of(error);
-                progress.error_message = error.what();
+                try
+                {
+                    progress.error_message = error.what();
+                }
+                catch (...)
+                {
+                    progress.error_message.clear(); // out of memory: the failure is still recorded, only its text is lost
+                }
             }
         }
         progress.cv.notify_all();
+    }
+
+    // Records a failure whose cause is not a std::exception (nothing is constructed or thrown, so it cannot fail for lack of memory): the failure is always published and
+    // progress.cv is always notified; only the text may be lost if even a short string cannot be allocated.
+    void mark_failed_unknown(ChunkProgress &progress, const char *message) noexcept
+    {
+        {
+            std::lock_guard<std::mutex> lock(progress.mutex);
+            if (!progress.failed)
+            {
+                progress.failed = true;
+                progress.error_code = ErrorCode::InternalError;
+                try
+                {
+                    progress.error_message = message;
+                }
+                catch (...)
+                {
+                    progress.error_message.clear();
+                }
+            }
+        }
+        progress.cv.notify_all();
+    }
+
+    constexpr std::size_t kNoSlot = static_cast<std::size_t>(-1);
+
+    // The single failure transition of a staged transfer, used by every stage at every failure site. A stage that cannot continue must not leave the other stage
+    // asleep, and a slot must not be handed back to a pool that is still active, because the other stage could then take it, publish a chunk nobody will consume and
+    // block again in StagingPool::acquire() with every slot occupied (the lane would never become idle).
+    //   1. the first error is recorded and progress.cv is notified (wakes a stage waiting for a chunk); later errors, including the cancellation a woken stage sees,
+    //      never replace it;
+    //   2. the pool is cancelled, which wakes every thread blocked in acquire() and makes any later acquire() fail;
+    //   3. only then does the failing stage give back the slot it owns (release() does not undo the cancellation).
+    // Each step takes and drops its own lock (the progress mutex and the pool mutex are never held together), and no backend or transport call is made here.
+    // Nothing here may throw: if the transition were abandoned half way (for example by an exception from a probe or an allocation), the other stage could stay
+    // asleep and the request-local state it refers to would be left behind. Each step is therefore attempted on its own, and the steps that matter (cancel, release)
+    // are noexcept or guarded. `record` performs step 1.
+    template <typename Record>
+    void run_failure_transition(const char *stage, StagingPool &pool, std::size_t owned_slot, Record record) noexcept
+    {
+        try { detail::pipeline_failure_probe(stage, "begin"); } catch (...) {}
+        record();
+        try { detail::pipeline_failure_probe(stage, "recorded"); } catch (...) {}
+        pool.cancel();
+        try { detail::pipeline_failure_probe(stage, "cancelled"); } catch (...) {}
+        if (owned_slot != kNoSlot)
+        {
+            try { pool.release(owned_slot); } catch (...) {}
+            try { detail::pipeline_failure_probe(stage, "slot_released"); } catch (...) {}
+        }
+    }
+
+    void fail_transfer(const char *stage, ChunkProgress &progress, StagingPool &pool, const std::exception &error, std::size_t owned_slot = kNoSlot) noexcept
+    {
+        run_failure_transition(stage, pool, owned_slot, [&]() noexcept { mark_failed(progress, error); });
+    }
+
+    // The same transition for an exception that is not a std::exception: no exception object is built to describe it.
+    void fail_transfer_unknown(const char *stage, ChunkProgress &progress, StagingPool &pool, const char *message) noexcept
+    {
+        run_failure_transition(stage, pool, kNoSlot, [&]() noexcept { mark_failed_unknown(progress, message); });
     }
 
     // Staging thread's role for a Send request: acquire a slot, ask the
@@ -251,7 +321,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                mark_failed(progress, error);
+                fail_transfer("send.staging", progress, pool, error);
                 return;
             }
 
@@ -267,8 +337,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("send.staging", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -278,15 +347,21 @@ namespace
                     i, static_cast<unsigned long long>(request.transfer_id), now_us());
             }
 
+            bool already_failed;
             {
                 std::lock_guard<std::mutex> lock(progress.mutex);
-                if (progress.failed)
+                already_failed = progress.failed;
+                if (!already_failed)
                 {
-                    pool.release(slot);
-                    return;
+                    progress.slot_for[i] = slot;
+                    progress.ready_count = i + 1;
                 }
-                progress.slot_for[i] = slot;
-                progress.ready_count = i + 1;
+            }
+            if (already_failed)
+            {
+                // the pool is released outside the progress mutex: the two locks are never held together
+                pool.release(slot);
+                return;
             }
             progress.cv.notify_all();
         }
@@ -328,8 +403,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("send.network", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -361,7 +435,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                mark_failed(progress, error);
+                fail_transfer("recv.network", progress, pool, error);
                 return;
             }
 
@@ -377,8 +451,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("recv.network", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -388,15 +461,21 @@ namespace
                     i, static_cast<unsigned long long>(request.transfer_id), now_us());
             }
 
+            bool already_failed;
             {
                 std::lock_guard<std::mutex> lock(progress.mutex);
-                if (progress.failed)
+                already_failed = progress.failed;
+                if (!already_failed)
                 {
-                    pool.release(slot);
-                    return;
+                    progress.slot_for[i] = slot;
+                    progress.ready_count = i + 1;
                 }
-                progress.slot_for[i] = slot;
-                progress.ready_count = i + 1;
+            }
+            if (already_failed)
+            {
+                // the pool is released outside the progress mutex: the two locks are never held together
+                pool.release(slot);
+                return;
             }
             progress.cv.notify_all();
         }
@@ -439,8 +518,7 @@ namespace
             }
             catch (const std::exception &error)
             {
-                pool.release(slot);
-                mark_failed(progress, error);
+                fail_transfer("recv.staging", progress, pool, error, slot);
                 return;
             }
             if (timing)
@@ -859,7 +937,7 @@ struct TensorCommWorker::Impl
             const std::size_t depth =
                 std::max<std::size_t>(1, std::min(pipeline_depth, chunks.size()));
 
-            if (!cached_pool || cached_chunk_capacity != chunk_capacity || cached_depth != depth)
+            if (!cached_pool || cached_pool->cancelled() || cached_chunk_capacity != chunk_capacity || cached_depth != depth)
             {
                 cached_pool = std::make_unique<StagingPool>(chunk_capacity, depth);
                 cached_chunk_capacity = chunk_capacity;
@@ -869,23 +947,44 @@ struct TensorCommWorker::Impl
             ChunkProgress progress(chunks.size());
             ensure_staging_thread();
 
-            if (request.direction == TransferDirection::Send)
+            const bool is_send = request.direction == TransferDirection::Send;
+            if (is_send)
             {
                 submit_job(
                     [&]() { staging_produce_send(request, chunks, pool, progress); });
-                network_consume_send(request, chunks, pool, progress);
-                wait_job();
             }
             else
             {
                 submit_job(
                     [&]() { staging_consume_recv(request, chunks, pool, progress); });
-                network_produce_recv(request, chunks, pool, progress);
-                wait_job();
             }
+            // The staging job refers to `chunks`, `pool` and `progress`, so wait_job() must run on every path once it is submitted. The network stage reports its own
+            // transport/backend failures through fail_transfer(); an exception that escapes it is turned into the same failure so that the staging stage stops.
+            try
+            {
+                if (is_send)
+                {
+                    network_consume_send(request, chunks, pool, progress);
+                }
+                else
+                {
+                    network_produce_recv(request, chunks, pool, progress);
+                }
+            }
+            catch (const std::exception &error)
+            {
+                fail_transfer(is_send ? "send.network" : "recv.network", progress, pool, error);
+            }
+            catch (...)
+            {
+                fail_transfer_unknown(is_send ? "send.network" : "recv.network", progress, pool, "unknown exception in the network stage");
+            }
+            wait_job();
 
             if (progress.failed)
             {
+                // Both stages have returned (wait_job), so nothing references the cancelled pool: discard it. It is never reused or reset; the next request builds a fresh one.
+                cached_pool.reset();
                 const bool was_aborted = aborted.load();
                 fatal(progress.error_message);
                 retire(request.direction);
