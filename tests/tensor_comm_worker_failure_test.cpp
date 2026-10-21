@@ -400,9 +400,22 @@ struct Injection
     std::function<void(Plan &, int)> set;
 };
 
-void scenario_injection(const Injection &inj, std::size_t depth, int at, std::size_t chunks)
+// A probe that throws at one step of the failure transition (every stage). The transition must survive it: the request still ends, with the original error, and the next request works.
+const char *g_throw_step = nullptr;
+void throwing_probe(const char *, const char *step)
+{
+    if (g_throw_step != nullptr && std::strcmp(step, g_throw_step) == 0) throw std::runtime_error("injected exception inside the failure transition");
+}
+
+void scenario_injection(const Injection &inj, std::size_t depth, int at, std::size_t chunks, const char *throw_at_step = nullptr)
 {
     g_scenario = std::string(inj.name) + " at chunk " + std::to_string(at) + " of " + std::to_string(chunks) + ", depth " + std::to_string(depth);
+    if (throw_at_step != nullptr)
+    {
+        g_scenario += std::string(", exception thrown inside the transition at ") + throw_at_step;
+        g_throw_step = throw_at_step;
+        tbccl::detail::set_pipeline_failure_probe(&throwing_probe);
+    }
     Deadline deadline(40s);
     Plan plan;
     plan.request_id = 3;
@@ -415,6 +428,11 @@ void scenario_injection(const Injection &inj, std::size_t depth, int at, std::si
     worker.wait_idle();
     auto stats = worker.stats();
     expect(stats.submitted == 1 && stats.failed == 1 && stats.completed == 0, "exactly one terminal completion, a failure");
+    if (throw_at_step != nullptr)
+    {
+        tbccl::detail::set_pipeline_failure_probe(nullptr);
+        g_throw_step = nullptr;
+    }
 
     // an unrelated request after the failure: same geometry, no failure, data intact (a cancelled pool must not be reused)
     Plan good;
@@ -531,6 +549,13 @@ int main(int argc, char **argv)
                 const std::string name = std::string(inj.name) + " at chunk " + std::to_string(at) + " of 6, depth " + std::to_string(depth);
                 if (wanted(name)) { scenario_injection(inj, depth, at, 6); ++ran; }
             }
+
+    for (const auto &inj : injections)
+        for (const char *step : steps)
+        {
+            const std::string name = std::string(inj.name) + " at chunk 3 of 6, depth 2, exception thrown inside the transition at " + step;
+            if (wanted(name)) { scenario_injection(inj, 2, 3, 6, step); ++ran; }
+        }
 
     for (auto dir : {tbccl::TransferDirection::Send, tbccl::TransferDirection::Recv})
         for (std::size_t depth : {1u, 2u, 3u})
