@@ -16,6 +16,7 @@
 #include "nrank_collectives.hpp"
 #include "trace.hpp"
 #include "reduction_internal.hpp"
+#include "subrange_backend.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -23,6 +24,8 @@
 #include <functional>
 #include <new>
 #include <condition_variable>
+#include <cstdio>
+#include <numeric>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -613,6 +616,30 @@ std::size_t staged_chunk_setting()
     static const std::size_t configured = parse_staged_chunk_bytes(); // a failed initialisation is retried, so every creation reports the same error
     return configured;
 }
+
+// TBCCL_ALLREDUCE_PIPELINE_BYTES=<n> (experimental, opt-in; unset, empty or 0 = the sequential two-rank all_reduce): reduce-to-root and broadcast-back overlap in chunks of about n bytes.
+// Validated like TBCCL_STAGED_CHUNK_BYTES. A purely local scheduling choice: the bytes on each direction are identical and neither schedule waits for the peer's, so ranks may differ.
+std::size_t parse_allreduce_pipeline_bytes()
+{
+    const char *text = std::getenv("TBCCL_ALLREDUCE_PIPELINE_BYTES");
+    if (!text || !*text) return 0;
+    const std::string v(text);
+    auto invalid = [&](const char *why) {
+        return Error(ErrorCode::InvalidArgument, std::string("invalid_argument: TBCCL_ALLREDUCE_PIPELINE_BYTES='") + v + "' " + why);
+    };
+    if (v.find_first_not_of("0123456789") != std::string::npos) throw invalid("is not a non-negative decimal byte count");
+    errno = 0;
+    const unsigned long long n = std::strtoull(v.c_str(), nullptr, 10);
+    if (errno == ERANGE || n > std::numeric_limits<std::size_t>::max()) throw invalid("is too large");
+    if (n != 0 && n < kMinStagedChunkBytes) throw invalid("is below the 4096 byte minimum (use 0 for the sequential all_reduce)");
+    return static_cast<std::size_t>(n);
+}
+
+std::size_t allreduce_pipeline_setting()
+{
+    static const std::size_t configured = parse_allreduce_pipeline_bytes();
+    return configured;
+}
 } // namespace
 
 std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &options)
@@ -638,6 +665,7 @@ std::unique_ptr<Communicator> Communicator::create(const CommunicatorOptions &op
     impl.trace = detail::Trace(boot.communicator_id.prefix(), boot.rank, boot.world_size);
     impl.overrides = detail::planner_overrides_from_environment();
     staged_chunk_setting(); // reject an invalid TBCCL_STAGED_CHUNK_BYTES at creation
+    allreduce_pipeline_setting();
     impl.fatal_cb = [&impl](const std::string &why) { impl.request_abort(why); };
     impl.collective_executor = std::make_unique<CollectiveExecutor>();
     impl.mesh->set_fatal_handler([&impl](const std::string &m) { impl.request_abort(m); });
@@ -838,6 +866,62 @@ void run_transfer(
     if (work.has_error()) throw Error(work.error_code(), std::string("transport_error: ") + what + ": " + work.error());
 }
 
+// Aborting an N=2 exchange (run_exchange, the all_reduce pipeline) cannot throw and cannot leave a leg blocked, and it happens at most once per exchange. It asks the
+// communicator to abort (`request_abort`, which runs on the collective executor thread and so must be the non-blocking request: Communicator::abort() waits for the
+// executor and would wait for this very job). Building the reason string allocates and the request may throw; if either fails, the legs are interrupted directly: the
+// transport is aborted (blocked I/O returns, and the network stage then cancels its staging pool as in any failure) and the worker's lanes are aborted. Both direct
+// calls use an empty reason, which needs no allocation. `chunk` names the failing leg of a chunked exchange (npos = unchunked).
+class ExchangeAbort
+{
+public:
+    static constexpr std::size_t kNoChunk = static_cast<std::size_t>(-1);
+
+    ExchangeAbort(TensorCommWorker &worker, Transport &transport, const char *what, const std::function<void(const std::string &)> &request_abort)
+        : worker_(worker), transport_(transport), what_(what), request_abort_(request_abort)
+    {
+    }
+
+    void operator()(const char *which, const TransferWork *failed, std::size_t chunk = kNoChunk) noexcept
+    {
+        if (done_) return;
+        done_ = true;
+        try
+        {
+            if (detail::g_n2_exchange_fail_abort_message.load(std::memory_order_relaxed) > 0 && detail::g_n2_exchange_fail_abort_message.fetch_sub(1) > 0) throw std::bad_alloc(); // test hook
+            std::string leg = which;
+            if (chunk != kNoChunk) leg += " chunk " + std::to_string(chunk);
+            const std::string why = failed ? std::string("transport_error: ") + what_ + " " + leg + ": " + failed->error() : std::string(what_) + ": " + leg;
+            request_abort_(why);
+            return;
+        }
+        catch (...)
+        {
+            // The request did not go through (it may have been interrupted half way): interrupt the legs ourselves.
+        }
+        try
+        {
+            transport_.abort(std::string());
+        }
+        catch (...)
+        {
+        }
+        try
+        {
+            worker_.abort(std::string());
+        }
+        catch (...)
+        {
+        }
+    }
+
+private:
+    TensorCommWorker &worker_;
+    Transport &transport_;
+    const char *what_;
+    const std::function<void(const std::string &)> &request_abort_;
+    bool done_ = false;
+};
+
 // The N=2 all_gather exchange: both directions are in flight at once, each on its own duplex lane of the collective worker (shared_lane stays false, so a receive
 // that is waiting for the peer never sits in front of the send). The rank-dependent send-then-receive order this replaces made every rank's second leg wait for its
 // first. Admission never waits (the collective worker's queues are unbounded), so posting both before waiting for either cannot deadlock for any payload size; the
@@ -849,10 +933,7 @@ void run_transfer(
 //  * If a leg fails, the exchange is aborted at once so the other leg is interrupted instead of waiting for a peer that may never answer; then both are waited for.
 //    The send is polled while the receive blocks, so a send failure is noticed without waiting for the receive.
 //  * The reported error is the first cause observed; an Aborted that only results from the abort we triggered never replaces it.
-//  * Aborting the exchange (abort_exchange) cannot throw and cannot leave a leg blocked. It asks the communicator to abort (`request_abort`, which runs on the collective
-//    executor thread and so must be the non-blocking request: Communicator::abort() waits for the executor and would wait for this very job). Building the reason
-//    string allocates and the request may throw; if either fails, the legs are interrupted directly instead: the transport is aborted (blocked I/O returns, and the
-//    network stage then cancels its staging pool as in any failure) and the worker's lanes are aborted. Both direct calls use an empty reason, which needs no allocation.
+//  * Aborting the exchange (ExchangeAbort above) cannot throw and cannot leave a leg blocked.
 //  * Anything else that throws between the first admission and the final waits (including formatting the final error) is caught: the exchange is aborted, every
 //    admitted leg is waited for, and the exception continues.
 void run_exchange(
@@ -880,36 +961,7 @@ void run_exchange(
     std::optional<TransferWork> recv_work;
     std::uint64_t recv_child = 0;
 
-    bool aborted_by_us = false;
-    const auto abort_exchange = [&](const char *which, const TransferWork *failed) noexcept {
-        if (aborted_by_us) return;
-        aborted_by_us = true;
-        try
-        {
-            if (detail::g_n2_exchange_fail_abort_message.load(std::memory_order_relaxed) > 0 && detail::g_n2_exchange_fail_abort_message.fetch_sub(1) > 0) throw std::bad_alloc(); // test hook
-            const std::string why = failed ? std::string("transport_error: ") + what + " " + which + ": " + failed->error() : std::string(what) + ": " + which;
-            request_abort(why);
-            return;
-        }
-        catch (...)
-        {
-            // The request did not go through (it may have been interrupted half way): interrupt the legs ourselves.
-        }
-        try
-        {
-            transport.abort(std::string());
-        }
-        catch (...)
-        {
-        }
-        try
-        {
-            worker.abort(std::string());
-        }
-        catch (...)
-        {
-        }
-    };
+    ExchangeAbort abort_exchange(worker, transport, what, request_abort);
     const auto wait_for_legs = [&]() noexcept {
         send_work.wait();
         if (recv_work) recv_work->wait();
@@ -965,6 +1017,216 @@ void run_exchange(
     }
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+// The chunk-pipelined two-rank all_reduce (opt-in: TBCCL_ALLREDUCE_PIPELINE_BYTES).
+//
+// The sequential schedule receives the whole contribution, reduces it, then sends the whole result, and the non-root sends everything before it receives anything, so the
+// two directions of the link are never busy together and the reduction sits between them. The payload is cut into chunks (a whole number of elements each) and each rank
+// keeps one direction fully admitted and releases the other chunk by chunk:
+//   root:      all receives of the contribution (into scratch) are admitted up front; the executor waits for chunk k, reduces exactly that range, then admits the send of
+//              the result of chunk k, while chunks k+1.. are still arriving.
+//   non-root:  all sends of its input are admitted up front; the executor waits for send k to finish, then admits the receive of the result of chunk k into the same range
+//              (in place).
+// Per direction the bytes on the wire are the same, in the same order, as in the sequential schedule.
+//
+//  * The receive lane never waits for a reduction or for the send lane, and the executor never waits for a send before the last chunk (root), so neither schedule can be
+//    blocked by the other rank's: a peer that sends everything before it receives (the sequential non-root) just fills the root's socket buffers while the root keeps
+//    receiving, and a peer that receives everything before it sends (the sequential root) is not waited for by anything that precedes this rank's own send. No
+//    negotiation is needed, and the ranks may use different schedules and chunk sizes.
+//  * A result range is posted only after the matching contribution range was received and reduced (D1).
+//  * In place, the receive of a range is not even admitted until the send that reads that range has finished (D2). This is this rank's own ordering, visible to the
+//    program (and to a race detector), and does not rely on the peer returning bytes only after it has received them.
+//  * Failure policy is the exchange's: the first failure aborts the communicator with the non-blocking request (ExchangeAbort), then every admitted chunk is waited for
+//    before the job returns or throws, whatever threw (D3, D5). Error choice: a cause (anything but Aborted) outranks an Aborted; receives are considered first.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+// The pipeline chunk size for this payload, or 0 when the sequential algorithm applies: not enabled, nothing to reduce, a buffer larger than count * element_size (the
+// sequential schedule moves the whole buffer but reduces only `count` elements; keep that byte-identical), or a payload under 256 KiB (few chunks overlap too little to
+// pay for the extra requests: measured neutral to slower below that). `setting` is the largest chunk; a smaller payload gets smaller chunks, an eighth of it but not below
+// 32 KiB, so every pipelined payload has at least eight chunks, and at most 16384 chunks however small the setting. Chunks are whole multiples of lcm(element size, 64) bytes, so a reduction chunk never splits an element; a transport chunk hint
+// (staged memory) is independent of this.
+constexpr std::size_t kMinAutoPipelineChunk = 32768;
+constexpr std::size_t kMinPipelineBytes = 262144;
+constexpr std::size_t kMaxPipelineChunks = 16384; // bounds the per-call request state (about 0.5 KB per chunk) however small the setting
+std::size_t pipeline_chunk_bytes(std::size_t setting, std::size_t total_bytes, std::size_t count, DataType datatype)
+{
+    if (setting == 0 || count == 0 || total_bytes < kMinPipelineBytes) return 0;
+    const std::size_t element = datatype_size(datatype);
+    if (element == 0 || count > std::numeric_limits<std::size_t>::max() / element || count * element != total_bytes) return 0;
+    const std::size_t unit = std::lcm(element, std::size_t{64});
+    const std::size_t wanted = std::min(setting, std::max(kMinAutoPipelineChunk, total_bytes / 8));
+    const std::size_t fewest = ((total_bytes + kMaxPipelineChunks - 1) / kMaxPipelineChunks + unit - 1) / unit * unit; // ceil(total / max chunks), up to the unit
+    return std::max({unit, wanted / unit * unit, fewest});
+}
+
+bool allreduce_timing_enabled()
+{
+    static const bool enabled = std::getenv("TBCCL_ALLREDUCE_TIMING") != nullptr;
+    return enabled;
+}
+
+// Runs one rank of the pipelined all_reduce. `root`: receive into `recv_base` (scratch), reduce each chunk with `reduce_chunk`, send the result from `send_base`.
+// Non-root: send from `send_base`, receive the result into `recv_base` (the same backend, in place); `reduce_chunk` is unused.
+void run_all_reduce_pipeline(
+    TensorCommWorker &worker,
+    Transport &transport,
+    bool root,
+    AsyncMemoryBackend &recv_base,
+    AsyncMemoryBackend &send_base,
+    std::size_t total_bytes,
+    std::size_t chunk_bytes,
+    std::size_t element_size,
+    const std::function<void(std::size_t byte_offset, std::size_t elements)> &reduce_chunk,
+    const char *what,
+    const std::function<void(const std::string &)> &request_abort)
+{
+    using Clock = std::chrono::steady_clock;
+    const bool timing = allreduce_timing_enabled();
+    const auto started = Clock::now();
+    const auto us_since = [](Clock::time_point t) { return std::chrono::duration<double, std::micro>(Clock::now() - t).count(); };
+    double wait_first_us = 0, reduce_us = 0;
+    std::optional<Clock::time_point> first_second_posted, last_first_done;
+
+    const std::size_t chunks = (total_bytes + chunk_bytes - 1) / chunk_bytes;
+    std::vector<std::unique_ptr<detail::SubRangeBackend>> recv_ranges, send_ranges; // a request keeps a pointer to its backend: they live until the function returns
+    std::vector<TransferWork> recvs, sends;
+    recv_ranges.reserve(chunks);
+    send_ranges.reserve(chunks);
+    recvs.reserve(chunks);
+    sends.reserve(chunks);
+
+    const auto offset_of = [&](std::size_t k) { return k * chunk_bytes; };
+    const auto length_of = [&](std::size_t k) { return std::min(chunk_bytes, total_bytes - offset_of(k)); };
+    const auto admit_recv = [&](std::size_t k) {
+        if (detail::g_n2_pipeline_fail_admission.load(std::memory_order_relaxed) > 0 && detail::g_n2_pipeline_fail_admission.fetch_sub(1) == 1) throw std::bad_alloc(); // test hook
+        recv_ranges.push_back(std::make_unique<detail::SubRangeBackend>(recv_base, offset_of(k), length_of(k)));
+        TransferRequest request;
+        request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
+        request.direction = TransferDirection::Recv;
+        request.backend = recv_ranges.back().get();
+        request.transport = &transport;
+        request.total_bytes = length_of(k);
+        request.chunk_hint = staged_chunk_hint(*recv_ranges.back());
+        request.shared_lane = false; // duplex: a receive that waits for the peer must not sit in front of a send
+        recvs.push_back(worker.enqueue(request));
+    };
+    const auto admit_send = [&](std::size_t k) {
+        if (detail::g_n2_pipeline_fail_admission.load(std::memory_order_relaxed) > 0 && detail::g_n2_pipeline_fail_admission.fetch_sub(1) == 1) throw std::bad_alloc(); // test hook
+        send_ranges.push_back(std::make_unique<detail::SubRangeBackend>(send_base, offset_of(k), length_of(k)));
+        TransferRequest request;
+        request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
+        request.direction = TransferDirection::Send;
+        request.backend = send_ranges.back().get();
+        request.transport = &transport;
+        request.total_bytes = length_of(k);
+        request.chunk_hint = staged_chunk_hint(*send_ranges.back());
+        request.shared_lane = false;
+        sends.push_back(worker.enqueue(request));
+    };
+    // The direction admitted up front, and the one released chunk by chunk (root: receive then send; non-root: send then receive).
+    auto &firsts = root ? recvs : sends;
+    auto &seconds = root ? sends : recvs;
+    const char *first_name = root ? "recv" : "send", *second_name = root ? "send" : "recv";
+
+    ExchangeAbort abort_exchange(worker, transport, what, request_abort);
+    const auto wait_for_legs = [&]() noexcept {
+        for (auto &w : sends) w.wait();
+        for (auto &w : recvs) w.wait();
+    };
+
+    try
+    {
+        // A chunk that cannot be admitted leaves the peer waiting for the missing chunks: the guard below aborts the exchange and waits for the admitted ones.
+        for (std::size_t k = 0; k < chunks; ++k)
+        {
+            if (root) admit_recv(k);
+            else admit_send(k);
+        }
+        if (detail::g_n2_exchange_fail_after_admission.load(std::memory_order_relaxed) > 0 && detail::g_n2_exchange_fail_after_admission.fetch_sub(1) > 0) throw std::bad_alloc(); // test hook
+
+        std::size_t seconds_seen = 0; // the released direction finishes in FIFO order: only the oldest unfinished one needs checking
+        bool failed = false;
+        const auto poll_seconds = [&] {
+            while (seconds_seen < seconds.size() && seconds[seconds_seen].is_completed())
+            {
+                if (seconds[seconds_seen].has_error())
+                {
+                    abort_exchange(second_name, &seconds[seconds_seen], seconds_seen);
+                    failed = true;
+                }
+                ++seconds_seen;
+            }
+        };
+        for (std::size_t k = 0; k < chunks && !failed; ++k)
+        {
+            const auto wait_start = timing ? Clock::now() : Clock::time_point{};
+            while (!firsts[k].wait_for(std::chrono::milliseconds(20))) poll_seconds();
+            if (timing)
+            {
+                wait_first_us += us_since(wait_start);
+                last_first_done = Clock::now();
+            }
+            if (firsts[k].has_error())
+            {
+                abort_exchange(first_name, &firsts[k], k);
+                failed = true;
+                break;
+            }
+            poll_seconds();
+            if (failed) break;
+            if (root)
+            {
+                const auto reduce_start = timing ? Clock::now() : Clock::time_point{};
+                reduce_chunk(offset_of(k), length_of(k) / element_size); // a throw is handled by the guard below: abort, wait for every admitted chunk, rethrow
+                if (timing) reduce_us += us_since(reduce_start);
+            }
+            if (timing && !first_second_posted) first_second_posted = Clock::now();
+            if (root) admit_send(k); // a throw here: the guard below
+            else admit_recv(k);
+        }
+        wait_for_legs();
+
+        // Cause over consequence: the first leg (receives, then sends) whose error is not an Aborted wins; an Aborted is reported only if nothing else failed.
+        const TransferWork *chosen = nullptr;
+        const char *chosen_leg = "";
+        std::size_t chosen_chunk = 0;
+        const auto consider = [&](std::vector<TransferWork> &works, const char *leg) {
+            for (std::size_t k = 0; k < works.size(); ++k)
+            {
+                if (!works[k].has_error()) continue;
+                if (!chosen || (chosen->error_code() == ErrorCode::Aborted && works[k].error_code() != ErrorCode::Aborted))
+                {
+                    chosen = &works[k];
+                    chosen_leg = leg;
+                    chosen_chunk = k;
+                }
+            }
+        };
+        consider(recvs, "recv");
+        consider(sends, "send");
+        if (!chosen)
+        {
+            if (timing)
+            {
+                const double tail = last_first_done ? std::chrono::duration<double, std::micro>(Clock::now() - *last_first_done).count() : 0.0;
+                const double overlap = first_second_posted && last_first_done && *last_first_done > *first_second_posted ? std::chrono::duration<double, std::micro>(*last_first_done - *first_second_posted).count() : 0.0;
+                std::fprintf(stderr,
+                             "[tbccl_allreduce_timing] role=%s-pipelined bytes=%zu chunks=%zu chunk_bytes=%zu wait_%s_us=%.1f reduce_us=%.1f %s_overlaps_%s_us=%.1f tail_after_last_%s_us=%.1f total_us=%.1f\n",
+                             root ? "root" : "non-root", total_bytes, chunks, chunk_bytes, first_name, wait_first_us, reduce_us, second_name, first_name, overlap, first_name, tail, us_since(started));
+            }
+            return;
+        }
+        abort_exchange(chosen_leg, chosen, chosen_chunk); // a failure first seen only now (everything finished) still aborts the communicator
+        throw Error(chosen->error_code(), std::string("transport_error: ") + what + " " + chosen_leg + " chunk " + std::to_string(chosen_chunk) + ": " + chosen->error());
+    }
+    catch (...)
+    {
+        abort_exchange("exchange failed", nullptr);
+        wait_for_legs();
+        throw;
+    }
+}
 } // namespace
 
 namespace detail
@@ -974,6 +1236,18 @@ void run_n2_exchange(
     const std::function<void(const std::string &)> &fatal)
 {
     run_exchange(worker, transport, send_backend, recv_backend, bytes, what, fatal);
+}
+
+std::size_t n2_pipeline_chunk_bytes(std::size_t setting, std::size_t total_bytes, std::size_t count, DataType datatype)
+{
+    return pipeline_chunk_bytes(setting, total_bytes, count, datatype);
+}
+
+void run_n2_all_reduce_pipeline(
+    TensorCommWorker &worker, Transport &transport, bool root, AsyncMemoryBackend &recv_base, AsyncMemoryBackend &send_base, std::size_t total_bytes, std::size_t chunk_bytes,
+    std::size_t element_size, const std::function<void(std::size_t, std::size_t)> &reduce_chunk, const char *what, const std::function<void(const std::string &)> &fatal)
+{
+    run_all_reduce_pipeline(worker, transport, root, recv_base, send_base, total_bytes, chunk_bytes, element_size, reduce_chunk, what, fatal);
 }
 } // namespace detail
 
@@ -1051,6 +1325,33 @@ Work Communicator::all_reduce(
             AsyncMemoryBackend &primary = provider->primary_backend();
             if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_reduce n2 fast path bytes=" + std::to_string(total_bytes) +
                              " dtype=" + datatype_label(datatype));
+            const std::size_t pipeline_chunk = pipeline_chunk_bytes(allreduce_pipeline_setting(), total_bytes, count, datatype);
+            if (pipeline_chunk != 0)
+            {
+                bool ranges = true; // a root whose provider cannot reduce a sub-range keeps the sequential schedule (nothing has moved yet)
+                if (rank == kRoot)
+                {
+                    try
+                    {
+                        provider->reduce_backend_range(0);
+                    }
+                    catch (const std::exception &)
+                    {
+                        ranges = false;
+                    }
+                }
+                if (ranges)
+                {
+                    const std::size_t element = datatype_size(datatype);
+                    if (rank == kRoot)
+                        run_all_reduce_pipeline(
+                            *sole.coll_worker, *sole.coll_data, true, provider->scratch_backend(), primary, total_bytes, pipeline_chunk, element,
+                            [&](std::size_t byte_offset, std::size_t elements) { provider->reduce_backend_range(byte_offset).reduce_sum(elements, datatype); }, "all_reduce", impl->fatal_cb);
+                    else
+                        run_all_reduce_pipeline(*sole.coll_worker, *sole.coll_data, false, primary, primary, total_bytes, pipeline_chunk, element, nullptr, "all_reduce", impl->fatal_cb);
+                    return;
+                }
+            }
             if (rank == kRoot)
             {
                 AsyncMemoryBackend &scratch = provider->scratch_backend();
