@@ -213,7 +213,7 @@ namespace
         std::string error_message;
     };
 
-    void mark_failed(ChunkProgress &progress, const std::exception &error)
+    void mark_failed(ChunkProgress &progress, const std::exception &error) noexcept
     {
         {
             std::lock_guard<std::mutex> lock(progress.mutex);
@@ -221,7 +221,14 @@ namespace
             {
                 progress.failed = true;
                 progress.error_code = error_code_of(error);
-                progress.error_message = error.what();
+                try
+                {
+                    progress.error_message = error.what();
+                }
+                catch (...)
+                {
+                    progress.error_message.clear(); // out of memory: the failure is still recorded, only its text is lost
+                }
             }
         }
         progress.cv.notify_all();
@@ -236,17 +243,20 @@ namespace
     //   2. the pool is cancelled, which wakes every thread blocked in acquire() and makes any later acquire() fail;
     //   3. only then does the failing stage give back the slot it owns (release() does not undo the cancellation).
     // No internal lock is held across the steps (each takes and drops its own), and no backend or transport call is made here.
-    void fail_transfer(const char *stage, ChunkProgress &progress, StagingPool &pool, const std::exception &error, std::size_t owned_slot = kNoSlot)
+    // Nothing here may throw: if the transition were abandoned half way (for example by an exception from a probe or an allocation), the other stage could stay
+    // asleep and the request-local state it refers to would be left behind. Each step is therefore attempted on its own, and the steps that matter (cancel, release)
+    // are noexcept or guarded.
+    void fail_transfer(const char *stage, ChunkProgress &progress, StagingPool &pool, const std::exception &error, std::size_t owned_slot = kNoSlot) noexcept
     {
-        detail::pipeline_failure_probe(stage, "begin");
+        try { detail::pipeline_failure_probe(stage, "begin"); } catch (...) {}
         mark_failed(progress, error);
-        detail::pipeline_failure_probe(stage, "recorded");
+        try { detail::pipeline_failure_probe(stage, "recorded"); } catch (...) {}
         pool.cancel();
-        detail::pipeline_failure_probe(stage, "cancelled");
+        try { detail::pipeline_failure_probe(stage, "cancelled"); } catch (...) {}
         if (owned_slot != kNoSlot)
         {
-            pool.release(owned_slot);
-            detail::pipeline_failure_probe(stage, "slot_released");
+            try { pool.release(owned_slot); } catch (...) {}
+            try { detail::pipeline_failure_probe(stage, "slot_released"); } catch (...) {}
         }
     }
 
@@ -879,7 +889,7 @@ struct TensorCommWorker::Impl
             const std::size_t depth =
                 std::max<std::size_t>(1, std::min(pipeline_depth, chunks.size()));
 
-            if (!cached_pool || cached_chunk_capacity != chunk_capacity || cached_depth != depth)
+            if (!cached_pool || cached_pool->cancelled() || cached_chunk_capacity != chunk_capacity || cached_depth != depth)
             {
                 cached_pool = std::make_unique<StagingPool>(chunk_capacity, depth);
                 cached_chunk_capacity = chunk_capacity;
@@ -919,7 +929,14 @@ struct TensorCommWorker::Impl
             }
             catch (...)
             {
-                fail_transfer(is_send ? "send.network" : "recv.network", progress, pool, std::runtime_error("unknown exception in the network stage"));
+                try
+                {
+                    fail_transfer(is_send ? "send.network" : "recv.network", progress, pool, std::runtime_error("unknown exception in the network stage"));
+                }
+                catch (...)
+                {
+                    pool.cancel(); // could not even build the error: still stop the staging stage
+                }
             }
             wait_job();
 
