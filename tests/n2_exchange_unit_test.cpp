@@ -25,6 +25,7 @@
 #include <functional>
 #include <mutex>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -518,6 +519,30 @@ void partial_admission(bool staged)
     rig.expect_quiescent(); // the admitted send was interrupted AND finished before run_n2_exchange returned
 }
 
+// An abort callback that throws must not make the exchange return early: the admitted leg is still waited for and the exchange's own error propagates.
+void throwing_abort_callback_keeps_waiting(bool partial_admission)
+{
+    Script s;
+    s.rendezvous = false;
+    s.hold_send = true;
+    s.hold_recv = !partial_admission;
+    if (!partial_admission) s.fail_send = true; // the send fails at once while the receive is blocked
+    s.hold_send = partial_admission;
+    Rig rig(s, false);
+    const auto throwing = [&](const std::string &why) {
+        rig.fatal_calls.fetch_add(1);
+        rig.worker.abort(why); // the interruption still happens, then the callback fails
+        rig.transport.abort(why);
+        throw std::runtime_error("abort callback failed");
+    };
+    if (partial_admission) tbccl::detail::g_n2_exchange_fail_second_enqueue = 1;
+    const auto result = rig.run_with(throwing);
+    tbccl::detail::g_n2_exchange_fail_second_enqueue = 0;
+    if (partial_admission) expect(result.first == tbccl::ErrorCode::ResourceExhausted, "the admission error, not the callback's, propagates: " + result.second);
+    else expect_cause(result, tbccl::ErrorCode::TransportError, "send");
+    rig.expect_quiescent();
+}
+
 void repeated_exchanges_keep_both_lanes_usable()
 {
     Rig rig(Script{}, false);
@@ -569,6 +594,8 @@ int main()
         }
     scenario("worker recovers after a staged source failure (pool discarded)", [] { worker_recovers_after_staged_failure(true); });
     scenario("worker recovers after a staged commit failure (pool discarded)", [] { worker_recovers_after_staged_failure(false); });
+    scenario("throwing abort callback during a partial admission", [] { throwing_abort_callback_keeps_waiting(true); });
+    scenario("throwing abort callback after a leg failed", [] { throwing_abort_callback_keeps_waiting(false); });
     scenario("300 repeated exchanges", repeated_exchanges_keep_both_lanes_usable);
     std::puts("n2_exchange_unit_test passed");
     return 0;
