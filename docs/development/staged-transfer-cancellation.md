@@ -27,7 +27,9 @@ Every failure site calls one function, `fail_transfer`, which does these steps i
 2. cancel the pool: `StagingPool::cancel()` wakes every thread blocked in `acquire()`, and `acquire()` throws `Error(Aborted)` from then on without handing out a slot;
 3. give back the slot the failing stage owns (this does not undo the cancellation).
 
-The other stage then ends on its next step: it observes the recorded failure, or its `acquire()` throws. `wait_job()` returns, the `Work` completes once with the original error, and the cancelled pool is discarded. A pool is cancelled at most once and is never reset or reused; successful requests keep using the cached pool as before.
+The other stage then ends on its next step: it observes the recorded failure, or its `acquire()` throws. `wait_job()` returns, the `Work` completes once with the original error, and the cancelled pool is discarded. A pool is cancelled at most once and is never reset or reused (a pool that reports `cancelled()` is rebuilt even if it were still cached); successful requests keep using the cached pool as before.
+
+`fail_transfer` does not throw: each step is attempted on its own, so an exception inside it (for example an allocation failure while copying the error text) cannot leave the other stage asleep. The network thread always reaches `wait_job()` once the staging job is submitted, including when its own stage throws, because the staging job refers to request-local state.
 
 ## Limits
 
@@ -37,5 +39,5 @@ The other stage then ends on its next step: it observes the recorded failure, or
 ## Tests
 
 * `staging_pool_cancel_test`: the pool in isolation (wake on release, wake on cancel, no slot after cancel, idempotence, several waiters, cancel racing with release).
-* `tensor_comm_worker_failure_test`: a fake transport and staging backend. A test-only probe (`src/core/tensor_comm_worker_probe.hpp`, a function pointer that is null unless a test sets it and is read only on the failure path) stalls the failing stage after each step of the transition while the other stage keeps running. With the previous behaviour (slot released first, no cancellation) the send and receive scenarios stall; the test reports that as a failure with a thread dump instead of hanging. It also injects failures at the first, a middle and the last chunk for transport, staging and commit errors at pipeline depths 1, 2 and 4, and checks one terminal completion, the original error, and that the next request succeeds.
+* `tensor_comm_worker_failure_test`: a fake transport and staging backend. A test-only probe (`src/core/tensor_comm_worker_probe.hpp`, a function pointer that is null unless a test sets it and is read only on the failure path) stalls the failing stage after each step of the transition while the other stage keeps running. With the previous behaviour (slot released first, no cancellation) the send and receive scenarios stall; the test reports that as a failure with a thread dump instead of hanging. It also injects failures at the first, a middle and the last chunk for transport, staging and commit errors at pipeline depths 1, 2 and 4, and checks one terminal completion, the original error, and that the next request succeeds. The same matrix runs with an exception thrown from inside each step of the transition.
 * `communicator_staged_chunk_test` and `communicator_cuda_stream_chunk_test` cover the same paths through the `Communicator`, including an abort during a chunked send.
