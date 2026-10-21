@@ -207,12 +207,16 @@ int main()
             });
             std::printf("abort ok\n");
         }
+        for (int variant = 0; variant < 2; ++variant)
         {
+            // Variant 1 also makes the abort reason impossible to build, so the legs are interrupted directly (transport and worker) instead of through the communicator's abort request;
+            // the executor's own failure handling then aborts the communicator as usual.
             // The second admission of one rank's exchange fails (as if out of memory) after its send was accepted. The failing job aborts the communicator from the
             // collective executor thread, so that abort must not wait for the executor (a blocking abort there would hang this test): the job's Work fails, the
             // communicator is aborted, the peer's Work becomes terminal, and later submissions are refused.
             World w(2);
             tbccl::detail::g_n2_exchange_fail_second_enqueue = 1;
+            tbccl::detail::g_n2_exchange_fail_abort_message = variant;
             w.run([](std::size_t rank, tbccl::Communicator &comm) {
                 const std::size_t bytes = std::size_t{8} << 20;
                 std::vector<std::uint8_t> in(bytes, static_cast<std::uint8_t>(rank + 1)), g0(bytes), g1(bytes);
@@ -240,7 +244,8 @@ int main()
                 expect(refused, "an aborted communicator must refuse new collectives");
             });
             expect(tbccl::detail::g_n2_exchange_fail_second_enqueue.load() == 0, "the injected admission failure was consumed");
-            std::printf("partial admission ok\n");
+            expect(tbccl::detail::g_n2_exchange_fail_abort_message.load() == 0, "the injected abort-reason failure was consumed");
+            std::printf("partial admission ok (variant %d)\n", variant);
         }
         {
             // a peer that never joins the collective, then aborts: the waiting rank's Work fails instead of hanging

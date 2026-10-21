@@ -176,6 +176,11 @@ public:
         std::unique_lock<std::mutex> lock(m_);
         return cv_.wait_for(lock, limit, [&] { return send_entered_ && recv_entered_; });
     }
+    bool was_aborted()
+    {
+        std::lock_guard<std::mutex> lock(m_);
+        return aborted_;
+    }
     int active() const { return active_.load(); }
     int rendezvous_timeouts() const { return rendezvous_timeouts_.load(); }
     void set_preload_seed(std::size_t seed) { preload_seed_ = seed; }
@@ -543,6 +548,46 @@ void throwing_abort_callback_keeps_waiting(bool partial_admission)
     rig.expect_quiescent();
 }
 
+// Fault injection on the abort path itself. Whatever fails while the exchange is being aborted (the abort request throws before it interrupts anything, the
+// reason string cannot be built, an exception strikes right after both legs were admitted), a leg that is blocked in the transport must still be interrupted and
+// waited for, and the original problem must be what propagates. Legs are blocked "until aborted", so a missing interruption is a bounded stall, not a pass.
+enum class Trigger { PartialAdmission, SendFails, RecvFails, AfterAdmission };
+
+void abort_path_fault(Trigger trigger, bool callback_throws_first, bool message_fails, bool staged)
+{
+    Script s;
+    s.rendezvous = false;
+    tbccl::ErrorCode expected = tbccl::ErrorCode::TransportError;
+    const char *leg = nullptr;
+    switch (trigger)
+    {
+    case Trigger::PartialAdmission: s.hold_send = true; expected = tbccl::ErrorCode::ResourceExhausted; break;
+    case Trigger::SendFails: s.fail_send = true; s.hold_recv = true; leg = "send"; break;
+    case Trigger::RecvFails: s.fail_recv = true; s.hold_send = true; leg = "recv"; break;
+    case Trigger::AfterAdmission: s.hold_send = s.hold_recv = true; expected = tbccl::ErrorCode::ResourceExhausted; break;
+    }
+    Rig rig(s, staged);
+    std::atomic<int> callback_calls{0};
+    const auto callback = [&](const std::string &why) {
+        callback_calls.fetch_add(1);
+        if (callback_throws_first) throw std::runtime_error("abort request failed before interrupting anything"); // nothing is interrupted by the callback
+        rig.worker.abort(why);
+        rig.transport.abort(why);
+    };
+    if (trigger == Trigger::PartialAdmission) tbccl::detail::g_n2_exchange_fail_second_enqueue = 1;
+    if (trigger == Trigger::AfterAdmission) tbccl::detail::g_n2_exchange_fail_after_admission = 1;
+    if (message_fails) tbccl::detail::g_n2_exchange_fail_abort_message = 1;
+    const auto result = rig.run_with(callback);
+    tbccl::detail::g_n2_exchange_fail_second_enqueue = 0;
+    tbccl::detail::g_n2_exchange_fail_after_admission = 0;
+    tbccl::detail::g_n2_exchange_fail_abort_message = 0;
+    expect(result.first == expected, "the original problem propagates, got: " + result.second);
+    if (leg) expect_cause(result, expected, leg);
+    expect(rig.transport.was_aborted(), "the blocked leg must have been interrupted");
+    expect(callback_calls.load() == (message_fails ? 0 : 1), "the abort request is made exactly once unless its reason could not be built");
+    rig.expect_quiescent();
+}
+
 void repeated_exchanges_keep_both_lanes_usable()
 {
     Rig rig(Script{}, false);
@@ -596,6 +641,17 @@ int main()
     scenario("worker recovers after a staged commit failure (pool discarded)", [] { worker_recovers_after_staged_failure(false); });
     scenario("throwing abort callback during a partial admission", [] { throwing_abort_callback_keeps_waiting(true); });
     scenario("throwing abort callback after a leg failed", [] { throwing_abort_callback_keeps_waiting(false); });
+    for (const bool staged : {false, true})
+        for (const auto trigger : {Trigger::PartialAdmission, Trigger::SendFails, Trigger::RecvFails, Trigger::AfterAdmission})
+            for (const bool throws_first : {false, true})
+                for (const bool message_fails : {false, true})
+                {
+                    if (throws_first && message_fails) continue; // the callback is never reached
+                    const char *names[] = {"partial admission", "send fails", "recv fails", "exception after admission"};
+                    const std::string name = std::string("abort path fault: ") + names[static_cast<int>(trigger)] + (throws_first ? ", abort request throws before interrupting" : "") +
+                                             (message_fails ? ", abort reason cannot be built" : "") + (staged ? " (staged)" : " (direct)");
+                    scenario(name.c_str(), [&] { abort_path_fault(trigger, throws_first, message_fails, staged); });
+                }
     scenario("300 repeated exchanges", repeated_exchanges_keep_both_lanes_usable);
     std::puts("n2_exchange_unit_test passed");
     return 0;
