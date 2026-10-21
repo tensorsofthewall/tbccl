@@ -301,8 +301,10 @@ public:
         std::size_t peer,
         const ExecutionContext &context = {});
 
-    // Async N=2 SUM AllReduce, routed to the existing, unmodified
-    // n2_all_reduce_tensor(). Root is always rank 0; there is no
+    // Async N=2 SUM AllReduce, routed to n2_all_reduce_tensor() (sequential: the
+    // root receives, reduces, then sends) or, when TBCCL_ALLREDUCE_PIPELINE_BYTES
+    // is set, to a chunk-pipelined schedule with the same bytes on the wire.
+    // Root is always rank 0; there is no
     // caller-visible root parameter. Returns ErrorCode::Unsupported (as
     // a thrown std::runtime_error whose message starts with
     // "unsupported: ") if world_size() != 2, op != ReduceOp::Sum, or
