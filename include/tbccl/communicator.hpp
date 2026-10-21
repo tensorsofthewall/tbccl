@@ -328,8 +328,9 @@ public:
     // byte-generic N=2 AllGather. `outputs` must hold exactly world_size() buffers, each of
     // `input.bytes` bytes; on completion outputs[r] holds rank r's input on BOTH ranks (including
     // outputs[rank()] <- input, performed inside the runtime through the memory providers; skipped if
-    // they alias). Deadlock-safe ordering: rank 0 sends then receives, rank 1 receives then sends.
-    // Not performance-tuned (intended for small metadata).
+    // they alias). With two ranks the send and the receive are posted together on the collective connection's two independent
+    // lanes and run at the same time (full duplex); the Work completes once both have finished. The wire bytes are unchanged (one raw payload each way).
+    // Outputs must not overlap the input of the other slot (only outputs[rank()] == input is a supported alias). Larger worlds use the planned algorithms.
     Work all_gather(
         const BufferView &input,
         const std::vector<BufferView> &outputs,

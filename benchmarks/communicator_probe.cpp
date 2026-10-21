@@ -479,7 +479,7 @@ void point_allgather(Context &c, std::size_t bytes, int base)
         check_pat(g0, 0, 2, "allgather slot 0 " + std::to_string(bytes));
         check_pat(g1, 1, 2, "allgather slot 1 " + std::to_string(bytes));
     };
-    run_point(c, "allgather", bytes, 2.0 * bytes, iterations_for(bytes, base), one, verify, "bytes per rank; bytes each way, ordered (rank 0 sends first)");
+    run_point(c, "allgather", bytes, 2.0 * bytes, iterations_for(bytes, base), one, verify, "bytes per rank; bytes each way, concurrent duplex exchange (send and receive posted together)");
 }
 
 void point_broadcast(Context &c, std::size_t root, std::size_t bytes, int base)

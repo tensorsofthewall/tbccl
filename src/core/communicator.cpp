@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <new>
 #include <condition_variable>
 #include <cerrno>
@@ -29,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -835,7 +838,96 @@ void run_transfer(
     if (work.has_error()) throw Error(work.error_code(), std::string("transport_error: ") + what + ": " + work.error());
 }
 
+// The N=2 all_gather exchange: both directions are in flight at once, each on its own duplex lane of the collective worker (shared_lane stays false, so a receive
+// that is waiting for the peer never sits in front of the send). The rank-dependent send-then-receive order this replaces made every rank's second leg wait for its
+// first. Admission never waits (the collective worker's queues are unbounded), so posting both before waiting for either cannot deadlock for any payload size; the
+// peer's matching transfers run on its own independent lanes. Each leg keeps the staged-chunk hint of its own backend, exactly as run_transfer does.
+//
+// Failure policy: the job never returns while a child can still touch the providers' memory.
+//  * If the second enqueue throws, the first is already in flight and the peer will wait for the missing leg, so the communicator is aborted (`fatal`, idempotent) which
+//    interrupts the admitted child; it is waited for, then the admission error is rethrown.
+//  * If a child fails, `fatal` is invoked at once (the failed exchange has desynchronised the collective sequence anyway) so the other child is interrupted instead of
+//    waiting for a peer that may never answer; then both are waited for. The send is polled while the receive blocks, so a send failure is noticed without waiting for the receive.
+//  * The reported error is the first cause observed; an Aborted that is only the consequence of the abort we triggered never replaces it.
+void run_exchange(
+    TensorCommWorker &worker,
+    Transport &transport,
+    AsyncMemoryBackend &send_backend,
+    AsyncMemoryBackend &recv_backend,
+    std::size_t bytes,
+    const char *what,
+    const std::function<void(const std::string &)> &fatal)
+{
+    const auto make_request = [&](TransferDirection direction, AsyncMemoryBackend &backend) {
+        TransferRequest request;
+        request.transfer_id = g_transfer_id.fetch_add(1, std::memory_order_relaxed);
+        request.direction = direction;
+        request.backend = &backend;
+        request.transport = &transport;
+        request.total_bytes = bytes;
+        request.chunk_hint = staged_chunk_hint(backend);
+        request.shared_lane = false; // duplex: the send and the receive must not share a lane
+        return request;
+    };
+    TransferWork send_work = worker.enqueue(make_request(TransferDirection::Send, send_backend));
+    const std::uint64_t send_child = detail::tl_lat_last_enqueued_id;
+    std::optional<TransferWork> recv_work;
+    std::uint64_t recv_child = 0;
+    try
+    {
+        if (detail::g_n2_exchange_fail_second_enqueue.load(std::memory_order_relaxed) > 0 && detail::g_n2_exchange_fail_second_enqueue.fetch_sub(1) > 0) throw std::bad_alloc(); // test hook
+        recv_work.emplace(worker.enqueue(make_request(TransferDirection::Recv, recv_backend)));
+        recv_child = detail::tl_lat_last_enqueued_id;
+    }
+    catch (...)
+    {
+        fatal(std::string(what) + ": could not post the receive");
+        send_work.wait(); // interrupted by the abort above; the providers must outlive it
+        throw;
+    }
+    detail::lat_event(detail::kLatCollChildPosted, detail::tl_lat_parent_id, static_cast<std::uint32_t>(send_child));
+    detail::lat_event(detail::kLatCollChildPosted, detail::tl_lat_parent_id, static_cast<std::uint32_t>(recv_child));
+
+    bool aborted_by_us = false;
+    const auto trigger = [&](const char *which, const TransferWork &failed) {
+        if (aborted_by_us) return;
+        aborted_by_us = true;
+        fatal(std::string("transport_error: ") + what + " " + which + ": " + failed.error()); // the same text the failed job would have reported to the abort
+    };
+    // Wait for the receive, noticing a send failure meanwhile (wait_for returns as soon as the receive completes: no added latency).
+    while (!recv_work->wait_for(std::chrono::milliseconds(20)))
+    {
+        if (send_work.is_completed() && send_work.has_error())
+        {
+            trigger("send", send_work);
+            break;
+        }
+    }
+    if (recv_work->is_completed() && recv_work->has_error()) trigger("recv", *recv_work);
+    recv_work->wait();
+    send_work.wait();
+    detail::lat_event(detail::kLatCollChildObserved, detail::tl_lat_parent_id, static_cast<std::uint32_t>(send_child));
+    detail::lat_event(detail::kLatCollChildObserved, detail::tl_lat_parent_id, static_cast<std::uint32_t>(recv_child));
+
+    const bool send_failed = send_work.has_error(), recv_failed = recv_work->has_error();
+    if (!send_failed && !recv_failed) return;
+    // Cause over consequence: a failure that is not Aborted outranks one that is; between equals the one we saw first (the receive: a lost peer shows there).
+    const bool use_send = send_failed && (!recv_failed || (recv_work->error_code() == ErrorCode::Aborted && send_work.error_code() != ErrorCode::Aborted));
+    if (use_send) throw Error(send_work.error_code(), std::string("transport_error: ") + what + " send: " + send_work.error());
+    throw Error(recv_work->error_code(), std::string("transport_error: ") + what + " recv: " + recv_work->error());
+}
+
 } // namespace
+
+namespace detail
+{
+void run_n2_exchange(
+    TensorCommWorker &worker, Transport &transport, AsyncMemoryBackend &send_backend, AsyncMemoryBackend &recv_backend, std::size_t bytes, const char *what,
+    const std::function<void(const std::string &)> &fatal)
+{
+    run_exchange(worker, transport, send_backend, recv_backend, bytes, what, fatal);
+}
+} // namespace detail
 
 Work Communicator::all_reduce(
     const BufferView &send_buf,
@@ -1038,22 +1130,13 @@ Work Communicator::all_gather(
         const detail::CollectiveRun r{rank, world, impl->mesh.get(), sequence, work_id, &impl->trace, &impl->thresholds, &impl->fatal_cb};
         if (world == 2)
         {
-            // N=2 fast path, unchanged: deterministic, deadlock-safe order (lower rank sends first), no descriptor exchange.
+            // N=2 fast path: no descriptor exchange; the send and the receive are exchanged concurrently (see run_exchange).
             if (bytes == 0) return;
             detail::PeerChannel &sole = impl->sole_channel();
             const std::size_t peer = sole.peer_rank;
             if (out_providers[rank]) detail::copy_through_providers(*in_provider, *out_providers[rank], bytes);
             if (impl->trace.on()) impl->trace.line("work=" + std::to_string(work_id) + " #" + std::to_string(sequence) + " all_gather n2 fast path bytes=" + std::to_string(bytes));
-            if (rank == 0)
-            {
-                run_transfer(*sole.coll_worker, *sole.coll_data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
-                run_transfer(*sole.coll_worker, *sole.coll_data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
-            }
-            else
-            {
-                run_transfer(*sole.coll_worker, *sole.coll_data, out_providers[peer]->primary_backend(), TransferDirection::Recv, bytes, "all_gather recv");
-                run_transfer(*sole.coll_worker, *sole.coll_data, in_provider->primary_backend(), TransferDirection::Send, bytes, "all_gather send");
-            }
+            run_exchange(*sole.coll_worker, *sole.coll_data, in_provider->primary_backend(), out_providers[peer]->primary_backend(), bytes, "all_gather", impl->fatal_cb);
             return;
         }
         if (world > 1)
