@@ -911,6 +911,9 @@ void run_exchange(
 
     const bool send_failed = send_work.has_error(), recv_failed = recv_work->has_error();
     if (!send_failed && !recv_failed) return;
+    // A failure first seen only now (both legs already finished) still aborts the communicator from here, so the contract does not depend on who finished first.
+    if (send_failed) trigger("send", send_work);
+    else trigger("recv", *recv_work);
     // Cause over consequence: a failure that is not Aborted outranks one that is; between equals the one we saw first (the receive: a lost peer shows there).
     const bool use_send = send_failed && (!recv_failed || (recv_work->error_code() == ErrorCode::Aborted && send_work.error_code() != ErrorCode::Aborted));
     if (use_send) throw Error(send_work.error_code(), std::string("transport_error: ") + what + " send: " + send_work.error());
