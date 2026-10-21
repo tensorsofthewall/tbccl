@@ -20,6 +20,7 @@ code-map
 testing
 staged-transfer-cancellation
 n2-all-gather-exchange
+n2-all-reduce-pipeline
 benchmark-methodology
 benchmark-suite
 benchmark-suite-inventory
