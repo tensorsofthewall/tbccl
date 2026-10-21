@@ -1307,6 +1307,28 @@ if(BUILD_TESTING)
     set_tests_properties(communicator_submission_test PROPERTIES TIMEOUT 600)
     list(APPEND tbccl_dynamic_port_tests communicator_submission_test)
 
+    # N=2 all_gather: both directions in flight together. The unit test drives the exchange over a controlled transport (deterministic duplex proof, failure
+    # injection, partial admission); the integration test runs real two-rank worlds. Each runs unset and with a small staged chunk setting.
+    add_executable(n2_exchange_unit_test tests/n2_exchange_unit_test.cpp)
+    target_include_directories(n2_exchange_unit_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(n2_exchange_unit_test PRIVATE tbccl Threads::Threads)
+    add_executable(communicator_n2_all_gather_exchange_test tests/communicator_n2_all_gather_exchange_test.cpp)
+    target_include_directories(communicator_n2_all_gather_exchange_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
+    target_link_libraries(communicator_n2_all_gather_exchange_test PRIVATE tbccl Threads::Threads)
+    if(NOT MSVC)
+        target_compile_options(n2_exchange_unit_test PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(communicator_n2_all_gather_exchange_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME n2_exchange_unit_test COMMAND n2_exchange_unit_test)
+    add_test(NAME n2_exchange_unit_test_chunk4096 COMMAND n2_exchange_unit_test)
+    set_tests_properties(n2_exchange_unit_test_chunk4096 PROPERTIES ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=4096")
+    add_test(NAME communicator_n2_all_gather_exchange_test COMMAND communicator_n2_all_gather_exchange_test)
+    add_test(NAME communicator_n2_all_gather_exchange_test_chunk131072 COMMAND communicator_n2_all_gather_exchange_test)
+    set_tests_properties(communicator_n2_all_gather_exchange_test_chunk131072 PROPERTIES ENVIRONMENT "TBCCL_STAGED_CHUNK_BYTES=131072")
+    set_tests_properties(n2_exchange_unit_test n2_exchange_unit_test_chunk4096 PROPERTIES TIMEOUT 300)
+    set_tests_properties(communicator_n2_all_gather_exchange_test communicator_n2_all_gather_exchange_test_chunk131072 PROPERTIES TIMEOUT 900)
+    list(APPEND tbccl_dynamic_port_tests communicator_n2_all_gather_exchange_test communicator_n2_all_gather_exchange_test_chunk131072)
+
     # pure-C ABI tests (C11, strict warnings), linked through the C shim target only.
     add_executable(c_api_functional_test tests/c_api/c_api_functional_test.c)
     target_link_libraries(c_api_functional_test PRIVATE tbccl_c Threads::Threads)
