@@ -2,13 +2,13 @@
 
 All notable user-facing changes are recorded here. The format follows Keep a Changelog, and the project follows Semantic Versioning once it has releases. 0.6.0 is the first release; it is experimental.
 
-## 0.7.0rc1
+## 0.7.0
 
-Release candidate (pre-release). First release candidate of 0.7.0, the first minor release after 0.6. Release candidates are for validation on real hardware; expect an rc2 if a blocker is found. The C ABI (version 1), the wire protocol (version 4) and the endpoint blob format (version 1) are unchanged, and ranks of 0.6.x and 0.7.0 interoperate. Every new tuning setting is opt-in; the only default behaviour that changed is the two-rank `all_gather` schedule described below.
+The first minor release after 0.6, promoted from release candidate 0.7.0rc1 with no change to the library: the differences are the version string, the documentation and the validation records. It is experimental. The C ABI (version 1), the wire protocol (version 4) and the endpoint blob format (version 1) are unchanged, and ranks of 0.6.x and 0.7.0 interoperate. Every new tuning setting is opt-in; the only default behaviour that changed is the two-rank `all_gather` schedule described below.
 
 ### Installation
 
-- Native archives built by CI and attached to the GitHub pre-release: `tbccl-0.7.0rc1-linux-x86_64.tar.gz`, `tbccl-0.7.0rc1-linux-x86_64-cuda13.tar.gz`, `tbccl-0.7.0rc1-macos-arm64.tar.gz`, each with an SPDX SBOM, `SHA256SUMS` and a build-provenance attestation.
+- Native archives built by CI and attached to the GitHub release: `tbccl-0.7.0-linux-x86_64.tar.gz`, `tbccl-0.7.0-linux-x86_64-cuda13.tar.gz`, `tbccl-0.7.0-macos-arm64.tar.gz`, each with an SPDX SBOM, `SHA256SUMS` and a build-provenance attestation.
 - The adapters (torch-tbccl, vllm-tbccl, exo-tbccl) link TBCCL statically. They pick up the changes below only when the adapter wheel is built against 0.7.0; the 0.6.x adapter wheels keep their own TBCCL.
 
 ### Changed
@@ -38,6 +38,7 @@ Release candidate (pre-release). First release candidate of 0.7.0, the first min
 
 - Single-host loopback with payloads of 4 MiB and above was 14% to 24% slower for `all_gather` in a pinned measurement because both directions then compete for the same memory bandwidth. It was 12% to 31% faster from 64 B to 1 MiB. No two-host regression was observed.
 - All published measurements come from one Linux CUDA / Apple Metal machine pair. PCIe AER reporting was unavailable on the Linux host, so no statement about AER errors is made.
+- On a link that loses TCP segments, unpipelined 16 MiB device collectives can intermittently take several hundred milliseconds longer; this was seen with 0.6.x as well. The opt-in pipelined `all_reduce` was not affected in the measurements.
 - ThreadSanitizer cannot run the peer-death scenario of `mixed_domain_ordering_test` (it forks a multi-threaded process, which TSan refuses); the other scenarios pass and TSan reports no race.
 
 ## 0.6.1
