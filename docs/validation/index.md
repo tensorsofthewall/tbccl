@@ -7,4 +7,5 @@ Validation evidence for released versions. Evidence is summarized per release; n
 
 0.6.0
 0.6.1
+0.7.0
 ```
