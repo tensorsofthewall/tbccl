@@ -4,27 +4,27 @@
   "adapters": {
     "torch": {
       "repo": "tensorsofthewall/torch-tbccl",
-      "version": "0.2.1",
-      "tag": "v0.2.1",
-      "commit": "5e8e125f00fd8fe3b5927e5574184553ad78fab9",
-      "sums_url": "https://github.com/tensorsofthewall/torch-tbccl/releases/download/v0.2.1/SHA256SUMS",
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "commit": "bf7c5aa759a0bfd10d3e9445a84d55cf30f43085",
+      "sums_url": "https://github.com/tensorsofthewall/torch-tbccl/releases/download/v0.3.0/SHA256SUMS",
       "framework": {
         "name": "torch",
         "series": "2.13"
       },
       "wheels": [
         {
-          "filename": "torch_tbccl-0.2.1-cp313-cp313-macosx_14_0_arm64.whl",
-          "url": "https://github.com/tensorsofthewall/torch-tbccl/releases/download/v0.2.1/torch_tbccl-0.2.1-cp313-cp313-macosx_14_0_arm64.whl",
-          "sha256": "29eba9d1fcdbfed0d33d5acfad8bb35c2b5a946cb680d6b1337fc716c21d3503",
+          "filename": "torch_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "url": "https://github.com/tensorsofthewall/torch-tbccl/releases/download/v0.3.0/torch_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "sha256": "400dde50a038671803ec1d19a924e47b56f3368175f46cc3747241e7f2211556",
           "python": "cp313",
           "platform": "macos_arm64",
           "min_macos": "14.0"
         },
         {
-          "filename": "torch_tbccl-0.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-          "url": "https://github.com/tensorsofthewall/torch-tbccl/releases/download/v0.2.1/torch_tbccl-0.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-          "sha256": "56eabcfbf5e33339b2206b1ac9a71fde73f7e6c1dacd81abf57602944abdb055",
+          "filename": "torch_tbccl-0.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://github.com/tensorsofthewall/torch-tbccl/releases/download/v0.3.0/torch_tbccl-0.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "7c00b74626ef6f4d9864689bb8f390d822a178abbdbcf3214a891c827c503b39",
           "python": "cp313",
           "platform": "linux_x86_64"
         }
@@ -32,42 +32,42 @@
     },
     "vllm": {
       "repo": "tensorsofthewall/vllm-tbccl",
-      "version": "0.2.1",
-      "tag": "v0.2.1",
-      "commit": "eda04fbc1b4446c9ca85e1df51272160845cae3e",
-      "sums_url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.2.1/SHA256SUMS",
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "commit": "f6a5e24677f89563f1dacc3ddcfc240d5e7c92e4",
+      "sums_url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.3.0/SHA256SUMS",
       "framework": {
         "name": "vllm",
         "exact": "0.31.0"
       },
       "wheels": [
         {
-          "filename": "vllm_tbccl-0.2.1-cp312-cp312-macosx_14_0_arm64.whl",
-          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.2.1/vllm_tbccl-0.2.1-cp312-cp312-macosx_14_0_arm64.whl",
-          "sha256": "7aea08f1629ff82d6e6703436dde92308a03faf29c709e228ad705302c5cb6d6",
+          "filename": "vllm_tbccl-0.3.0-cp312-cp312-macosx_14_0_arm64.whl",
+          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.3.0/vllm_tbccl-0.3.0-cp312-cp312-macosx_14_0_arm64.whl",
+          "sha256": "0b8b1add58656ce629285c3d796a28f776ace9c1db3865baa3aa9c251f82d57a",
           "python": "cp312",
           "platform": "macos_arm64",
           "min_macos": "14.0"
         },
         {
-          "filename": "vllm_tbccl-0.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.2.1/vllm_tbccl-0.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-          "sha256": "15b7b44436851dce1bcbebe62fd8bc7a3a05c1b20263f0518eb431c350a7c1ff",
+          "filename": "vllm_tbccl-0.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.3.0/vllm_tbccl-0.3.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "62aa24eaa2f2d78d4acc8af9f33062015a0e7c4f2c3f4295322ef3a2b2929e86",
           "python": "cp312",
           "platform": "linux_x86_64"
         },
         {
-          "filename": "vllm_tbccl-0.2.1-cp313-cp313-macosx_14_0_arm64.whl",
-          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.2.1/vllm_tbccl-0.2.1-cp313-cp313-macosx_14_0_arm64.whl",
-          "sha256": "d727e05f516b61723be1025971f9b96d4cd14891f40ad80c582f7e621b7fb367",
+          "filename": "vllm_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.3.0/vllm_tbccl-0.3.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "sha256": "3b2aacc6616c51f2aef1e4e66b58be8c11110017e228ff54793be3e1e3ac3c3e",
           "python": "cp313",
           "platform": "macos_arm64",
           "min_macos": "14.0"
         },
         {
-          "filename": "vllm_tbccl-0.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.2.1/vllm_tbccl-0.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
-          "sha256": "c9e7146bf56a2efd977f9bfddd2dfcaff554daaf5a1efbf1eaacb16c6329986f",
+          "filename": "vllm_tbccl-0.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://github.com/tensorsofthewall/vllm-tbccl/releases/download/v0.3.0/vllm_tbccl-0.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "1a2ebaedde78510f0357a6118d3bf54601426024443c857964344427183f40f8",
           "python": "cp313",
           "platform": "linux_x86_64"
         }
@@ -75,24 +75,24 @@
     },
     "exo": {
       "repo": "tensorsofthewall/exo-tbccl",
-      "version": "0.3.1",
-      "tag": "v0.3.1",
-      "commit": "b27201875b4c0f8d014f7968e8db6693dd0e9272",
-      "sums_url": "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.1/SHA256SUMS",
+      "version": "0.4.0",
+      "tag": "v0.4.0",
+      "commit": "766579836ca1127b4a9318a47475c496699d1832",
+      "sums_url": "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.4.0/SHA256SUMS",
       "framework": null,
       "wheels": [
         {
-          "filename": "exo_tbccl-0.3.1-cp313-cp313-macosx_14_0_arm64.whl",
-          "url": "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.1/exo_tbccl-0.3.1-cp313-cp313-macosx_14_0_arm64.whl",
-          "sha256": "295bc210865f7379618787aad4ebe246cd447b092532edf63e4e387a509c67c9",
+          "filename": "exo_tbccl-0.4.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "url": "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.4.0/exo_tbccl-0.4.0-cp313-cp313-macosx_14_0_arm64.whl",
+          "sha256": "40dcf812f2af7fc4ea5225c5567961cbd3a8fd1070fab8ba22c20ae355ffbe6b",
           "python": "cp313",
           "platform": "macos_arm64",
           "min_macos": "14.0"
         },
         {
-          "filename": "exo_tbccl-0.3.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
-          "url": "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.3.1/exo_tbccl-0.3.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
-          "sha256": "fc9559d4cf3ac9b588a89f637eb3680971415e057f5ff0d8bff44029c020f29f",
+          "filename": "exo_tbccl-0.4.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "url": "https://github.com/tensorsofthewall/exo-tbccl/releases/download/v0.4.0/exo_tbccl-0.4.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+          "sha256": "98d5101d4ea1a2a7e1f610a8a0a73eec0c9f879c645f02ed93a58a78bfbd67cd",
           "python": "cp313",
           "platform": "linux_x86_64"
         }
