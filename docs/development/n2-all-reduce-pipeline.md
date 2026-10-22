@@ -69,6 +69,38 @@ With the existing opt-in staged chunking (`TBCCL_STAGED_CHUNK_BYTES=131072`) alr
 
 CPU time per operation is about the same or lower (1 MiB: roughly a third lower; 16 MiB: up to 10% higher), because the operation finishes sooner on more cores at once. Voluntary context switches per operation rise, by about 2.5 times at 1 MiB and by 1.7 (Host) to 3.5 times (CUDA) at 16 MiB. No payload-sized allocation is added: the root's scratch buffer is the one it already had, and each chunk costs a small request object.
 
-Not measured: payloads under 64 bytes on the pipelined path (they never use it), chunk sizes other than 128 KiB in the final comparison (a sweep from 8 KiB to 1 MiB on Host / Host and 64 to 256 KiB on CUDA / Metal-shared informed the choice), a single host over loopback (where both directions share memory bandwidth and the gain is smaller), CUDA / Host pairs on the physical link, and application-level throughput. A rank on the pipelined schedule opposite a sequential rank gains little and can be slower (the non-root by about 10 to 27 percent at 1 to 16 MiB on Host / Host in the pairings measured), so enable it on both ranks.
+Not measured: payloads under 64 bytes on the pipelined path (they never use it), Float16/BFloat16/Int timing, other Thunderbolt pairs, wired Ethernet, and more than two ranks (the pipeline is two-rank only).
 
-It is off by default. Enabling it by default is deliberately left for a later change, after review and wider use.
+## Recommended use
+
+It stays opt-in. For the workload it was measured on, two ranks on two hosts joined by a Thunderbolt 4 link with `all_reduce` payloads of 256 KiB or more (for example the gradient buckets of data-parallel training), the recommended setting is
+
+```sh
+export TBCCL_ALLREDUCE_PIPELINE_BYTES=131072   # on both ranks, before the first communicator is created
+```
+
+* **Both ranks.** Set it on every rank of the job. The value is not exchanged with the peer, and a build that predates the pipeline ignores it, so setting it on a rank whose peer runs such a build gains nothing.
+* **Why 256 KiB.** Below it there are too few chunks to pay for the extra requests, so the sequential schedule runs unchanged. Above it nothing regressed on any pairing measured (Host / Host, CUDA / Metal-shared, CUDA / Host, Host / Metal-shared, 256 KiB to 1 MiB, five launches per arm in each orientation). The threshold is fixed; it is not configurable.
+* **Chunk size.** 128 KiB is the best single value from 4 MiB up. For 256 KiB to 1 MiB the effective chunk is an eighth of the payload (not below 32 KiB), so 64 and 128 KiB behave the same below 1 MiB. A fixed 32 KiB chunk was faster at 384 KiB to 1 MiB on Host / Host and CUDA / Metal-shared, and 15 to 21 points slower at 16 MiB on CUDA / Metal-shared, so a single smaller setting is not recommended.
+
+Measured on one Linux and Mac pair over Thunderbolt 4, `131072` on both ranks, median latency change (Linux holds rank 0 / Mac holds rank 0):
+
+| pairing (Linux / Mac) | 256 KiB | 1 MiB | 4 MiB | 16 MiB |
+|---|---|---|---|---|
+| Host / Host | -31% / -28% | -43% / -60% | -49% / -58% | -45% / -42% |
+| CUDA / Metal-shared | -31% / -35% | -72% / -66% | -74% / -70% | -52% / -59% |
+| CUDA / Host | -28% / -33% | -72% / -66% | -72% / -69% | -52% / -61% |
+| Host / Metal-shared | -20% / -15% | -43% / -57% | -49% / -58% | -41% / -43% |
+
+### When not to enable it
+
+* **Only one rank enabled, or a peer that does not pipeline.** Correctness does not depend on the peers agreeing (it was tested with ranks on different schedules and with the previous release on one side), but performance does. The two directions behave differently:
+  * a pipelined root with a sequential peer keeps most of the gain;
+  * a pipelined non-root (rank 1) with a sequential root (rank 0) gains nothing at best. Measured with the same binary and the variable set on one host only: on Host memory up to 14% slower at 256 KiB and up to 31% slower at 1 MiB, on CUDA memory up to 37% slower at 256 KiB (and 13 to 31% faster at 1 to 4 MiB), depending on the orientation.
+  
+  Mixed-version correctness is therefore not a performance guarantee. There is no negotiation, so the runtime cannot tell which schedule the peer runs; this is why the setting is not on by default.
+* **Both ranks on one host (loopback).** The two directions share memory bandwidth and scheduling, and the extra requests cost more than the overlap saves at small and medium sizes: with the ranks on separate cores, 256 KiB was 53% slower, 1 to 4 MiB 2 to 4% slower and 16 MiB 9% slower; only 64 MiB and larger gained, by about 10%. Leave it unset for single-host jobs.
+* **Links slower than Thunderbolt 4.** Over a 5 GHz Wi-Fi link (one orientation, noisy) payloads of 256 KiB to 1 MiB were 8 to 10% faster and 4 MiB showed no difference, because the link, not the schedule, is the limit. Nothing is claimed for other networks.
+* **Context switches.** Voluntary context switches per operation rise 2 to 4 times, and CPU time per operation rises at 256 KiB (16 to 50% on the CUDA and Metal-shared pairings measured) and by up to 20% at 16 MiB, though it falls at 1 to 4 MiB. In a process with its own thread pool, such as a deep-learning framework on a small machine, measure before relying on it.
+
+Defaulting it on would need the two ranks to agree on the schedule, which the handshake cannot express today; that is a separate design question and is not part of this change.
