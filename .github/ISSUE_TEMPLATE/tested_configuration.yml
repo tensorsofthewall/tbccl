@@ -17,7 +17,7 @@ body:
     attributes:
       label: "Versions"
       description: "TBCCL and the adapter(s), and PyTorch / vLLM / Exo versions."
-      placeholder: "tbccl 0.6.1, torch-tbccl 0.2.1, torch 2.13.0+cu130"
+      placeholder: "tbccl 0.7.0rc1, torch-tbccl 0.3.0rc1, torch 2.13.0+cu130"
     validations:
       required: true
   - type: textarea

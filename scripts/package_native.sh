@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build, stage, archive and verify a TBCCL native release archive.
-#   scripts/package_native.sh [--cuda] [--cuda-arch "75-real;80-real;...;120"] [--public-version 0.6.1] [--out DIR] [--jobs N]
+#   scripts/package_native.sh [--cuda] [--cuda-arch "75-real;80-real;...;120"] [--public-version 0.7.0rc1] [--out DIR] [--jobs N]
 # Writes DIR/tbccl-<public-version>-<os>-<arch>[-cuda<major>].tar.gz (+ .sha256). The tarball is deterministic for a given tree and toolchain
 # (sorted names, fixed owner, mtime from SOURCE_DATE_EPOCH or the commit time). The archive is then extracted into a fresh directory and
 # checked: tbccl-info runs, the out-of-tree C++ and C consumers configure/build/run against it, and no build path leaks into any file.
