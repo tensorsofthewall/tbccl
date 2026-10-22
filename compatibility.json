@@ -8,8 +8,8 @@
   ],
   "package": {
     "development_version": "0.7.0",
-    "public_version": "0.7.0rc1",
-    "release_candidate": true,
+    "public_version": "0.7.0",
+    "release_candidate": false,
     "target_release": "0.7.0",
     "released": false
   },

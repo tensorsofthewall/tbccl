@@ -11,7 +11,7 @@ TBCCL (Thunderbolt Collective Communication Library) lets machines that differ i
 The transport is TCP over IPv4. TBCCL does not use RDMA, and there is no direct GPU-to-GPU DMA: CUDA buffers are staged through pinned host memory and Metal shared memory is handed to the transport directly.
 
 ```{note}
-**Release.** The current release is 0.7.0rc1, a release candidate (pre-release; C ABI 1, wire protocol 4). The latest final release is 0.6.1. TBCCL is experimental.
+**Release.** The current release is 0.7.0 (C ABI 1, wire protocol 4). TBCCL is experimental.
 ```
 
 <nav class="tb-eco" aria-label="TBCCL ecosystem: the four documentation sites">

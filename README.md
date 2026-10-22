@@ -9,7 +9,7 @@
 
 TBCCL (Thunderbolt Collective Communication Library) is a C++17 runtime with a stable C ABI that moves tensors between machines that differ in operating system and memory type, for example a Linux host with an NVIDIA GPU and a Mac with Apple silicon, over TCP, including a direct Thunderbolt 4 link.
 
-> **Status:** **0.7.0rc1** (release candidate; pre-release, not for production use). **C ABI 1**, **wire protocol 4**. The final 0.7.0 has not been released. Wire protocol 4 does not interoperate with wire protocol 3.
+> **Status:** **0.7.0** (experimental). **C ABI 1**, **wire protocol 4**. Wire protocol 4 does not interoperate with wire protocol 3.
 
 ## Why it exists
 
@@ -64,16 +64,16 @@ The current stable versions and framework pins of all four projects are on the [
 Download a prebuilt archive, verify it and check the runtime, in an empty directory:
 
 ```sh
-# Linux x86-64 (use tbccl-0.7.0rc1-linux-x86_64-cuda13.tar.gz for CUDA buffers):
+# Linux x86-64 (use tbccl-0.7.0-linux-x86_64-cuda13.tar.gz for CUDA buffers):
 mkdir tbccl-quickstart && cd tbccl-quickstart
-BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.7.0rc1
-curl -fsSLO $BASE/tbccl-0.7.0rc1-linux-x86_64.tar.gz -fsSLO $BASE/SHA256SUMS
+BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.7.0
+curl -fsSLO $BASE/tbccl-0.7.0-linux-x86_64.tar.gz -fsSLO $BASE/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf tbccl-0.7.0rc1-linux-x86_64.tar.gz
-./tbccl-0.7.0rc1-linux-x86_64/bin/tbccl-info
+tar -xzf tbccl-0.7.0-linux-x86_64.tar.gz
+./tbccl-0.7.0-linux-x86_64/bin/tbccl-info
 ```
 
-On macOS (Apple silicon) use the archive `tbccl-0.7.0rc1-macos-arm64.tar.gz` and `shasum -a 256 -c SHA256SUMS --ignore-missing`. Then use it from CMake (`find_package(TBCCL CONFIG REQUIRED)`, target `TBCCL::tbccl_c` for C or `TBCCL::tbccl` for C++, with `-DCMAKE_PREFIX_PATH=<extracted directory>`) or through pkg-config. [Installing](docs/getting-started/install.md) has the macOS commands, a complete minimal CMake consumer, pkg-config use, and building from source (developers only).
+On macOS (Apple silicon) use the archive `tbccl-0.7.0-macos-arm64.tar.gz` and `shasum -a 256 -c SHA256SUMS --ignore-missing`. Then use it from CMake (`find_package(TBCCL CONFIG REQUIRED)`, target `TBCCL::tbccl_c` for C or `TBCCL::tbccl` for C++, with `-DCMAKE_PREFIX_PATH=<extracted directory>`) or through pkg-config. [Installing](docs/getting-started/install.md) has the macOS commands, a complete minimal CMake consumer, pkg-config use, and building from source (developers only).
 
 ## Minimal example
 

@@ -23,8 +23,8 @@ find_package(Threads REQUIRED)
 include(GNUInstallDirs)
 
 # The numeric project VERSION is the CMake package version and what tbcclGetPackageVersion reports. The public release version string may carry a
-# release-candidate suffix (for example 0.7.0rc1); it drives tbccl-info, the generated tbccl/version.h and the release archive names. This tree is prepared for release candidate 0.7.0rc1; a build can override it (empty-suffix final release: -DTBCCL_PUBLIC_VERSION=0.7.0).
-set(TBCCL_PUBLIC_VERSION "${PROJECT_VERSION}rc1" CACHE STRING "Public release version string: the project VERSION, optionally followed by rcN (for example 0.7.0rc1)")
+# release-candidate suffix (for example 0.7.0rc1); it drives tbccl-info, the generated tbccl/version.h and the release archive names. This tree is the final release 0.7.0 (no suffix); a build can override it (-DTBCCL_PUBLIC_VERSION=0.7.0rc2 for a candidate).
+set(TBCCL_PUBLIC_VERSION "${PROJECT_VERSION}" CACHE STRING "Public release version string: the project VERSION, optionally followed by rcN (for example 0.7.0rc1)")
 if(NOT TBCCL_PUBLIC_VERSION MATCHES "^${PROJECT_VERSION_MAJOR}\\.${PROJECT_VERSION_MINOR}\\.${PROJECT_VERSION_PATCH}(rc[0-9]+)?$")
     message(FATAL_ERROR "TBCCL_PUBLIC_VERSION '${TBCCL_PUBLIC_VERSION}' must be ${PROJECT_VERSION} optionally followed by rc<N>")
 endif()
