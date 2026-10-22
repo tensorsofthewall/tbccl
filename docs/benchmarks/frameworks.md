@@ -37,9 +37,9 @@ A provider is the `benchmarks/provider` directory of an adapter repository. Take
 
 | Provider | Source of the provider directory | Runs in |
 |---|---|---|
-| `torch-tbccl` | tag `v0.2.1` of `tensorsofthewall/torch-tbccl` | a PyTorch 2.13 environment with torch-tbccl installed |
-| `vllm-tbccl` | tag `v0.2.1` of `tensorsofthewall/vllm-tbccl` | a vLLM 0.31.0 environment with vllm-tbccl installed |
-| `exo-tbccl` | tag `v0.3.1` of `tensorsofthewall/exo-tbccl` | the Exo environment with exo-tbccl installed |
+| `torch-tbccl` | tag `v0.3.0` of `tensorsofthewall/torch-tbccl` | a PyTorch 2.13 environment with torch-tbccl installed |
+| `vllm-tbccl` | tag `v0.3.0` of `tensorsofthewall/vllm-tbccl` | a vLLM 0.31.0 environment with vllm-tbccl installed |
+| `exo-tbccl` | tag `v0.4.0` of `tensorsofthewall/exo-tbccl` | the Exo environment with exo-tbccl installed |
 
 The runner and a provider do not need the same package version. They are paired by three things that are checked, not assumed: the **provider protocol** (the runner supports protocol 1 and `describe` reports the provider's), the **result schema** (`tbccl-bench-result/1`, listed by `describe`) and the **runtime** (the adapter's own C ABI and wire protocol, which are unchanged across these releases). The identity of what actually ran is recorded in every result: the provider's version, the framework versions, and the hash of the compiled extension in the installed wheel. An adapter wheel carries the TBCCL library it was built with, so the library that ran is the adapter's, not the runner's. The suite identifies it by the hash of the compiled extension and never reports the runner's version as the library's; the library version, C ABI and wire protocol of an installed adapter are shown by its own `info()` command (for example `python -m torch_tbccl.info`).
 
