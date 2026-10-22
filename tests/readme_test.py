@@ -75,12 +75,12 @@ class ReadmeIntegrity(unittest.TestCase):
 
     def test_a_stale_release_url_is_caught(self):
         v = (COMPAT["package"].get("public_version") or COMPAT["package"]["development_version"])
-        major, minor, patch = v.split(".")
+        major, minor, patch = v.split("rc")[0].split(".")
         stale = f"{major}.{minor}.{int(patch) + 5}"
         self.expect(lambda t: re.sub(r"(releases/download/v)" + re.escape(v), r"\g<1>" + stale, t), "names v" + re.escape(stale))
 
     def test_an_unknown_asset_name_is_caught(self):
-        pat = r"\b((?:tbccl|torch_tbccl|vllm_tbccl|exo_tbccl)-\d+\.\d+\.\d+)-[\w.-]+\.(?:whl|tar\.gz)"
+        pat = r"\b((?:tbccl|torch_tbccl|vllm_tbccl|exo_tbccl)-\d+\.\d+\.\d+(?:rc\d+)?)-[\w.-]+\.(?:whl|tar\.gz)"
         m = re.search(pat, README)
         self.assertTrue(m, "the README names no release asset")
         self.expect(lambda t: t.replace(m.group(0), m.group(1) + "-plan9-surprise.whl", 1), "release_assets")

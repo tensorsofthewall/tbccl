@@ -2,6 +2,7 @@
 
 Static checks of docs/ and the repository tree; no build, no network, no download, no hardware. The same file is used by all four TBCCL repositories.
 """
+import json
 import re
 import sys
 import tempfile
@@ -16,6 +17,9 @@ DOCS = ROOT / "docs"
 CONF = (DOCS / "conf.py").read_text()
 SITE = re.search(r'^project = "([^"]+)"', CONF, re.M).group(1).lower()
 ADAPTER = SITE != "tbccl"
+if not ADAPTER:
+    _package = json.loads((ROOT / "compatibility.json").read_text())["package"]
+    TBCCL_VERSION = _package.get("public_version") or _package["development_version"]
 
 
 def read(rel):
@@ -209,7 +213,7 @@ class Onboarding(unittest.TestCase):
             "exo-tbccl": ["tbccl-integration-v2", "tbccl-integration-v1", "d1497b28b89618172d273e70e9ac7992811635f5", "0.3.0", "0.3.1"],
             "vllm-tbccl": ["v0.31.0-tbccl1", "fa4f934586bc27ac974a54183237594d1dc28fc5", "0.31.0"],
             "torch-tbccl": ["--no-deps", "2.13.0", "cu130"],
-            "tbccl": ["tbccl-0.6.1-linux-x86_64.tar.gz", "SHA256SUMS", "TBCCL::tbccl_c"],
+            "tbccl": [f"tbccl-{TBCCL_VERSION}-linux-x86_64.tar.gz", "SHA256SUMS", "TBCCL::tbccl_c"],
         }
         text = read("getting-started/install.md")
         for fact in facts[SITE]:

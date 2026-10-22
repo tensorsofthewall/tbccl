@@ -1,4 +1,4 @@
-"""The installation commands in README.md and docs/getting-started/install.md must name the archives and URLs of the release recorded in release/ecosystem.json."""
+"""The installation commands in README.md and docs/getting-started/install.md must name the archives and URLs of the release the tree describes (compatibility.json), which is the release recorded in release/ecosystem.json once it is published."""
 import json
 import re
 import unittest
@@ -10,14 +10,15 @@ ARCHIVES = ("linux-x86_64", "linux-x86_64-cuda13", "macos-arm64")
 
 class InstallDocs(unittest.TestCase):
     def setUp(self):
-        eco = json.loads((ROOT / "release" / "ecosystem.json").read_text())["tbccl"]
-        self.version, self.tag = eco["version"], eco["tag"]
+        package = json.loads((ROOT / "compatibility.json").read_text())["package"]
+        self.version = package.get("public_version") or package["development_version"]
+        self.tag = f"v{self.version}"
         self.pages = {n: (ROOT / n).read_text() for n in ("README.md", "docs/getting-started/install.md")}
 
     def test_archive_names_and_urls_match_the_current_release(self):
         for name, text in self.pages.items():
             self.assertIn(f"releases/download/{self.tag}", text, name)
-            for found in re.findall(r"tbccl-(\d+\.\d+\.\d+)-(?:linux|macos)", text):
+            for found in re.findall(r"tbccl-(\d+\.\d+\.\d+(?:rc\d+)?)-(?:linux|macos)", text):
                 self.assertEqual(found, self.version, name)
             for arch in re.findall(rf"tbccl-{re.escape(self.version)}-([a-z0-9_-]+?)\.tar\.gz", text):
                 self.assertIn(arch, ARCHIVES, f"{name}: unknown archive {arch}")

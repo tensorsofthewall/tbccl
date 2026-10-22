@@ -91,13 +91,13 @@ def problems(root=ROOT):
     templates = compat.get("release_assets", [])
     allowed = [re.compile("^" + re.escape(t).replace(r"\{version\}", re.escape(version)) + "$") for t in templates]
     own = re.escape(f"github.com/tensorsofthewall/{project}/releases/download/v")
-    for v in sorted(set(re.findall(rf"{own}(\d+\.\d+\.\d+)", text))):
+    for v in sorted(set(re.findall(rf"{own}(\d+\.\d+\.\d+(?:rc\d+)?)", text))):
         if v != version:
             out.append(f"a release URL names v{v}, but the package version is {version}")
-    for v, asset in re.findall(rf"{own}(\d+\.\d+\.\d+)/([^\s)\"'`]+)", text):
+    for v, asset in re.findall(rf"{own}(\d+\.\d+\.\d+(?:rc\d+)?)/([^\s)\"'`]+)", text):
         if v == version and not any(a.match(asset) for a in allowed):
             out.append(f"the release asset {asset} is not one of the release_assets of compatibility.json")
-    for v, tail in re.findall(r"\b(?:tbccl|torch_tbccl|vllm_tbccl|exo_tbccl)-(\d+\.\d+\.\d+)-([\w.-]+\.(?:whl|tar\.gz))", text):
+    for v, tail in re.findall(r"\b(?:tbccl|torch_tbccl|vllm_tbccl|exo_tbccl)-(\d+\.\d+\.\d+(?:rc\d+)?)-([\w.-]+\.(?:whl|tar\.gz))", text):
         name = re.search(rf"(?:tbccl|torch_tbccl|vllm_tbccl|exo_tbccl)-{re.escape(v)}-{re.escape(tail)}", text).group(0)
         if project == "tbccl" and not name.startswith("tbccl-"):
             continue
