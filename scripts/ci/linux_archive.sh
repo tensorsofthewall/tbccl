@@ -5,6 +5,9 @@ set -euo pipefail
 VARIANT=${1:?host|cuda}; PUBLIC=${2:-}; OUT=${3:?output directory}
 SRC=$(cd "$(dirname "$0")/../.." && pwd)
 git config --global --add safe.directory '*'
+# The system bundle of the image still lists the emSign roots revoked in October 2026, and the pip of the interpreter used below must be 26.2.2 or later
+bash "$SRC/scripts/ci/distrust_emsign.sh"
+bash "$SRC/scripts/ci/bootstrap_pip.sh" /opt/python/cp313-cp313/bin/python
 ARGS=(); [ -z "$PUBLIC" ] || ARGS+=(--public-version "$PUBLIC")
 if [ "$VARIANT" = cuda ]; then
     dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
