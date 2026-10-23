@@ -37,10 +37,10 @@ This page is the canonical statement of the **current** ecosystem. It is built f
 <!-- ecosystem-table:begin -->
 | Project | Current stable | Tag | Commit | Pins |
 |---|---|---|---|---|
-| tbccl | 0.7.0 | `v0.7.0` | `176f3ab41423` | C ABI 1, wire protocol 4 |
-| torch-tbccl | 0.3.0 | `v0.3.0` | `bf7c5aa759a0` | PyTorch 2.13.x |
-| vllm-tbccl | 0.3.0 | `v0.3.0` | `f6a5e24677f8` | vLLM 0.31.0; `tensorsofthewall/vllm-metal@v0.31.0-tbccl1` (`fa4f934586bc`) |
-| exo-tbccl | 0.4.0 | `v0.4.0` | `766579836ca1` | `tensorsofthewall/exo-fork@tbccl-integration-v2` (`d1497b28b896`) |
+| tbccl | 0.7.1 | `v0.7.1` | `564473d92139` | C ABI 1, wire protocol 4 |
+| torch-tbccl | 0.3.1 | `v0.3.1` | `c93b1065222f` | PyTorch 2.13.x |
+| vllm-tbccl | 0.3.1 | `v0.3.1` | `7139a6abeb53` | vLLM 0.31.0; `tensorsofthewall/vllm-metal@v0.31.0-tbccl1` (`fa4f934586bc`) |
+| exo-tbccl | 0.5.0 | `v0.5.0` | `4eba68f33c44` | `tensorsofthewall/exo-fork@tbccl-integration-v3` (`4724b8bfa1ee`) |
 <!-- ecosystem-table:end -->
 
 All four are GitHub releases (nothing is on PyPI) and share **C ABI 1** and **wire protocol 4**. Project versions, the C ABI version and the wire protocol version are different things, and ranks that speak different wire protocols cannot communicate. The adapters pin their framework forks to immutable tags, never to a moving branch; the pins are checked automatically.

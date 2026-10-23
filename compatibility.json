@@ -11,7 +11,7 @@
     "public_version": "0.7.1",
     "release_candidate": false,
     "target_release": "0.7.1",
-    "released": false
+    "released": true
   },
   "c_abi": {
     "version": 1
