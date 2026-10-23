@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 env:
-  MANYLINUX_IMAGE: quay.io/pypa/manylinux_2_28_x86_64@sha256:39df0042d5cc900b085aa25a0659368b42a0006c54c474299b785b44c1b4ff82
+  MANYLINUX_IMAGE: quay.io/pypa/manylinux_2_28_x86_64@sha256:076b19ef6e698f28649fa817c49d14443201e01da85240e8e52f93e8daa49bff
   PUBLIC_VERSION: ${{ inputs.public_version }}
 
 jobs:
@@ -147,6 +147,7 @@ jobs:
           merge-multiple: true
       - name: SBOMs and SHA256SUMS
         run: |
+          bash scripts/ci/bootstrap_pip.sh
           python -m pip install --quiet spdx-tools==0.8.5
           mkdir staging
           cp parts/*.tar.gz staging/

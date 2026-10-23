@@ -37,6 +37,15 @@ There is no calendar. A release happens when a change needs one: a correctness o
 
 A correctness defect (wrong results, data corruption, a protocol disagreement) or a security issue is fixed in a new patch release of the affected project, with the defect described in the CHANGELOG and the earlier release's GitHub Release description edited to point to the fix. Report security issues as described in `SECURITY.md`. A fix that changes runtime behaviour needs physical requalification before it is released.
 
+## Build environment and trust stores
+
+The release builds run in a pinned manylinux image and on GitHub-hosted runners, and they fetch build tools over HTTPS. Their trust stores are part of the build, so they are pinned and checked like any other input:
+
+- Every job that runs `pip` first runs `scripts/ci/bootstrap_pip.sh` (`tools/ci/bootstrap_pip.sh` in the adapters), which installs pip 26.2.2 from its hash-pinned wheel when the interpreter's pip is older. pip trusts its own vendored certifi in addition to the system store, so it can only be repaired by replacing pip. The same applies to the documentation build (`Makefile`, `.readthedocs.yaml`). uv is installed as a specific version (0.13.5), never as "latest".
+- The manylinux image is pinned by digest. A digest is replaced when its pip, certifi or uv is affected, never refreshed by pulling the same digest again. The container build runs `distrust_emsign.sh` before it downloads anything, because the distribution's `ca-certificates` package can lag behind a root removal; that script blocklists the revoked root (emSign ECC Root CA - G3, the one certifi 2026.10.19 removes) and only removes trust.
+- `docs/requirements.txt` pins certifi exactly. `tools/check_trust_dependencies.py` (run by the `docs`, `maintenance` and `release-preflight` workflows) rejects an affected certifi, uv or image digest, a job that uses pip without the bootstrap, a `dnf` step without the blocklist and any TLS-verification bypass in an active file. Validation pages, the changelog and benchmark records are historical and are not read.
+- Runner images and the Read the Docs base image are managed by their providers; the repository cannot change their system trust stores, only the tools it installs on top.
+
 ## Upstream update policy
 
 vLLM, vllm-metal, exo, MLX and PyTorch are qualification boundaries: nothing moves them automatically. Upstream drift of the two forks is monitored weekly (`upstream-drift` workflows in the forks) and reported; it is never merged by automation. The next sync is a planned piece of work: merge upstream into the fork, re-apply and re-validate the integration, publish a new immutable tag, then release the adapter.

@@ -15,6 +15,8 @@ python3 install_adapter.py install --adapter torch --python .venv/bin/python --d
 
 `--device` is `cpu`, `cuda` (Linux x86-64) or `mps`/`metal` (Apple silicon). It only checks that your PyTorch matches: the wheel is the same file for every device. Other commands: `list` shows every wheel in the inventory; `install --dry-run` shows what would happen without downloading anything; `--reinstall` replaces an installed adapter of the same version.
 
+The helper uses the `uv` or `pip` you have. Use uv 0.13.4 or later and pip 26.2.2 or later: older versions trust the emSign root that was revoked in October 2026 (see the [security policy](../project/security-policy.md)). The wheels themselves contain no CA bundle.
+
 | Adapter | Supported environments |
 |---|---|
 | `torch` | CPython 3.13, Linux x86-64 and macOS arm64, PyTorch 2.13.x |

@@ -37,6 +37,10 @@ jobs:
         run: python3 tools/check_doc_commands.py
       - name: Test the onboarding, troubleshooting and contributor pages
         run: python3 tests/docs_usability_test.py
+      - name: Check the trust-store dependency policy (certifi, uv, pip bootstrap, container images, no TLS bypass)
+        run: python3 tools/check_trust_dependencies.py
+      - name: Test the trust-store dependency policy check
+        run: python3 tests/trust_dependencies_test.py
       - name: Check the README against the release metadata (offline)
         run: python3 tools/check_readme.py
       - name: Test the README check

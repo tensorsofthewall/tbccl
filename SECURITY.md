@@ -2,7 +2,15 @@
 
 ## Supported versions
 
-Security fixes are made against the latest release series only (currently 0.6.x). Development versions and unreleased branches are not supported.
+Security fixes are made against the latest release series only (currently 0.7.x). Development versions and unreleased branches are not supported.
+
+## Package-manager and trust-store notice (October 2026)
+
+Private keys of eight eMudhra intermediate certificates were reported compromised in October 2026, and the affected emSign root (emSign ECC Root CA - G3) was removed from the CA bundles that Python tooling uses. This is not a vulnerability of the TBCCL runtime or of any published TBCCL release: the data transport is plain TCP without TLS (see the security model), and none of the released archives or wheels contains a CA bundle or performs TLS. It concerns the tools that fetch packages and the environments that build them.
+
+- Use at least certifi 2026.10.19, pip 26.2.2 and uv 0.13.4 (sigstore 4.5.1, conda 26.9.4 and pixi 0.82.1 if you use them), in every environment where you install TBCCL or its adapters. pip trusts its own vendored certifi in addition to the system store, so upgrading the `certifi` package does not patch an older pip: upgrade pip itself, with the hash-pinned wheel in the Python Security Response Team announcement when the installed pip is older.
+- The release workflows install a specific pip (from its hash-pinned wheel) and uv, build inside a manylinux image whose tools carry these versions, and block the revoked emSign root in that image's system bundle before downloading anything. `tools/check_trust_dependencies.py` rejects affected certifi, uv and container pins and TLS-verification bypasses in active files.
+- Nothing here adds authentication or encryption to TBCCL's data path.
 
 ## Reporting a vulnerability
 

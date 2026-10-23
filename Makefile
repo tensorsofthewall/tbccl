@@ -5,6 +5,7 @@ PYTHON ?= python3
 
 $(DOCS_VENV)/.installed: docs/requirements.txt
 	$(PYTHON) -m venv $(DOCS_VENV)
+	bash scripts/ci/bootstrap_pip.sh $(DOCS_VENV)/bin/python
 	$(DOCS_VENV)/bin/python -m pip install --quiet -r docs/requirements.txt
 	touch $@
 

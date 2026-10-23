@@ -25,6 +25,7 @@ A **release archive** (a built, installed prefix: library, headers, CMake and pk
 
 - A C++17 compiler (C11 for C-only consumers), CMake 3.20 or newer and Threads.
 - Linux x86-64 or macOS arm64 (Apple silicon). Windows is not supported.
+- If you install adapters or run the Python benchmark suite: pip 26.2.2 or later, uv 0.13.4 or later and certifi 2026.10.19 or later in those environments (the October 2026 emSign CA removal; see the [security policy](../project/security-policy.md)). TBCCL itself performs no TLS and ships no CA bundle.
 - For CUDA buffers: an NVIDIA GPU and driver on Linux, and the CUDA Toolkit when you build against the CUDA archive with CMake.
 - For Metal-shared buffers: macOS. On macOS over a non-interactive SSH session, `cmake` and `ctest` may not be on `PATH`; add the directory that holds them (for example `/opt/homebrew/bin`).
 
