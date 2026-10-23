@@ -7,8 +7,8 @@ This runs the native benchmarks on one machine, on loopback. It needs a C++ tool
 The Python benchmark suite is **not** inside the native release archives (`tbccl-<version>-<platform>.tar.gz`, which hold the library, headers, CMake packages and `tbccl-info`). It is part of the source of each release: download the source archive of the release tag, or check the tag out, and run it from that directory. Use the tag of the release you are measuring.
 
 ```sh
-curl -fsSL https://github.com/tensorsofthewall/tbccl/archive/refs/tags/v0.7.0.tar.gz | tar -xz
-cd tbccl-0.7.0
+curl -fsSL https://github.com/tensorsofthewall/tbccl/archive/refs/tags/v0.7.1.tar.gz | tar -xz
+cd tbccl-0.7.1
 ```
 
 (`git clone --branch v0.7.0 https://github.com/tensorsofthewall/tbccl` gives the same files.) Nothing else is downloaded. The framework providers are obtained the same way from the matching tags of their repositories; see [framework benchmarks](frameworks.md).

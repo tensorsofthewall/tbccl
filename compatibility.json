@@ -7,11 +7,11 @@
     "tbccl-{version}-macos-arm64.tar.gz"
   ],
   "package": {
-    "development_version": "0.7.0",
-    "public_version": "0.7.0",
+    "development_version": "0.7.1",
+    "public_version": "0.7.1",
     "release_candidate": false,
-    "target_release": "0.7.0",
-    "released": true
+    "target_release": "0.7.1",
+    "released": false
   },
   "c_abi": {
     "version": 1

@@ -13,7 +13,7 @@ body:
     attributes:
       label: "TBCCL version"
       description: "Output of `tbccl-info`, or the version of the TBCCL your adapter wheel statically links."
-      placeholder: "0.7.0"
+      placeholder: "0.7.1"
     validations:
       required: true
   - type: input

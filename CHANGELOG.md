@@ -2,6 +2,23 @@
 
 All notable user-facing changes are recorded here. The format follows Keep a Changelog, and the project follows Semantic Versioning once it has releases. 0.6.0 is the first release; it is experimental.
 
+## 0.7.1
+
+Security-maintenance patch release. There is no change to the library (`src/`, `include/`), the C ABI (version 1), the wire protocol (version 4) or the endpoint blob format (version 1), and no change to any transport or collective algorithm. Ranks of 0.7.0 and 0.7.1 interoperate. It is experimental.
+
+This is **not** a fix for a vulnerability in TBCCL or in 0.7.0. In October 2026 the emSign root affected by the eMudhra intermediate-key compromise was removed from the CA bundles of Python tooling (certifi 2026.10.19, pip 26.2.2, uv 0.13.4). TBCCL's data path is plain TCP and none of the 0.7.0 archives contains a CA bundle or TLS code (all of them were searched). What this release changes is the environment the artifacts are built in: the release archives are rebuilt in a patched manylinux image, with the pip and uv versions above, and with the revoked root blocked in the build container's system bundle. The 0.7.0 artifacts stay as published and are not unsafe to use.
+
+### Installation
+
+- The same three native archives as 0.7.0, named `tbccl-0.7.1-...`, each with an SPDX SBOM, `SHA256SUMS` and a build-provenance attestation, built by CI.
+
+### Security
+
+- The documentation build pins certifi 2026.10.19. The release and documentation jobs install pip 26.2.2 from its hash-pinned wheel before their first pip use, and uv 0.13.5; the clean-install workflow no longer installs uv 0.9.18.
+- The manylinux_2_28 build image moves to a digest with pip 26.2.2, certifi 2026.10.19 and uv 0.13.4 (the compilers are unchanged), and the container build blocks emSign ECC Root CA - G3 in its system bundle before it downloads anything. TLS verification is not weakened anywhere.
+- `tools/check_trust_dependencies.py` rejects an affected certifi, uv or container pin, pip used without the bootstrap and any TLS-verification bypass in an active file.
+- If you install adapters or run the benchmark suite, use pip 26.2.2 or later, uv 0.13.4 or later and certifi 2026.10.19 or later in those environments; upgrading the `certifi` package does not patch an older pip. See `SECURITY.md`.
+
 ## 0.7.0
 
 The first minor release after 0.6, promoted from release candidate 0.7.0rc1 with no change to the library: the differences are the version string, the documentation and the validation records. It is experimental. The C ABI (version 1), the wire protocol (version 4) and the endpoint blob format (version 1) are unchanged, and ranks of 0.6.x and 0.7.0 interoperate. Every new tuning setting is opt-in; the only default behaviour that changed is the two-rank `all_gather` schedule described below.
