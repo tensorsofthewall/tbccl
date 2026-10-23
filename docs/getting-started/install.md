@@ -31,15 +31,15 @@ A **release archive** (a built, installed prefix: library, headers, CMake and pk
 
 ## Path 1: a prebuilt release archive
 
-Release archives are attached to the GitHub release of each version (currently [`v0.7.0`](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.7.0)). They are static builds with no runtime dependency beyond the system C++ runtime.
+Release archives are attached to the GitHub release of each version (currently [`v0.7.1`](https://github.com/tensorsofthewall/tbccl/releases/tag/v0.7.1)). They are static builds with no runtime dependency beyond the system C++ runtime.
 
 | Archive | Contents |
 |---|---|
-| `tbccl-0.7.0-linux-x86_64-cuda13.tar.gz` | Linux x86-64 with the CUDA memory provider (built with CUDA 13.0; `Host` and `Cuda` buffers) |
-| `tbccl-0.7.0-linux-x86_64.tar.gz` | Linux x86-64, host buffers only |
-| `tbccl-0.7.0-macos-arm64.tar.gz` | macOS Apple silicon (`Host` and `MetalShared` buffers) |
+| `tbccl-0.7.1-linux-x86_64-cuda13.tar.gz` | Linux x86-64 with the CUDA memory provider (built with CUDA 13.0; `Host` and `Cuda` buffers) |
+| `tbccl-0.7.1-linux-x86_64.tar.gz` | Linux x86-64, host buffers only |
+| `tbccl-0.7.1-macos-arm64.tar.gz` | macOS Apple silicon (`Host` and `MetalShared` buffers) |
 
-The archives hold the library, headers, CMake and pkg-config packages and `tbccl-info`. The Python benchmark suite (the runner) is **not** in them: it is part of the source of each release (the source archive of the tag), as described in [run benchmarks](../benchmarks/quickstart.md). The runtime version, `0.7.0`, is a different number from the C ABI (`1`) and the wire protocol (`4`); `tbccl-info` prints all three.
+The archives hold the library, headers, CMake and pkg-config packages and `tbccl-info`. The Python benchmark suite (the runner) is **not** in them: it is part of the source of each release (the source archive of the tag), as described in [run benchmarks](../benchmarks/quickstart.md). The runtime version, `0.7.1`, is a different number from the C ABI (`1`) and the wire protocol (`4`); `tbccl-info` prints all three.
 
 Pick the archive for your machine, then run the commands for your operating system in an empty directory. They need only `curl`, a checksum tool and `tar`, and nothing else from this repository.
 
@@ -47,25 +47,25 @@ Pick the archive for your machine, then run the commands for your operating syst
 
 ```sh
 mkdir tbccl-quickstart && cd tbccl-quickstart
-BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.7.0
-curl -fsSLO $BASE/tbccl-0.7.0-linux-x86_64.tar.gz -fsSLO $BASE/SHA256SUMS
+BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.7.1
+curl -fsSLO $BASE/tbccl-0.7.1-linux-x86_64.tar.gz -fsSLO $BASE/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf tbccl-0.7.0-linux-x86_64.tar.gz
-./tbccl-0.7.0-linux-x86_64/bin/tbccl-info
+tar -xzf tbccl-0.7.1-linux-x86_64.tar.gz
+./tbccl-0.7.1-linux-x86_64/bin/tbccl-info
 ```
 
 **macOS arm64** (Apple silicon):
 
 ```sh
 mkdir tbccl-quickstart && cd tbccl-quickstart
-BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.7.0
-curl -fsSLO $BASE/tbccl-0.7.0-macos-arm64.tar.gz -fsSLO $BASE/SHA256SUMS
+BASE=https://github.com/tensorsofthewall/tbccl/releases/download/v0.7.1
+curl -fsSLO $BASE/tbccl-0.7.1-macos-arm64.tar.gz -fsSLO $BASE/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-tar -xzf tbccl-0.7.0-macos-arm64.tar.gz
-./tbccl-0.7.0-macos-arm64/bin/tbccl-info
+tar -xzf tbccl-0.7.1-macos-arm64.tar.gz
+./tbccl-0.7.1-macos-arm64/bin/tbccl-info
 ```
 
-`tbccl-info` prints the package version, C ABI and wire protocol, the platform and the memory providers (`host`, plus `cuda` for the CUDA archive, or `metal_shared` on macOS). Optionally verify the build provenance too: `gh attestation verify tbccl-0.7.0-linux-x86_64.tar.gz --repo tensorsofthewall/tbccl` (needs the GitHub CLI). The extracted directory is an install prefix:
+`tbccl-info` prints the package version, C ABI and wire protocol, the platform and the memory providers (`host`, plus `cuda` for the CUDA archive, or `metal_shared` on macOS). Optionally verify the build provenance too: `gh attestation verify tbccl-0.7.1-linux-x86_64.tar.gz --repo tensorsofthewall/tbccl` (needs the GitHub CLI). The extracted directory is an install prefix:
 
 ```text
 bin/tbccl-info              version and capability tool
@@ -80,7 +80,7 @@ See also the [diagnostics guide](../guides/diagnostics.md).
 
 ### A minimal CMake consumer
 
-Still in `tbccl-quickstart`, create the two files below and build against the extracted prefix (the commands are the Linux ones; on macOS use the `tbccl-0.7.0-macos-arm64` directory). The Linux flow was verified in a clean directory with both Linux archives.
+Still in `tbccl-quickstart`, create the two files below and build against the extracted prefix (the commands are the Linux ones; on macOS use the `tbccl-0.7.1-macos-arm64` directory). The Linux flow was verified in a clean directory with both Linux archives.
 
 ```sh
 cat > CMakeLists.txt <<'CMAKE'
@@ -104,8 +104,8 @@ int main(void)
     return 0;
 }
 SOURCE
-cmake -S . -B build -DCMAKE_PREFIX_PATH=$PWD/tbccl-0.7.0-linux-x86_64
-cmake --build build && ./build/version_check          # TBCCL 0.7.0, C ABI 1
+cmake -S . -B build -DCMAKE_PREFIX_PATH=$PWD/tbccl-0.7.1-linux-x86_64
+cmake --build build && ./build/version_check          # TBCCL 0.7.1, C ABI 1
 ```
 
 `TBCCL::tbccl_c` is the C ABI target; a C++ program links `TBCCL::tbccl` instead. A C++ program that runs a two-rank `all_reduce` with two threads on loopback (`examples/two_rank_threads.cpp` in the source repository):
@@ -120,7 +120,7 @@ With the CUDA archive, CMake also finds the CUDA Toolkit and links the CUDA runt
 ### Use it from pkg-config
 
 ```sh
-export PKG_CONFIG_PATH=$PWD/tbccl-0.7.0-linux-x86_64/lib/pkgconfig      # the .pc file locates its own prefix
+export PKG_CONFIG_PATH=$PWD/tbccl-0.7.1-linux-x86_64/lib/pkgconfig      # the .pc file locates its own prefix
 c++ -std=c++17 two_rank_threads.cpp $(pkg-config --cflags --libs tbccl) -pthread -o two_rank_threads
 cc version_check.c $(pkg-config --cflags --libs tbccl) -lstdc++ -o version_check
 ```
@@ -144,7 +144,7 @@ cmake --install build-release --prefix <prefix>
 | `-DTBCCL_CUDA_STATIC_RUNTIME=ON` | `OFF` | link the CUDA component against the static CUDA runtime so a program or wheel that uses it has no `libcudart.so` dependency. The release archives are built this way; leave it off for a normal local build |
 | `-DCMAKE_INSTALL_PREFIX=<prefix>` / `--prefix` | system default | where `cmake --install` puts the package |
 
-A source build is versioned as the release by default (`TBCCL_PUBLIC_VERSION`, e.g. `0.7.0`; a candidate build uses an `rcN` suffix); `tbccl-info` shows what you built. Consumers link the **installed** prefix, not the source tree. The package exports:
+A source build is versioned as the release by default (`TBCCL_PUBLIC_VERSION`, e.g. `0.7.1`; a candidate build uses an `rcN` suffix); `tbccl-info` shows what you built. Consumers link the **installed** prefix, not the source tree. The package exports:
 
 | Target | Use |
 |---|---|
@@ -159,6 +159,6 @@ Package versions, the C ABI version and the wire protocol version are separate (
 ## What success looks like
 
 - `tbccl-info` prints the package version, `C ABI 1`, `wire protocol 4`, and the memory providers you expected (`host`, plus `cuda` or `metal_shared`).
-- The CMake consumer prints `TBCCL 0.7.0, C ABI 1`.
+- The CMake consumer prints `TBCCL 0.7.1, C ABI 1`.
 
 **This showed** that the headers, the library and the build system fit together on this machine. **It did not show** that two machines can reach each other, that a GPU path works end to end, or how fast anything is. **Next:** [Your first program](first-program.md) for a two-rank run on one machine, then [Two machines over Thunderbolt](two-machine-thunderbolt.md). **If it fails:** [Troubleshooting](../guides/troubleshooting.md) (installing and linking) and [diagnostics](../guides/diagnostics.md).
