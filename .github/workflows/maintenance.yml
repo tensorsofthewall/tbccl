@@ -46,6 +46,7 @@ jobs:
           check "release state (the version must be released)" python3 tools/check_release_state.py --require-released
           check "release documentation describes the released version" python3 tools/check_release_docs.py
           check "maintenance tooling tests" python3 tests/maintenance_tools_test.py
+          check "trust-store dependency policy" python3 tools/check_trust_dependencies.py
           check "installation documentation" python3 tests/install_docs_test.py
           check "ecosystem manifest (online)" python3 tools/check_ecosystem_manifest.py --online
           check "wheel inventory (online)" python3 tools/gen_wheel_inventory.py --online

@@ -48,6 +48,7 @@ jobs:
           check "release documentation describes $INTENDED_TAG" python3 tools/check_release_docs.py --tag "$INTENDED_TAG"
           check "release-documentation check tests" python3 tests/release_docs_test.py
           check "maintenance tooling tests" python3 tests/maintenance_tools_test.py
+          check "trust-store dependency policy" python3 tools/check_trust_dependencies.py
           check "ecosystem manifest (online)" python3 tools/check_ecosystem_manifest.py --online
           check "links (repository-internal)" python3 tools/check_links.py
           check "release notes carry no private session metadata" python3 tools/check_session_metadata.py --message-file CHANGELOG.md
