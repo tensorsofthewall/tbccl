@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Trust-store dependency policy of a TBCCL repository. This file is kept identical in the four TBCCL release repositories.
 
-After the October 2026 eMudhra/emSign incident the emSign roots were removed from the CA bundles that Python tooling uses. The minimum fixed versions are
+After the October 2026 eMudhra/emSign incident the affected emSign root (emSign ECC Root CA - G3) was removed from the CA bundles that Python tooling uses (the unaffected emSign roots stay in certifi 2026.10.19). The minimum fixed versions are
 certifi 2026.10.19, pip 26.2.2 and uv 0.13.4 (Python Security Response Team announcement of 2026-10-20). This check keeps an affected version from coming back
 into an ACTIVE dependency manifest or build path:
 
@@ -10,7 +10,7 @@ into an ACTIVE dependency manifest or build path:
   3. every workflow, CI script, Makefile and Read the Docs file that runs `pip install` also bootstraps the hash-pinned pip (`bootstrap_pip.sh`, or the wheel
      URL itself with its sha256), and the Read the Docs file always does, because pip trusts its own vendored certifi and an older pip cannot be repaired
      from the outside;
-  4. every CI script that runs `dnf` first runs `distrust_emsign.sh` (the manylinux system bundle still lists the emSign roots);
+  4. every CI script that runs `dnf` first runs `distrust_emsign.sh` (the manylinux system bundle still lists the revoked emSign root);
   5. no container image digest known to be affected is used again;
   6. no TLS-verification bypass (`--trusted-host`, `curl -k`, `--insecure`, `verify=False` on an HTTP client, `PYTHONHTTPSVERIFY=0`, ...) appears in a workflow,
      script or build file.
@@ -125,7 +125,7 @@ def problems(root):
                 code = line.split("#", 1)[0]
                 for op, ver in CERTIFI_REQ.findall(code):
                     if version_tuple(ver) < MIN_CERTIFI:
-                        found.append(f"{rel}:{n}: certifi{op}{ver} is older than the minimum {'.'.join(map(str, MIN_CERTIFI))} (it still trusts the revoked emSign roots)")
+                        found.append(f"{rel}:{n}: certifi{op}{ver} is older than the minimum {'.'.join(map(str, MIN_CERTIFI))} (it still trusts the revoked emSign root)")
         if name == "uv.lock":
             ver = lock_certifi(text)
             if ver and version_tuple(ver) < MIN_CERTIFI:

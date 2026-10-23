@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap_pip.sh [python]   Make sure the pip of the interpreter (default: python3 on the PATH) is at least 26.2.2.
-# 26.2.2 is the first pip whose vendored CA bundle no longer trusts the emSign roots revoked in October 2026. pip always trusts its own vendored certifi in
+# 26.2.2 is the first pip whose vendored CA bundle no longer trusts the emSign root revoked in October 2026 (emSign ECC Root CA - G3). pip always trusts its own vendored certifi in
 # addition to the system store, so an older pip cannot be repaired by upgrading the certifi package or by pointing it at another bundle: it has to be replaced.
 # The replacement is the hash-pinned wheel from the Python Security Response Team announcement of 2026-10-20; pip checks the sha256 fragment, so a download
 # that was redirected through a forged certificate is rejected. TLS verification is never disabled. An interpreter whose pip is already new enough is left alone.
