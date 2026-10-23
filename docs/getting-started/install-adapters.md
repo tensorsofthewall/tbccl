@@ -21,7 +21,7 @@ The helper uses the `uv` or `pip` you have. Use uv 0.13.4 or later and pip 26.2.
 |---|---|
 | `torch` | CPython 3.13, Linux x86-64 and macOS arm64, PyTorch 2.13.x |
 | `vllm` | CPython 3.12 or 3.13, Linux x86-64 and macOS arm64, vLLM 0.31.0 (install vLLM first, as in the vllm-tbccl guide) |
-| `exo` | not installed by this script: use `uv sync --no-dev --locked --extra mlx-cuda13 --extra tbccl` (macOS: `--extra mlx --extra tbccl`) in a checkout of `tbccl-integration-v2` |
+| `exo` | not installed by this script: use `uv sync --no-dev --locked --extra mlx-cuda13 --extra tbccl` (macOS: `--extra mlx --extra tbccl`) in a checkout of `tbccl-integration-v3` |
 
 ## What it checks before changing anything
 

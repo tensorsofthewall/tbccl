@@ -5,22 +5,22 @@
   "wire_protocol": 4,
   "tbccl": {
     "repo": "tensorsofthewall/tbccl",
-    "version": "0.7.0",
-    "tag": "v0.7.0",
-    "commit": "176f3ab41423892e7a221e71e558395f0963b200"
+    "version": "0.7.1",
+    "tag": "v0.7.1",
+    "commit": "564473d921396d81c0e3eb293519ceaa013d0d20"
   },
   "torch_tbccl": {
     "repo": "tensorsofthewall/torch-tbccl",
-    "version": "0.3.0",
-    "tag": "v0.3.0",
-    "commit": "bf7c5aa759a0bfd10d3e9445a84d55cf30f43085",
+    "version": "0.3.1",
+    "tag": "v0.3.1",
+    "commit": "c93b1065222f222c0e6ededb7f31d5ffaad51303",
     "torch": "2.13"
   },
   "vllm_tbccl": {
     "repo": "tensorsofthewall/vllm-tbccl",
-    "version": "0.3.0",
-    "tag": "v0.3.0",
-    "commit": "f6a5e24677f89563f1dacc3ddcfc240d5e7c92e4",
+    "version": "0.3.1",
+    "tag": "v0.3.1",
+    "commit": "7139a6abeb534d0c91c0c7314baa638bccb3f492",
     "vllm": "0.31.0",
     "metal_repo": "tensorsofthewall/vllm-metal",
     "metal_tag": "v0.31.0-tbccl1",
@@ -29,12 +29,12 @@
   },
   "exo_tbccl": {
     "repo": "tensorsofthewall/exo-tbccl",
-    "version": "0.4.0",
-    "tag": "v0.4.0",
-    "commit": "766579836ca1127b4a9318a47475c496699d1832",
+    "version": "0.5.0",
+    "tag": "v0.5.0",
+    "commit": "4eba68f33c4475576408013aa24fc46805c7630a",
     "exo_repo": "tensorsofthewall/exo-fork",
-    "exo_tag": "tbccl-integration-v2",
-    "exo_sha": "d1497b28b89618172d273e70e9ac7992811635f5",
+    "exo_tag": "tbccl-integration-v3",
+    "exo_sha": "4724b8bfa1ee3a58faa7832ddc0d6609eb1d6da0",
     "exo_upstream_base": "bc412e2230f395e652c23426a5eb88dfa515769b"
   }
 }
